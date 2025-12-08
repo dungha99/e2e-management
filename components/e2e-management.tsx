@@ -133,6 +133,24 @@ const SEGMENT_TO_REASON_MAP: Record<string, string> = {
 
 const ITEMS_PER_PAGE = 10
 
+const handlePriceFormat = (
+  value: string,
+  setter: (value: string) => void
+) => {
+  // Remove non-digits
+  const rawValue = value.replace(/\D/g, "")
+  if (rawValue === "") {
+    setter("")
+    return
+  }
+
+  let numValue = parseFloat(rawValue)
+
+  // Format with dots for thousands (standard vi-VN)
+  setter(numValue.toLocaleString("vi-VN"))
+}
+
+
 // New Workflow Step Component
 interface WorkflowStepProps {
   icon: React.ReactNode
@@ -2108,8 +2126,8 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
 
     setEditMode(true)
     setEditedStage(selectedLead.stage || "")
-    setEditedPriceCustomer(selectedLead.price_customer?.toString() || "")
-    setEditedPriceHighestBid(selectedLead.price_highest_bid?.toString() || "")
+    setEditedPriceCustomer(selectedLead.price_customer?.toLocaleString("vi-VN") || "")
+    setEditedPriceHighestBid(selectedLead.price_highest_bid?.toLocaleString("vi-VN") || "")
   }
 
   function handleCancelEdit() {
@@ -2134,8 +2152,22 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     }
 
     // Validate prices
-    const priceCustomer = editedPriceCustomer ? parseFloat(editedPriceCustomer) : undefined
-    const priceHighestBid = editedPriceHighestBid ? parseFloat(editedPriceHighestBid) : undefined
+    // Remove dots (thousands separators) before parsing
+    const cleanPrice = (priceStr: string) => {
+      if (!priceStr) return undefined
+      // Remove all dots and commas before parsing
+      const cleaned = priceStr.replace(/[.,]/g, "")
+      let val = parseFloat(cleaned)
+
+      // If value < 10,000, assume it's a shortcut for millions (e.g. 350 -> 350,000,000)
+      if (!isNaN(val) && val < 10000) {
+        val *= 1000000
+      }
+      return val
+    }
+
+    const priceCustomer = cleanPrice(editedPriceCustomer)
+    const priceHighestBid = cleanPrice(editedPriceHighestBid)
 
     if (priceCustomer !== undefined && (isNaN(priceCustomer) || priceCustomer < 0)) {
       toast({
@@ -3799,9 +3831,10 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
                   <p className="text-xs text-gray-500 uppercase mb-1">Giá mong muốn</p>
                   {editMode ? (
                     <Input
-                      type="number"
+                      type="text"
                       value={editedPriceCustomer}
                       onChange={(e) => setEditedPriceCustomer(e.target.value)}
+                      onBlur={(e) => handlePriceFormat(e.target.value, setEditedPriceCustomer)}
                       className="text-right text-xl font-bold text-emerald-600 h-12"
                       placeholder="Nhập giá"
                     />
@@ -4027,9 +4060,10 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
                   <p className="text-xs text-gray-500 mb-1">Giá cao nhất (Dealer)</p>
                   {editMode ? (
                     <Input
-                      type="number"
+                      type="text"
                       value={editedPriceHighestBid}
                       onChange={(e) => setEditedPriceHighestBid(e.target.value)}
+                      onBlur={(e) => handlePriceFormat(e.target.value, setEditedPriceHighestBid)}
                       className="text-sm font-semibold text-blue-600"
                       placeholder="Nhập giá"
                     />

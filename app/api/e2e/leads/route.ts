@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-
-const WEBHOOK_BASE_URL = "https://n8n.vucar.vn/webhook/b7d47641-60a1-4825-befb-00b9be93e4af/b7d47641-60a1-4825-befb-00b9be93e4af"
+import { vucarV2Query } from "@/lib/db"
 
 export async function POST(request: Request) {
   try {
@@ -11,24 +10,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "UID is required" }, { status: 400 })
     }
 
-    console.log("[E2E API] Fetching leads for UID:", uid)
+    const result = await vucarV2Query(
+      `SELECT * FROM (
+        SELECT DISTINCT ON (l.phone)
+          l.id, l.name, l.phone, l.identify_number, l.bank_account_number, l.otp_verified,
+          l.created_at, l.pic_id, l.pic_og, l.source, l.url, l.additional_phone,
+          l.qx_qc_scoring, l.customer_feedback, l.is_referral,
+          c.id as car_id
+        FROM leads l
+        LEFT JOIN cars c ON c.lead_id = l.id
+        WHERE l.pic_id = $1
+          AND c.created_at > NOW() - INTERVAL '2 months'
+        ORDER BY l.phone, l.created_at DESC, c.created_at DESC NULLS LAST
+      ) AS subquery
+      ORDER BY created_at DESC`,
+      [uid]
+    )
 
-    const response = await fetch(`${WEBHOOK_BASE_URL}/${uid}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    })
-
-    if (!response.ok) {
-      console.error("[E2E API] Failed to fetch leads. Status:", response.status)
-      throw new Error(`Failed to fetch leads: ${response.status}`)
-    }
-
-    const data = await response.json()
-    console.log("[E2E API] Successfully fetched", data.length || 0, "leads")
-
-    return NextResponse.json(data)
+    return NextResponse.json(result.rows)
   } catch (error) {
     console.error("[E2E API] Error fetching leads:", error)
     return NextResponse.json({ error: "Failed to fetch leads" }, { status: 500 })

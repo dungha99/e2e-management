@@ -11,8 +11,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "car_id is required" }, { status: 400 })
     }
 
-    console.log("[E2E Messages Zalo API] Fetching messages for car_id:", car_id)
-
     const response = await fetch(`${MESSAGES_ZALO_WEBHOOK_BASE}/${car_id}`, {
       method: "GET",
       headers: {
@@ -27,7 +25,6 @@ export async function POST(request: Request) {
     }
 
     const data = await response.json()
-    console.log("[E2E Messages Zalo API] Successfully fetched messages")
 
     // Handle both array response and object with messages_zalo field
     let messages_zalo = []

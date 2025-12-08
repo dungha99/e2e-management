@@ -1,15 +1,27 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import { SearchInput } from "@/components/ui/search-input"
+import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Loader2, User, ChevronLeft, ChevronRight, MessageCircle } from "lucide-react"
+import { Loader2, User, ChevronLeft, ChevronRight, MessageCircle, RefreshCw, Star, CheckCircle, DollarSign, Play, Zap, Search, Clock, Plus } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Check, ChevronsUpDown } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { maskPhone } from "@/lib/utils"
 
 interface DealerBiddingStatus {
@@ -44,69 +56,278 @@ interface Lead {
   customer_feedback: string | null
   is_referral: boolean
   car_id?: string | null
-  first_message_sent?: boolean
-  has_enough_images?: boolean
   dealer_bidding?: DealerBiddingStatus
   bot_active?: boolean
+  price_customer?: number | null
+  brand?: string | null
+  model?: string | null
+  variant?: string | null
+  year?: number | null
+  plate?: string | null
+  stage?: string | null
+  has_enough_images?: boolean
+  first_message_sent?: boolean
+  session_created?: boolean
+  decoy_thread_count?: number
+  notes?: string | null
+  price_highest_bid?: number | null
+  pic_name?: string | null
+  location?: string | null
+  mileage?: number | null
+  is_primary?: boolean
+  bidding_session_count?: number
+  workflow2_is_active?: boolean | null
+  additional_images?: {
+    paper?: Array<{key: string, url: string, name: string, type: string}>
+    inside?: Array<{key: string, url: string, name: string, type: string}>
+    outside?: Array<{key: string, url: string, name: string, type: string}>
+    [key: string]: Array<{key: string, url: string, name: string, type: string}> | undefined
+  }
+}
+
+interface DecoyMessage {
+  content: string
+  sender: string
+  displayed_at: string
+}
+
+interface DecoyThread {
+  id: string
+  bot_name: string
+  created_at: string
+  messages: DecoyMessage[]
+}
+
+interface BiddingHistory {
+  id: string
+  dealer_id: string
+  dealer_name: string
+  car_id: string
+  price: number
+  created_at: string
+  comment: string | null
+}
+
+interface Dealer {
+  id: string
+  name: string
+  group_zalo_name: string | null
 }
 
 const ACCOUNTS = [
   { name: "Dũng", uid: "9ee91b08-448b-4cf4-8b3d-79c6f1c71fef" },
-  { name: "Thư", uid: "286af2a8-a866-496a-8ed0-da30df3120ec" },
-  { name: "Trường", uid: "2ffa8389-2641-4d8b-98a6-5dc2dd2d20a4" },
+  { name: "Trường", uid: "286af2a8-a866-496a-8ed0-da30df3120ec" },
+  { name: "Thư", uid: "2ffa8389-2641-4d8b-98a6-5dc2dd2d20a4" },
+  { name: "PTr", uid: "3c9c5780-5e95-44b5-8b9a-ae5b9f8c9053" },
+  { name: "Huân Đạt", uid: "0ae61721-214f-49f7-8514-f64ee8438c4f" },
+  { name: "Minh Châu", uid: "456cf5f7-2b77-4be4-87bb-43038216dacb" },
+  { name: "Bảo Ngân", uid: "d4a2fc3a-2212-4299-b8bb-7ebded7e77c0" },
+  { name: "Thanh Hòa", uid: "00d0d47e-2041-4857-a828-83e0c28cb615" },
+  { name: "Phát", uid: "4cb28319-9dd0-4951-b9c9-e35e1e8dd578" },
 ]
+
+const DECOY_ACCOUNTS = [
+  {
+    name: "Minh Anh",
+    account: "MA",
+    shop_id: "68f5f0f907039cf6ae4581e8",
+    default_message: "em dc bên kết nối chào xe. xe nhà mình còn hong. gđ e xin thêm thông tin á anh",
+  },
+  {
+    name: "Huy Hồ",
+    account: "HH",
+    shop_id: "68c11ae4b7f53ee376145cc2",
+    default_message:
+      "Em được giới thiệu mình có nhu cầu bán xe em kết bạn để hỏi thêm ít thông tin được không ạ? Xe còn ko a",
+  },
+]
+
+const SEGMENT_TO_REASON_MAP: Record<string, string> = {
+  negotiation: "Đàm phán/Cứng giá",
+  ghost: "Ghost/Lead nguội",
+  check_sold: "Check var đã bán chưa",
+}
 
 const ITEMS_PER_PAGE = 10
 
+// New Workflow Step Component
+interface WorkflowStepProps {
+  icon: React.ReactNode
+  title: string
+  status: string
+  isCompleted?: boolean
+  onClick?: () => void
+}
+
+function WorkflowStep({ icon, title, status, isCompleted = false, onClick }: WorkflowStepProps) {
+  return (
+    <div
+      className={`flex flex-col items-center gap-3 ${onClick ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
+      onClick={onClick}
+    >
+      <div
+        className={`w-16 h-16 rounded-full flex items-center justify-center transition-colors ${isCompleted
+          ? "bg-emerald-100 text-emerald-600 border-2 border-emerald-600"
+          : "bg-gray-100 text-gray-400 border-2 border-gray-300"
+          }`}
+      >
+        {icon}
+      </div>
+      <div className="text-center">
+        <p className="font-medium text-sm text-gray-900">{title}</p>
+        <p className={`text-xs mt-1 ${isCompleted ? "text-emerald-600" : "text-gray-500"}`}>
+          {status}
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export function E2EManagement() {
   const { toast } = useToast()
-  const [selectedAccount, setSelectedAccount] = useState<string>(ACCOUNTS[0].uid)
+  const [selectedAccount, setSelectedAccount] = useState<string>("")
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(false)
   const [loadingCarIds, setLoadingCarIds] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
+  const [searchPhone, setSearchPhone] = useState<string>("")
+  const [appliedSearchPhone, setAppliedSearchPhone] = useState<string>("")
+  const [editingBiddingId, setEditingBiddingId] = useState<string | null>(null)
+  const [editingPrice, setEditingPrice] = useState<string>("")
+  const [updatingBidding, setUpdatingBidding] = useState(false)
+  const [dealers, setDealers] = useState<Dealer[]>([])
+  const [creatingBiddingManual, setCreatingBiddingManual] = useState(false)
+  const [newBidDealerId, setNewBidDealerId] = useState<string>("")
+  const [newBidPrice, setNewBidPrice] = useState<string>("")
+  const [newBidComment, setNewBidComment] = useState<string>("")
+  const [showAddBiddingForm, setShowAddBiddingForm] = useState(false)
+  const [openCombobox, setOpenCombobox] = useState(false)
 
-  // Chat modal state
-  const [chatModalOpen, setChatModalOpen] = useState(false)
+  // Selected lead state
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [runningE2E, setRunningE2E] = useState(false)
 
+  // Decoy Chat state
+  const [decoyThreads, setDecoyThreads] = useState<DecoyThread[]>([])
+  const [loadingDecoyChat, setLoadingDecoyChat] = useState(false)
+  const [selectedDecoyThreadId, setSelectedDecoyThreadId] = useState<string | null>(null)
+
+  // Create bidding state
+  const [creatingBidding, setCreatingBidding] = useState(false)
+  const [confirmBiddingOpen, setConfirmBiddingOpen] = useState(false)
+  const [leadToCreateBidding, setLeadToCreateBidding] = useState<Lead | null>(null)
+
+  // Bidding history state
+  const [biddingHistoryOpen, setBiddingHistoryOpen] = useState(false)
+  const [biddingHistory, setBiddingHistory] = useState<BiddingHistory[]>([])
+  const [loadingBiddingHistory, setLoadingBiddingHistory] = useState(false)
+
+  // Bot toggle loading state
+  const [togglingBot, setTogglingBot] = useState(false)
+
+  // E2E messages dialog state
+  const [e2eMessagesOpen, setE2eMessagesOpen] = useState(false)
+  const [e2eMessages, setE2eMessages] = useState<ChatMessage[]>([])
+  const [loadingE2eMessages, setLoadingE2eMessages] = useState(false)
+
+  // Decoy Web dialog state
+  const [decoyWebOpen, setDecoyWebOpen] = useState(false)
+  const [decoyWebThreads, setDecoyWebThreads] = useState<DecoyThread[]>([])
+  const [selectedDecoyWebThreadId, setSelectedDecoyWebThreadId] = useState<string | null>(null)
+  const [loadingDecoyWeb, setLoadingDecoyWeb] = useState(false)
+
+  // Sync state
+  const [syncing, setSyncing] = useState(false)
+
+  // Create session state
+  const [creatingSession, setCreatingSession] = useState(false)
+  const [confirmSessionOpen, setConfirmSessionOpen] = useState(false)
+
+  // Rename lead state
+  const [renamingLead, setRenamingLead] = useState(false)
+
+  // Send first message state
+  const [sendingMessage, setSendingMessage] = useState(false)
+
+  // Inspection system iframe state
+  const [inspectionSystemOpen, setInspectionSystemOpen] = useState(false)
+
+  // Update primary status state
+  const [updatingPrimary, setUpdatingPrimary] = useState(false)
+
+  // Filter tab state
+  const [activeTab, setActiveTab] = useState<"priority" | "nurture">("priority")
+
+  // Detail view tab state
+  const [activeDetailView, setActiveDetailView] = useState<"workflow" | "decoy-web" | "zalo-chat">("workflow")
+
+  // Workflow 2 activation state
+  const [workflow2Open, setWorkflow2Open] = useState(false)
+  const [workflow2Data, setWorkflow2Data] = useState({
+    duration: "",
+    minPrice: "",
+    maxPrice: "",
+    comment: false,
+    numberOfComments: "",
+    bid: false
+  })
+  const [activatingWorkflow2, setActivatingWorkflow2] = useState(false)
+  const [activeWorkflowView, setActiveWorkflowView] = useState<"purchase" | "seeding">("purchase")
+
+  // Decoy trigger state
+  const [decoyDialogOpen, setDecoyDialogOpen] = useState(false)
+  const [decoySegment, setDecoySegment] = useState("")
+  const [decoyMinutes, setDecoyMinutes] = useState("")
+  const [sendingDecoy, setSendingDecoy] = useState(false)
+
+  // Activity log state
+  const [activityLog, setActivityLog] = useState<Array<{ event_name: string, time: string }>>([])
+  const [loadingActivity, setLoadingActivity] = useState(false)
+
+  // Send to dealer groups state
+  const [sendDealerDialogOpen, setSendDealerDialogOpen] = useState(false)
+  const [dealerGroups, setDealerGroups] = useState<Array<{groupId: string, groupName: string, dealerId: string | null}>>([])
+  const [loadingDealerGroups, setLoadingDealerGroups] = useState(false)
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([])
+  const [sendingToGroups, setSendingToGroups] = useState(false)
+  const [dealerGroupSearch, setDealerGroupSearch] = useState("")
+
   useEffect(() => {
     if (selectedAccount) {
       setCurrentPage(1) // Reset to first page when account changes
-      fetchLeads(selectedAccount)
+      setSearchPhone("") // Clear search
+      setAppliedSearchPhone("") // Clear applied search
+      setActiveTab("priority") // Reset to priority tab
+      fetchLeads(selectedAccount, true)
     }
   }, [selectedAccount])
 
   useEffect(() => {
-    // Fetch additional data when page changes
-    if (leads.length > 0) {
-      fetchPageData(currentPage)
-    }
-  }, [currentPage])
-
-  async function fetchCarId(phone: string): Promise<string | null> {
-    try {
-      const response = await fetch("/api/e2e/car-id", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
-      })
-
-      if (!response.ok) {
-        return null
+    // Fetch additional data when page changes or leads change
+    // We need to calculate currentPageLeads here to pass to fetchPageData
+    const filtered = leads.filter((lead) => {
+      if (appliedSearchPhone) {
+        const phone = lead.phone || lead.additional_phone || ""
+        if (!phone.includes(appliedSearchPhone)) return false
       }
+      if (activeTab === "priority") {
+        return lead.is_primary === true
+      } else {
+        return lead.is_primary !== true
+      }
+    })
 
-      const data = await response.json()
-      return data.car_id || null
-    } catch (error) {
-      console.error("[E2E] Error fetching car_id for phone:", phone, error)
-      return null
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+    const endIndex = startIndex + ITEMS_PER_PAGE
+    const pageLeads = filtered.slice(startIndex, endIndex)
+
+    if (pageLeads.length > 0) {
+      fetchPageData(pageLeads)
     }
-  }
+  }, [currentPage, leads.length, appliedSearchPhone, activeTab])
 
   async function fetchMessagesZalo(car_id: string): Promise<boolean> {
     try {
@@ -131,33 +352,110 @@ export function E2EManagement() {
     }
   }
 
-  async function checkHasEnoughImages(phone: string): Promise<boolean> {
+  async function fetchLeadDetails(phone: string): Promise<{
+    car_id: string | null
+    price_customer: number | null
+    brand: string | null
+    model: string | null
+    variant: string | null
+    year: number | null
+    plate: string | null
+    stage: string | null
+    has_enough_images: boolean
+    bot_status: boolean
+    price_highest_bid: number | null
+    first_message_sent: boolean
+    session_created: boolean
+    notes: string | null
+    pic_id: string | null
+    pic_name: string | null
+    location: string | null
+    mileage: number | null
+    is_primary: boolean
+    workflow2_is_active: boolean | null
+    additional_images?: any
+  }> {
     try {
-      const response = await fetch("/api/leads/lead-context", {
+      const response = await fetch("/api/e2e/lead-details", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone }),
       })
 
       if (!response.ok) {
-        return false
+        return {
+          car_id: null,
+          price_customer: null,
+          brand: null,
+          model: null,
+          variant: null,
+          year: null,
+          plate: null,
+          stage: null,
+          has_enough_images: false,
+          bot_status: false,
+          price_highest_bid: null,
+          first_message_sent: false,
+          session_created: false,
+          notes: null,
+          pic_id: null,
+          pic_name: null,
+          location: null,
+          mileage: null,
+          is_primary: false,
+          workflow2_is_active: null,
+        }
       }
 
       const data = await response.json()
-      const additionalImages = data.car_info?.additional_images
 
-      if (!additionalImages) {
-        return false
+      return {
+        car_id: data.sale_status?.car_id || null,
+        price_customer: data.sale_status?.price_customer || null,
+        brand: data.car_info?.brand || null,
+        model: data.car_info?.model || null,
+        variant: data.car_info?.variant || null,
+        year: data.car_info?.year || null,
+        plate: data.car_info?.plate || null,
+        stage: data.sale_status?.stage || null,
+        has_enough_images: data.car_info?.has_enough_images || false,
+        bot_status: data.sale_status?.bot_status || false,
+        price_highest_bid: data.sale_status?.price_highest_bid || null,
+        first_message_sent: data.sale_status?.first_message_sent || false,
+        session_created: data.sale_status?.session_created || false,
+        notes: data.sale_status?.notes || null,
+        pic_id: data.lead?.pic_id || null,
+        pic_name: data.lead?.pic_name || null,
+        location: data.car_info?.location || null,
+        mileage: data.car_info?.mileage || null,
+        is_primary: data.car_info?.is_primary || false,
+        workflow2_is_active: data.car_info?.workflow2_is_active ?? null,
+        additional_images: data.car_info?.additional_images || null,
       }
-
-      // Check if we have at least 1 image in "outside" and at least 1 in "paper"
-      const hasOutside = Array.isArray(additionalImages.outside) && additionalImages.outside.length > 0
-      const hasPaper = Array.isArray(additionalImages.paper) && additionalImages.paper.length > 0
-
-      return hasOutside && hasPaper
     } catch (error) {
-      console.error("[E2E] Error checking images for phone:", phone, error)
-      return false
+      console.error("[E2E] Error fetching lead details for phone:", phone, error)
+      return {
+        car_id: null,
+        price_customer: null,
+        brand: null,
+        model: null,
+        variant: null,
+        year: null,
+        plate: null,
+        stage: null,
+        has_enough_images: false,
+        bot_status: false,
+        price_highest_bid: null,
+        first_message_sent: false,
+        session_created: false,
+        notes: null,
+        pic_id: null,
+        pic_name: null,
+        location: null,
+        mileage: null,
+        is_primary: false,
+        workflow2_is_active: null,
+      }
     }
   }
 
@@ -216,50 +514,309 @@ export function E2EManagement() {
     }
   }
 
-  async function handleLeadClick(lead: Lead) {
-    if (!lead.car_id) {
-      console.log("[E2E] No car_id available for this lead")
-      return
-    }
-
-    setSelectedLead(lead)
-    setChatModalOpen(true)
-    setLoadingMessages(true)
-    setChatMessages([])
-
-    const messages = await fetchChatMessages(lead.car_id)
-    setChatMessages(messages)
-    setLoadingMessages(false)
-  }
-
-  async function fetchBotStatus(phone: string): Promise<boolean> {
+  async function fetchDecoyChat(leadId: string) {
+    setLoadingDecoyChat(true)
     try {
-      const response = await fetch("/api/e2e/bot-status/get", {
+      const response = await fetch("/api/e2e/decoy-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ lead_id: leadId }),
       })
 
       if (!response.ok) {
-        return false
+        setDecoyThreads([])
+        return
       }
 
       const data = await response.json()
+      const threads = data.threads || []
+      setDecoyThreads(threads)
 
-      // Parse nested structure: data.cars[0].sale_statuses[0].bot_status
-      if (data.cars && Array.isArray(data.cars) && data.cars.length > 0) {
-        const firstCar = data.cars[0]
-        if (firstCar.sale_statuses && Array.isArray(firstCar.sale_statuses) && firstCar.sale_statuses.length > 0) {
-          return firstCar.sale_statuses[0].bot_status || false
-        }
+      // Select the first thread by default if available
+      if (threads.length > 0) {
+        setSelectedDecoyThreadId(threads[0].id)
       }
-
-      return false
     } catch (error) {
-      console.error("[E2E] Error fetching bot status for phone:", phone, error)
-      return false
+      console.error("[E2E] Error fetching decoy chat:", error)
+      setDecoyThreads([])
+    } finally {
+      setLoadingDecoyChat(false)
     }
   }
+
+  async function fetchActivityLog(phone: string) {
+    setLoadingActivity(true)
+    try {
+      console.log("[E2E] Fetching activity log for phone:", phone)
+      const response = await fetch(`https://n8n.vucar.vn/webhook/824be9f2-9b69-4ca7-ac29-ffb91fe41cf4/824be9f2-9b69-4ca7-ac29-ffb91fe41cf4/${phone}`)
+
+      console.log("[E2E] Activity log response status:", response.status)
+
+      if (!response.ok) {
+        console.log("[E2E] Activity log response not OK")
+        setActivityLog([])
+        return
+      }
+
+      const data = await response.json()
+      console.log("[E2E] Activity log data received:", data)
+      setActivityLog(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error("[E2E] Error fetching activity log:", error)
+      setActivityLog([])
+    } finally {
+      setLoadingActivity(false)
+    }
+  }
+
+  async function fetchDealerGroups() {
+    setLoadingDealerGroups(true)
+    try {
+      const response = await fetch("/api/e2e/dealer-groups")
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch dealer groups")
+      }
+
+      const data = await response.json()
+      console.log("[E2E] Dealer groups data:", data)
+
+      setDealerGroups(data.groups || [])
+    } catch (error) {
+      console.error("[E2E] Error fetching dealer groups:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể tải danh sách nhóm dealer",
+        variant: "destructive",
+      })
+      setDealerGroups([])
+    } finally {
+      setLoadingDealerGroups(false)
+    }
+  }
+
+  function handleOpenSendDealerDialog() {
+    setSendDealerDialogOpen(true)
+    setSelectedGroupIds([])
+    setDealerGroupSearch("")
+    fetchDealerGroups()
+  }
+
+  async function handleSendToGroups() {
+    if (!selectedLead?.car_id || selectedGroupIds.length === 0) return
+
+    setSendingToGroups(true)
+    try {
+      // Get selected groups with dealer IDs
+      const selectedGroups = dealerGroups.filter(g => selectedGroupIds.includes(g.groupId))
+
+      // Get current time
+      const now = new Date()
+      const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`
+
+      // Prepare car information message using the template
+      const carInfo = `Thời gian nhận thông tin: ${timeString}\n` +
+        `Thông tin chi tiết xe: ${selectedLead.brand || ''} ${selectedLead.model || ''} ${selectedLead.year || ''}\n` +
+        `Số km đã đi (Odo): ${selectedLead.mileage ? selectedLead.mileage.toLocaleString() : 'N/A'} km\n` +
+        `Khu vực: ${selectedLead.location || 'N/A'}\n` +
+        `Giá mong muốn: ${selectedLead.price_customer || 'N/A'}\n` +
+        `Car_id: ${selectedLead.car_id}\n` +
+        `Vucar hỗ trợ tài chính: 80% giá trị xe, lãi suất từ 500đ/ngày/1 triệu đồng.`
+
+      // Extract image URLs from additional_images
+      const imageUrls: string[] = []
+      console.log("[E2E] selectedLead.additional_images:", selectedLead.additional_images)
+
+      if (selectedLead.additional_images) {
+        // Get images from all categories (paper, inside, outside, etc.)
+        Object.values(selectedLead.additional_images).forEach(images => {
+          if (Array.isArray(images)) {
+            images.forEach(img => {
+              if (img.url) {
+                imageUrls.push(img.url)
+              }
+            })
+          }
+        })
+      }
+
+      console.log("[E2E] Extracted imageUrls:", imageUrls)
+      console.log("[E2E] Number of images:", imageUrls.length)
+
+      // Send messages and images to groups via Zalo API
+      const sendResponse = await fetch("/api/e2e/send-to-groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          groupIds: selectedGroupIds,
+          message: carInfo,
+          imageUrls: imageUrls, // Send all images
+          phone: selectedLead.phone || "0986755669"
+        }),
+      })
+
+      const sendResult = await sendResponse.json()
+
+      // Create bidding records for groups that have dealer IDs
+      const biddingPromises = selectedGroups
+        .filter(group => group.dealerId) // Only groups with matching dealers
+        .map(group =>
+          fetch("/api/e2e/bidding-history/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              car_id: selectedLead.car_id,
+              dealer_id: group.dealerId,
+              price: 1, // Price 1 means "sent info only"
+              comment: "Đã gửi thông tin xe"
+            }),
+          })
+        )
+
+      const biddingResults = await Promise.all(biddingPromises)
+
+      // Check results
+      const sendSuccess = sendResult.successCount || 0
+
+      if (sendSuccess > 0) {
+        toast({
+          title: "Thành công",
+          description: `Đã gửi thông tin xe và ${imageUrls.length} ảnh đến ${sendSuccess} nhóm dealer`,
+        })
+      } else {
+        toast({
+          title: "Gửi thất bại",
+          description: "Không thể gửi tin nhắn đến các nhóm",
+          variant: "destructive",
+        })
+      }
+
+      // Refresh bidding history
+      if (selectedLead.car_id) {
+        fetchBiddingHistory(selectedLead.car_id)
+      }
+
+      // Close dialog
+      setSendDealerDialogOpen(false)
+      setSelectedGroupIds([])
+    } catch (error) {
+      console.error("[E2E] Error sending to groups:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể gửi thông tin xe",
+        variant: "destructive",
+      })
+    } finally {
+      setSendingToGroups(false)
+    }
+  }
+
+  async function handleViewZaloChat(lead: Lead) {
+    if (!lead.car_id) {
+      toast({
+        title: "Lỗi",
+        description: "Không tìm thấy thông tin xe",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setLoadingE2eMessages(true)
+
+    try {
+      const messages = await fetchChatMessages(lead.car_id)
+      setE2eMessages(messages)
+    } catch (error) {
+      console.error("Error fetching Zalo messages", error)
+      setE2eMessages([])
+    } finally {
+      setLoadingE2eMessages(false)
+    }
+  }
+
+  async function handleViewDecoyWebChat(lead: Lead) {
+    setLoadingDecoyWeb(true)
+    setDecoyWebThreads([])
+    setSelectedDecoyWebThreadId(null)
+
+    try {
+      const response = await fetch("/api/e2e/decoy-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lead_id: lead.id }),
+      })
+
+      if (!response.ok) {
+        setDecoyWebThreads([])
+      } else {
+        const data = await response.json()
+        const threads = data.threads || []
+        setDecoyWebThreads(threads)
+        if (threads.length > 0) {
+          setSelectedDecoyWebThreadId(threads[0].id)
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching decoy web chat", error)
+      setDecoyWebThreads([])
+    } finally {
+      setLoadingDecoyWeb(false)
+    }
+  }
+
+  async function handleLeadClick(lead: Lead) {
+    setSelectedLead(lead)
+    setActiveDetailView("workflow")
+    setActiveWorkflowView("purchase") // Reset to default workflow view
+    setLoadingMessages(true)
+    setChatMessages([])
+
+    // Reset Decoy Chat state
+    setDecoyThreads([])
+    setSelectedDecoyThreadId(null)
+
+    // Reset Decoy Web dialog state
+    setDecoyWebThreads([])
+    setSelectedDecoyWebThreadId(null)
+
+    // Reset Activity Log state
+    setActivityLog([])
+    setLoadingActivity(false)
+
+    // Fetch fresh lead details to get workflow2_is_active and other updated info
+    const phone = lead.phone || lead.additional_phone
+    if (phone) {
+      const leadDetails = await fetchLeadDetails(phone)
+
+      // Update selected lead with fresh data
+      const updatedLead = {
+        ...lead,
+        ...leadDetails
+      }
+      setSelectedLead(updatedLead)
+    }
+
+    // Fetch E2E messages if car_id exists
+    if (lead.car_id) {
+      const messages = await fetchChatMessages(lead.car_id)
+      setChatMessages(messages)
+      setLoadingMessages(false)
+
+      // Fetch Decoy Chat
+      fetchDecoyChat(lead.id)
+    } else {
+      setLoadingMessages(false)
+    }
+
+    // Fetch Activity Log if phone exists
+    if (phone) {
+      console.log("[E2E] Calling fetchActivityLog with phone:", phone)
+      fetchActivityLog(phone)
+    } else {
+      console.log("[E2E] No phone available for activity log")
+    }
+  }
+
 
   async function handleBotToggle(lead: Lead, newStatus: boolean) {
     const phone = lead.phone || lead.additional_phone
@@ -271,6 +828,8 @@ export function E2EManagement() {
       })
       return
     }
+
+    setTogglingBot(true)
 
     try {
       const response = await fetch("/api/e2e/bot-status/update", {
@@ -297,6 +856,11 @@ export function E2EManagement() {
         prevLeads.map((l) => (l.id === lead.id ? { ...l, bot_active: newStatus } : l))
       )
 
+      // Update selected lead if it's the same
+      if (selectedLead?.id === lead.id) {
+        setSelectedLead({ ...selectedLead, bot_active: newStatus })
+      }
+
       toast({
         title: "Thành công",
         description: newStatus ? "Đã kích hoạt bot" : "Đã tắt bot",
@@ -308,6 +872,8 @@ export function E2EManagement() {
         description: "Không thể cập nhật trạng thái bot",
         variant: "destructive",
       })
+    } finally {
+      setTogglingBot(false)
     }
   }
 
@@ -369,7 +935,6 @@ export function E2EManagement() {
       }
 
       const e2eData = await e2eResponse.json()
-      console.log("[E2E] E2E webhook response:", e2eData)
 
       // Step 3: Check if there are message suggestions and send them
       if (Array.isArray(e2eData) && e2eData.length > 0) {
@@ -377,7 +942,6 @@ export function E2EManagement() {
         const messageSuggestions = firstResult?.output?.message_suggestions
 
         if (Array.isArray(messageSuggestions) && messageSuggestions.length > 0) {
-          console.log("[E2E] Sending", messageSuggestions.length, "suggested messages...")
 
           const sendMessageResponse = await fetch("https://crm-vucar-api.vucar.vn/api/v1/akabiz/send-customer-message", {
             method: "POST",
@@ -427,8 +991,1024 @@ export function E2EManagement() {
     }
   }
 
-  async function fetchLeads(uid: string) {
-    console.log("[E2E] Fetching leads for account:", uid)
+  function openCreateBiddingConfirm(lead: Lead) {
+    const phone = lead.phone || lead.additional_phone
+    if (!phone) {
+      toast({
+        title: "Lỗi",
+        description: "Không có số điện thoại",
+        variant: "destructive",
+      })
+      return
+    }
+    setLeadToCreateBidding(lead)
+    setConfirmBiddingOpen(true)
+  }
+
+  async function confirmCreateBidding() {
+    if (!leadToCreateBidding) return
+
+    const phone = leadToCreateBidding.phone || leadToCreateBidding.additional_phone
+    if (!phone) return
+
+    setCreatingBidding(true)
+    setConfirmBiddingOpen(false)
+
+    try {
+      const response = await fetch("https://n8n.vucar.vn/webhook/8214cf7a-8c4f-449d-83d5-1dc07b17c2ec", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to create bidding")
+      }
+
+      toast({
+        title: "Thành công",
+        description: "Đã tạo bidding thành công",
+      })
+
+      // Refresh the lead's bidding status
+      if (leadToCreateBidding.car_id) {
+        const updatedBidding = await checkDealerBidding(leadToCreateBidding.car_id)
+        setLeads((prevLeads) =>
+          prevLeads.map((l) => (l.id === leadToCreateBidding.id ? { ...l, dealer_bidding: updatedBidding } : l))
+        )
+      }
+    } catch (error) {
+      console.error("[E2E] Error creating bidding:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể tạo bidding",
+        variant: "destructive",
+      })
+    } finally {
+      setCreatingBidding(false)
+      setLeadToCreateBidding(null)
+    }
+  }
+
+  async function viewE2eMessages(car_id: string) {
+    setLoadingE2eMessages(true)
+    setE2eMessagesOpen(true)
+    setE2eMessages([])
+
+    try {
+      const response = await fetch("/api/e2e/messages-zalo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ car_id }),
+      })
+
+      if (!response.ok) {
+        toast({
+          title: "Lỗi",
+          description: "Không thể tải tin nhắn",
+          variant: "destructive",
+        })
+        return
+      }
+
+      const data = await response.json()
+      setE2eMessages(data.messages_zalo || [])
+    } catch (error) {
+      console.error("[E2E] Error fetching E2E messages:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể tải tin nhắn E2E",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingE2eMessages(false)
+    }
+  }
+
+  async function fetchDecoyThreadCount(lead_id: string): Promise<number> {
+    try {
+      const response = await fetch("/api/e2e/decoy-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lead_id }),
+      })
+
+      if (!response.ok) {
+        return 0
+      }
+
+      const data = await response.json()
+      const threads = data.threads || []
+      return threads.length
+    } catch (error) {
+      console.error("[E2E] Error fetching decoy thread count:", error)
+      return 0
+    }
+  }
+
+  async function fetchBiddingSessionCount(car_id: string): Promise<number> {
+    try {
+      const response = await fetch("/api/e2e/bidding-session-count", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ car_id }),
+      })
+
+      if (!response.ok) {
+        return 0
+      }
+
+      const data = await response.json()
+      return data.bidding_session_count || 0
+    } catch (error) {
+      console.error("[E2E] Error fetching bidding session count:", error)
+      return 0
+    }
+  }
+
+  async function viewDecoyWebThreads(lead_id: string) {
+    setLoadingDecoyWeb(true)
+    setDecoyWebOpen(true)
+    setDecoyWebThreads([])
+    setSelectedDecoyWebThreadId(null)
+
+    try {
+      const response = await fetch("/api/e2e/decoy-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lead_id }),
+      })
+
+      if (!response.ok) {
+        toast({
+          title: "Lỗi",
+          description: "Không thể tải threads",
+          variant: "destructive",
+        })
+        return
+      }
+
+      const data = await response.json()
+      const threads = data.threads || []
+      setDecoyWebThreads(threads)
+
+      // Select first thread by default
+      if (threads.length > 0) {
+        setSelectedDecoyWebThreadId(threads[0].id)
+      }
+    } catch (error) {
+      console.error("[E2E] Error fetching decoy web threads:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể tải Decoy Web threads",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingDecoyWeb(false)
+    }
+  }
+
+  async function handleCreateSession(version: 1 | 2) {
+    if (!selectedLead) return
+
+    const phone = selectedLead.phone || selectedLead.additional_phone
+    if (!phone) {
+      toast({
+        title: "Lỗi",
+        description: "Không có số điện thoại",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!selectedLead.car_id) {
+      toast({
+        title: "Lỗi",
+        description: "Không có car_id để tạo phiên",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setCreatingSession(true)
+    setConfirmSessionOpen(false)
+
+    try {
+      // Use the same webhook as create bidding, with version parameter
+      const response = await fetch("https://n8n.vucar.vn/webhook/8214cf7a-8c4f-449d-83d5-1dc07b17c2ec", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, version }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to create session")
+      }
+
+      toast({
+        title: "Thành công",
+        description: `Đã tạo phiên thành công (Version ${version}: ${version === 1 ? "No Bid" : "Have Bid"})`,
+      })
+
+      // Refresh the lead's session status
+      const leadDetails = await fetchLeadDetails(phone)
+      setSelectedLead((prev) => prev ? {
+        ...prev,
+        session_created: leadDetails.session_created
+      } : null)
+
+      // Also update in the leads list
+      setLeads((prevLeads) =>
+        prevLeads.map((l) =>
+          l.id === selectedLead.id
+            ? { ...l, session_created: leadDetails.session_created }
+            : l
+        )
+      )
+    } catch (error) {
+      console.error("[E2E] Error creating session:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể tạo phiên",
+        variant: "destructive",
+      })
+    } finally {
+      setCreatingSession(false)
+    }
+  }
+
+  async function handleSyncCurrentLead() {
+    if (!selectedLead) return
+
+    const phone = selectedLead.phone || selectedLead.additional_phone
+    if (!phone) {
+      toast({
+        title: "Lỗi",
+        description: "Không có số điện thoại để đồng bộ",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setSyncing(true)
+
+    try {
+      // Fetch updated lead details
+      const leadDetails = await fetchLeadDetails(phone)
+
+      // Fetch dealer bidding status
+      const dealerBiddingStatus = leadDetails.car_id
+        ? await checkDealerBidding(leadDetails.car_id)
+        : { status: "not_sent" as const }
+
+      // Fetch decoy thread count
+      const decoyThreadCount = await fetchDecoyThreadCount(selectedLead.id)
+
+      // Fetch bidding session count
+      const biddingSessionCount = leadDetails.car_id
+        ? await fetchBiddingSessionCount(leadDetails.car_id)
+        : 0
+
+      // Update selected lead with all new data
+      const updatedLead: Lead = {
+        ...selectedLead,
+        car_id: leadDetails.car_id,
+        price_customer: leadDetails.price_customer,
+        brand: leadDetails.brand,
+        model: leadDetails.model,
+        variant: leadDetails.variant,
+        year: leadDetails.year,
+        plate: leadDetails.plate,
+        stage: leadDetails.stage,
+        has_enough_images: leadDetails.has_enough_images,
+        bot_active: leadDetails.bot_status,
+        price_highest_bid: leadDetails.price_highest_bid,
+        first_message_sent: leadDetails.first_message_sent,
+        session_created: leadDetails.session_created,
+        notes: leadDetails.notes,
+        pic_id: leadDetails.pic_id || selectedLead.pic_id,
+        pic_name: leadDetails.pic_name,
+        location: leadDetails.location,
+        mileage: leadDetails.mileage,
+        is_primary: leadDetails.is_primary,
+        dealer_bidding: dealerBiddingStatus,
+        decoy_thread_count: decoyThreadCount,
+        bidding_session_count: biddingSessionCount,
+        workflow2_is_active: leadDetails.workflow2_is_active,
+      }
+
+      setSelectedLead(updatedLead)
+
+      // Also update in leads list
+      setLeads((prevLeads) =>
+        prevLeads.map((l) =>
+          l.id === selectedLead.id ? updatedLead : l
+        )
+      )
+
+      // Refresh E2E messages if car_id exists
+      if (leadDetails.car_id) {
+        const messages = await fetchChatMessages(leadDetails.car_id)
+        setChatMessages(messages)
+
+        // Refresh Decoy Chat threads
+        await fetchDecoyChat(selectedLead.id)
+      }
+
+      toast({
+        title: "Đã đồng bộ",
+        description: "Dữ liệu đã được cập nhật",
+      })
+    } catch (error) {
+      console.error("[E2E] Error syncing lead data:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể đồng bộ dữ liệu",
+        variant: "destructive",
+      })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  async function handleActivateWorkflow2() {
+    const phone = selectedLead?.phone || selectedLead?.additional_phone
+    if (!phone) {
+      toast({
+        title: "Lỗi",
+        description: "Không tìm thấy số điện thoại",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setActivatingWorkflow2(true)
+
+    try {
+      const response = await fetch("https://n8n.vucar.vn/webhook/8214cf7a-8c4f-1dc07b17c2ec-449d-83d5", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          phone: phone,
+          duration: parseInt(workflow2Data.duration) || 0,
+          minPrice: parseFloat(workflow2Data.minPrice) || 0,
+          maxPrice: parseFloat(workflow2Data.maxPrice) || 0,
+          comment: workflow2Data.comment,
+          numberOfComments: parseInt(workflow2Data.numberOfComments) || 0,
+          bid: workflow2Data.bid,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to activate workflow 2")
+      }
+
+      toast({
+        title: "Thành công",
+        description: "Đã kích hoạt Workflow 2",
+      })
+
+      // Update selected lead's workflow2_is_active status
+      if (selectedLead) {
+        setSelectedLead({
+          ...selectedLead,
+          workflow2_is_active: true
+        })
+        // Also update in leads list
+        setLeads(prevLeads => prevLeads.map(lead =>
+          lead.id === selectedLead.id ? { ...lead, workflow2_is_active: true } : lead
+        ))
+      }
+
+      setWorkflow2Open(false)
+      setActiveWorkflowView("seeding")
+
+      // Open decoy dialog after successful activation
+      setDecoyDialogOpen(true)
+
+      // Reset form
+      setWorkflow2Data({
+        duration: "",
+        minPrice: "",
+        maxPrice: "",
+        comment: false,
+        numberOfComments: "",
+        bid: false
+      })
+    } catch (error) {
+      console.error("[E2E] Error activating workflow 2:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể kích hoạt Workflow 2",
+        variant: "destructive",
+      })
+    } finally {
+      setActivatingWorkflow2(false)
+    }
+  }
+
+  async function handleRenameLead() {
+    if (!selectedLead) return
+
+    const phone_number = selectedLead.phone || selectedLead.additional_phone
+    const pic_id = selectedLead.pic_id
+
+    if (!phone_number) {
+      toast({
+        title: "Lỗi",
+        description: "Không có số điện thoại",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!pic_id) {
+      toast({
+        title: "Lỗi",
+        description: "Không có PIC ID",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setRenamingLead(true)
+
+    try {
+      const response = await fetch("/api/akabiz/rename-lead", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone_number, pic_id }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to rename lead")
+      }
+
+      const data = await response.json()
+
+      toast({
+        title: "Thành công",
+        description: "Đã đổi tên lead thành công",
+      })
+
+      // Optionally sync the lead data to get updated info
+      await handleSyncCurrentLead()
+    } catch (error) {
+      console.error("[E2E] Error renaming lead:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể đổi tên lead",
+        variant: "destructive",
+      })
+    } finally {
+      setRenamingLead(false)
+    }
+  }
+
+  async function handleSendFirstMessage() {
+    if (!selectedLead) return
+
+    const customer_phone = selectedLead.phone || selectedLead.additional_phone
+    const picId = selectedLead.pic_id
+
+    if (!customer_phone) {
+      toast({
+        title: "Lỗi",
+        description: "Không có số điện thoại",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!picId) {
+      toast({
+        title: "Lỗi",
+        description: "Không có PIC ID",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Build car details message
+    const carParts = []
+    if (selectedLead.brand) carParts.push(selectedLead.brand)
+    if (selectedLead.model) carParts.push(selectedLead.model)
+    if (selectedLead.variant) carParts.push(selectedLead.variant)
+    if (selectedLead.year) carParts.push(selectedLead.year.toString())
+
+    const carInfo = carParts.length > 0 ? carParts.join(" ") : "xe"
+
+    // Build location and mileage text
+    const mileageText = selectedLead.mileage ? `${selectedLead.mileage.toLocaleString('vi-VN')} km` : "Đang cập nhật"
+    const locationText = selectedLead.location || "TP. Hồ Chí Minh"
+
+    const messages = [
+      "Dạ em là nhân viên từ Vucar. Em liên hệ hỗ trợ mình để bán xe TP. Hồ Chí Minh ạ. Em đang có 2-3 người mua sẵn quan tâm dòng này ạ",
+      `Thông tin chi tiết xe: ${carInfo}\nSố km đã đi (Odo): ${mileageText}\nKhu vực: ${locationText}`,
+      "Mình cho em xin vài hình ảnh xe + hình ảnh giấy tờ đăng kiểm để em xác nhận lại thông tin xe và kết nối xe mình đến người mua phù hợp nhất nha."
+    ]
+
+    setSendingMessage(true)
+
+    try {
+      const response = await fetch("/api/akabiz/send-customer-message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customer_phone, messages, picId }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to send message")
+      }
+
+      const data = await response.json()
+
+      toast({
+        title: "Thành công",
+        description: "Đã gửi tin nhắn đầu tiên cho khách hàng",
+      })
+
+      // Optionally sync the lead data to get updated info
+      await handleSyncCurrentLead()
+    } catch (error) {
+      console.error("[E2E] Error sending first message:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể gửi tin nhắn",
+        variant: "destructive",
+      })
+    } finally {
+      setSendingMessage(false)
+    }
+  }
+
+  async function handleTogglePrimary() {
+    if (!selectedLead || !selectedLead.car_id) {
+      toast({
+        title: "Lỗi",
+        description: "Không có car_id để cập nhật",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setUpdatingPrimary(true)
+
+    try {
+      const newPrimaryStatus = !selectedLead.is_primary
+
+      const response = await fetch("/api/e2e/update-primary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          car_id: selectedLead.car_id,
+          is_primary: newPrimaryStatus
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to update primary status")
+      }
+
+      const data = await response.json()
+
+      if (!data.success) {
+        throw new Error("Update was not successful")
+      }
+
+      // Update local state
+      const updatedLead = {
+        ...selectedLead,
+        is_primary: newPrimaryStatus
+      }
+
+      setSelectedLead(updatedLead)
+
+      // Also update in leads list
+      setLeads((prevLeads) =>
+        prevLeads.map((l) =>
+          l.id === selectedLead.id ? { ...l, is_primary: newPrimaryStatus } : l
+        )
+      )
+
+      toast({
+        title: "Thành công",
+        description: newPrimaryStatus
+          ? "Đã đánh dấu xe là Primary"
+          : "Đã bỏ đánh dấu Primary",
+      })
+    } catch (error) {
+      console.error("[E2E] Error updating primary status:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể cập nhật trạng thái Primary",
+        variant: "destructive",
+      })
+    } finally {
+      setUpdatingPrimary(false)
+    }
+  }
+
+  async function handleSendDecoy() {
+    if (!selectedLead || !selectedLead.phone) {
+      toast({
+        title: "Lỗi",
+        description: "Không có số điện thoại",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!decoySegment) {
+      toast({
+        title: "Lỗi",
+        description: "Vui lòng chọn lý do quây",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setSendingDecoy(true)
+
+    try {
+      // Randomly select between Minh Anh (index 0) and Huy Hồ (index 1)
+      const randomIndex = Math.floor(Math.random() * 2)
+      const selectedAccount = DECOY_ACCOUNTS[randomIndex]
+
+      console.log("[E2E] Sending decoy with account:", selectedAccount.name)
+
+      // Step 1: Create job in database
+      const createResponse = await fetch("/api/decoy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: selectedLead.phone,
+          shop_id: selectedAccount.shop_id,
+          first_message: selectedAccount.default_message,
+          account: selectedAccount.account,
+          segment: decoySegment,
+          is_sent: false,
+        }),
+      })
+
+      const createdJob = await createResponse.json()
+      console.log("[E2E] Decoy job created:", createdJob)
+
+      if (!createdJob.id) {
+        throw new Error("Failed to create decoy job")
+      }
+
+      // Step 2: Trigger n8n webhook
+      await fetch("https://n8n.vucar.vn/webhook/60362b14-0e05-4849-b3cd-ebbbdb854b49", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_id: createdJob.id,
+          phone: selectedLead.phone,
+          shop_id: selectedAccount.shop_id,
+          first_message: selectedAccount.default_message,
+          account: selectedAccount.account,
+          segment: decoySegment,
+          minutes: parseInt(decoyMinutes) || 0,
+        }),
+      })
+
+      // Step 3: Update reason in database
+      const reasonText = SEGMENT_TO_REASON_MAP[decoySegment] || decoySegment
+      await fetch("/api/decoy/update-reason", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: selectedLead.phone,
+          reason: reasonText,
+        }),
+      })
+
+      toast({
+        title: "✓ Đã nhận được yêu cầu",
+        description: `Đã gửi decoy bằng tài khoản ${selectedAccount.name}. Hãy check tình trạng sau 1 phút.`,
+        className: "bg-green-50 border-green-200",
+        duration: 5000,
+      })
+
+      // Close dialog and reset
+      setDecoyDialogOpen(false)
+      setDecoySegment("")
+      setDecoyMinutes("")
+    } catch (error) {
+      console.error("[E2E] Error sending decoy:", error)
+      toast({
+        title: "✗ Gửi thất bại",
+        description: "Không thể gửi decoy. Vui lòng thử lại.",
+        variant: "destructive",
+      })
+    } finally {
+      setSendingDecoy(false)
+    }
+  }
+
+
+
+
+
+  async function fetchDealers() {
+    try {
+      const response = await fetch("/api/e2e/dealers")
+      if (response.ok) {
+        const data = await response.json()
+        setDealers(data.dealers || [])
+      }
+    } catch (error) {
+      console.error("[E2E] Error fetching dealers:", error)
+    }
+  }
+
+  async function handleCreateBiddingManual() {
+    if (!selectedLead?.car_id || !newBidDealerId || !newBidPrice) return
+
+    setCreatingBiddingManual(true)
+    try {
+      const response = await fetch("/api/e2e/bidding-history/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          car_id: selectedLead.car_id,
+          dealer_id: newBidDealerId,
+          price: parseFloat(newBidPrice),
+          comment: newBidComment
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to create bidding")
+      }
+
+      toast({
+        title: "Thành công",
+        description: "Đã thêm giá thành công",
+      })
+
+      // Reset form
+      setNewBidDealerId("")
+      setNewBidPrice("")
+      setNewBidComment("")
+
+      // Refresh list
+      fetchBiddingHistory(selectedLead.car_id)
+    } catch (error) {
+      console.error("[E2E] Error creating bidding:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể thêm giá",
+        variant: "destructive",
+      })
+    } finally {
+      setCreatingBiddingManual(false)
+    }
+  }
+
+  async function fetchBiddingHistory(car_id: string) {
+    setLoadingBiddingHistory(true)
+    setBiddingHistoryOpen(true)
+    setEditingBiddingId(null) // Reset editing state
+    fetchDealers() // Fetch dealers when opening history
+
+    try {
+      const response = await fetch("/api/e2e/bidding-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ car_id }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.details || "Failed to fetch bidding history")
+      }
+
+      const data = await response.json()
+      setBiddingHistory(data.biddings || [])
+    } catch (error) {
+      console.error("[E2E] Error fetching bidding history:", error)
+      toast({
+        title: "Lỗi",
+        description: error instanceof Error ? error.message : "Không thể tải lịch sử trả giá",
+        variant: "destructive",
+      })
+      setBiddingHistory([])
+    } finally {
+      setLoadingBiddingHistory(false)
+    }
+  }
+
+  async function handleUpdateBiddingPrice(id: string) {
+    if (!editingPrice) return
+
+    setUpdatingBidding(true)
+    try {
+      const response = await fetch("/api/e2e/bidding-history/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          price: parseFloat(editingPrice)
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to update price")
+      }
+
+      toast({
+        title: "Thành công",
+        description: "Đã cập nhật giá thành công",
+      })
+
+      setEditingBiddingId(null)
+      // Refresh list
+      if (selectedLead?.car_id) {
+        fetchBiddingHistory(selectedLead.car_id)
+      }
+    } catch (error) {
+      console.error("[E2E] Error updating bidding price:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể cập nhật giá",
+        variant: "destructive",
+      })
+    } finally {
+      setUpdatingBidding(false)
+    }
+  }
+
+
+
+
+
+  async function searchLeadByPhone() {
+    if (!searchPhone.trim()) {
+      // If search is cleared, reset filter and refetch current page
+      setAppliedSearchPhone("")
+      setCurrentPage(1)
+      if (selectedAccount) {
+        await fetchLeads(selectedAccount, true)
+      }
+      return
+    }
+
+    setAppliedSearchPhone(searchPhone) // Apply the search filter
+
+    console.log("[E2E] Searching for lead with phone:", searchPhone)
+    setLoadingCarIds(true)
+    setCurrentPage(1)
+
+    // Filter leads that match the search
+    const matchingLeads = leads.filter(
+      (lead: Lead) =>
+        lead.phone?.includes(searchPhone) ||
+        lead.additional_phone?.includes(searchPhone)
+    )
+
+    if (matchingLeads.length === 0) {
+      toast({
+        title: "Không tìm thấy",
+        description: "Không tìm thấy lead với số điện thoại này",
+        variant: "destructive",
+      })
+      setLoadingCarIds(false)
+      return
+    }
+
+    console.log("[E2E] Found", matchingLeads.length, "matching lead(s), fetching details...")
+
+    try {
+      // Fetch all details for matching leads
+      const enrichedLeads = await Promise.all(
+        matchingLeads.map(async (lead) => {
+          // If lead has both phone and additional_phone, fetch details for both
+          const phonesToSearch = []
+          if (lead.phone) phonesToSearch.push(lead.phone)
+          if (lead.additional_phone && lead.additional_phone !== lead.phone) {
+            phonesToSearch.push(lead.additional_phone)
+          }
+
+          if (phonesToSearch.length === 0) {
+            return {
+              ...lead,
+              car_id: null,
+              dealer_bidding: { status: "not_sent" as const },
+              bot_active: false,
+              price_customer: null,
+              brand: null,
+              model: null,
+              variant: null,
+              year: null,
+              has_enough_images: false,
+              first_message_sent: false,
+              decoy_thread_count: 0,
+            }
+          }
+
+          // Fetch details for all phone numbers and merge results
+          const allLeadDetails = await Promise.all(
+            phonesToSearch.map(phone => fetchLeadDetails(phone))
+          )
+
+          // Use the first non-null result or merge data from multiple sources
+          const leadDetails = allLeadDetails.reduce((merged, current) => {
+            return {
+              car_id: merged.car_id || current.car_id,
+              price_customer: merged.price_customer || current.price_customer,
+              brand: merged.brand || current.brand,
+              model: merged.model || current.model,
+              variant: merged.variant || current.variant,
+              year: merged.year || current.year,
+              plate: merged.plate || current.plate,
+              stage: merged.stage || current.stage,
+              has_enough_images: merged.has_enough_images || current.has_enough_images,
+              bot_status: merged.bot_status || current.bot_status,
+              price_highest_bid: merged.price_highest_bid || current.price_highest_bid,
+              first_message_sent: merged.first_message_sent || current.first_message_sent,
+              session_created: merged.session_created || current.session_created,
+              notes: merged.notes || current.notes,
+              pic_id: merged.pic_id || current.pic_id,
+              pic_name: merged.pic_name || current.pic_name,
+              location: merged.location || current.location,
+              mileage: merged.mileage || current.mileage,
+              is_primary: merged.is_primary || current.is_primary,
+              workflow2_is_active: merged.workflow2_is_active ?? current.workflow2_is_active,
+            }
+          }, allLeadDetails[0])
+
+          let dealer_bidding: DealerBiddingStatus = { status: "not_sent" }
+
+          // Priority 1: Check price_highest_bid from sale_status
+          if (leadDetails.price_highest_bid) {
+            dealer_bidding = {
+              status: "got_price",
+              maxPrice: leadDetails.price_highest_bid
+            }
+          }
+          // Priority 2: Check dealer_biddings table if we have car_id
+          else if (leadDetails.car_id) {
+            dealer_bidding = await checkDealerBidding(leadDetails.car_id)
+          }
+
+          // Fetch decoy thread count
+          const decoyThreadCount = await fetchDecoyThreadCount(lead.id)
+
+          // Fetch bidding session count
+          const biddingSessionCount = leadDetails.car_id
+            ? await fetchBiddingSessionCount(leadDetails.car_id)
+            : 0
+
+          return {
+            ...lead,
+            car_id: leadDetails.car_id,
+            dealer_bidding,
+            bot_active: leadDetails.bot_status,
+            price_customer: leadDetails.price_customer,
+            brand: leadDetails.brand,
+            model: leadDetails.model,
+            variant: leadDetails.variant,
+            year: leadDetails.year,
+            plate: leadDetails.plate,
+            stage: leadDetails.stage,
+            has_enough_images: leadDetails.has_enough_images,
+            first_message_sent: leadDetails.first_message_sent,
+            session_created: leadDetails.session_created,
+            decoy_thread_count: decoyThreadCount,
+            notes: leadDetails.notes,
+            location: leadDetails.location,
+            mileage: leadDetails.mileage,
+            is_primary: leadDetails.is_primary,
+            bidding_session_count: biddingSessionCount,
+          }
+        })
+      )
+
+      // Update only the matching leads in the full leads array
+      const updatedLeads = leads.map(
+        (lead) => enrichedLeads.find((el) => el.id === lead.id) || lead
+      )
+
+      setLeads(updatedLeads)
+      setLoadingCarIds(false)
+
+      console.log("[E2E] Successfully fetched details for matching leads")
+    } catch (err) {
+      console.error("[E2E] Error fetching lead details:", err)
+      toast({
+        title: "Lỗi",
+        description: "Không thể tải thông tin chi tiết",
+        variant: "destructive",
+      })
+      setLoadingCarIds(false)
+    }
+  }
+
+  async function fetchLeads(uid: string, forceFetchDetails = false) {
     setLoading(true)
     setError(null)
 
@@ -444,13 +2024,69 @@ export function E2EManagement() {
       }
 
       const data = await response.json()
-      console.log("[E2E] Fetched", data.length, "leads")
-      setLeads(data)
-      setLoading(false)
 
-      // Fetch data for the first page
-      if (data.length > 0) {
-        await fetchPageData(1, data)
+      // Remove duplicates based on lead ID
+      const uniqueLeads = data.reduce((acc: Lead[], current: Lead) => {
+        const exists = acc.find(item => item.id === current.id)
+        if (!exists) {
+          acc.push(current)
+        }
+        return acc
+      }, [])
+
+      // Batch fetch primary status for all leads
+      const car_ids = uniqueLeads.map((lead: Lead) => lead.car_id).filter((id: string | null) => id != null)
+
+      if (car_ids.length > 0) {
+        try {
+          const primaryResponse = await fetch("/api/e2e/batch-primary", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ car_ids }),
+          })
+
+          const primaryData = await primaryResponse.json()
+          const primaryStatuses = primaryData.primary_statuses || {}
+
+          // Merge primary status into leads
+          const leadsWithPrimary = uniqueLeads.map((lead: Lead) => ({
+            ...lead,
+            is_primary: lead.car_id ? (primaryStatuses[lead.car_id] || false) : false
+          }))
+
+          setLeads(leadsWithPrimary)
+
+          setLoading(false)
+
+          // Fetch data for the first page only if not searching or forced
+          if (leadsWithPrimary.length > 0 && (!appliedSearchPhone || forceFetchDetails)) {
+            // Get first page leads
+            const firstPageLeads = leadsWithPrimary.slice(0, ITEMS_PER_PAGE)
+            await fetchPageData(firstPageLeads)
+          }
+        } catch (error) {
+          console.error("[E2E] Error fetching batch primary:", error)
+          // Set default is_primary to false if batch fetch fails
+          const leadsWithPrimary = uniqueLeads.map((lead: Lead) => ({
+            ...lead,
+            is_primary: false
+          }))
+          setLeads(leadsWithPrimary)
+          setLoading(false)
+
+          if (leadsWithPrimary.length > 0 && (!appliedSearchPhone || forceFetchDetails)) {
+            const firstPageLeads = leadsWithPrimary.slice(0, ITEMS_PER_PAGE)
+            await fetchPageData(firstPageLeads)
+          }
+        }
+      } else {
+        setLeads(uniqueLeads)
+        setLoading(false)
+
+        if (uniqueLeads.length > 0 && (!appliedSearchPhone || forceFetchDetails)) {
+          const firstPageLeads = uniqueLeads.slice(0, ITEMS_PER_PAGE)
+          await fetchPageData(firstPageLeads)
+        }
       }
     } catch (err) {
       console.error("[E2E] Error fetching leads:", err)
@@ -460,76 +2096,109 @@ export function E2EManagement() {
     }
   }
 
-  async function fetchPageData(page: number, allLeads?: Lead[]) {
-    const leadsToUse = allLeads || leads
-    if (leadsToUse.length === 0) return
-
-    // Calculate which leads are on this page
-    const startIndex = (page - 1) * ITEMS_PER_PAGE
-    const endIndex = startIndex + ITEMS_PER_PAGE
-    const pageLeads = leadsToUse.slice(startIndex, endIndex)
+  async function fetchPageData(pageLeadsToFetch: Lead[]) {
+    if (pageLeadsToFetch.length === 0) return
 
     // Check if we already have data for these leads
-    const needsFetch = pageLeads.some((lead) => lead.car_id === undefined)
+    // car_id comes from /api/e2e/leads, so we check for enriched fields instead
+    const needsFetch = pageLeadsToFetch.some((lead) =>
+      lead.brand === undefined ||
+      lead.price_customer === undefined ||
+      lead.bot_active === undefined
+    )
+
     if (!needsFetch) {
-      console.log("[E2E] Page", page, "already has data loaded")
       return
     }
 
     setLoadingCarIds(true)
-    console.log("[E2E] Fetching data for page", page, "-", pageLeads.length, "leads...")
 
-    // Fetch car_ids, message status, image status, and dealer bidding for current page leads
+    // Fetch car_ids, car details, image status, dealer bidding, and bot status for current page leads
     const updatedPageLeads = await Promise.all(
-      pageLeads.map(async (lead: Lead) => {
+      pageLeadsToFetch.map(async (lead: Lead) => {
         const phone = lead.phone || lead.additional_phone
         if (!phone) {
           return {
             ...lead,
             car_id: null,
-            first_message_sent: false,
             has_enough_images: false,
             dealer_bidding: { status: "not_sent" as const },
             bot_active: false,
+            price_customer: null,
+            brand: null,
+            model: null,
+            variant: null,
+            year: null,
+            first_message_sent: false,
+            decoy_thread_count: 0,
           }
         }
 
-        // Fetch car_id, image check, and bot status in parallel
-        const [car_id, has_enough_images, bot_active] = await Promise.all([
-          fetchCarId(phone),
-          checkHasEnoughImages(phone),
-          fetchBotStatus(phone),
-        ])
+        // Fetch lead details (includes bot_status)
+        const leadDetails = await fetchLeadDetails(phone)
 
-        // If we have car_id, fetch messages_zalo and dealer bidding in parallel
-        let first_message_sent = false
+        // If we have car_id, fetch dealer bidding
         let dealer_bidding: DealerBiddingStatus = { status: "not_sent" }
 
-        if (car_id) {
-          const [messageSent, biddingStatus] = await Promise.all([
-            fetchMessagesZalo(car_id),
-            checkDealerBidding(car_id),
-          ])
-          first_message_sent = messageSent
-          dealer_bidding = biddingStatus
+        // Priority 1: Check price_highest_bid from sale_status
+        if (leadDetails.price_highest_bid) {
+          dealer_bidding = {
+            status: "got_price",
+            maxPrice: leadDetails.price_highest_bid
+          }
+        }
+        // Priority 2: Check dealer_biddings table if we have car_id
+        else if (leadDetails.car_id) {
+          dealer_bidding = await checkDealerBidding(leadDetails.car_id)
         }
 
-        return { ...lead, car_id, first_message_sent, has_enough_images, dealer_bidding, bot_active }
+        // Fetch decoy thread count
+        const decoyThreadCount = await fetchDecoyThreadCount(lead.id)
+
+        // Fetch bidding session count
+        const biddingSessionCount = leadDetails.car_id
+          ? await fetchBiddingSessionCount(leadDetails.car_id)
+          : 0
+
+        return {
+          ...lead,
+          car_id: leadDetails.car_id,
+          has_enough_images: leadDetails.has_enough_images,
+          dealer_bidding,
+          bot_active: leadDetails.bot_status,
+          price_customer: leadDetails.price_customer,
+          brand: leadDetails.brand,
+          model: leadDetails.model,
+          variant: leadDetails.variant,
+          year: leadDetails.year,
+          plate: leadDetails.plate,
+          stage: leadDetails.stage,
+          first_message_sent: leadDetails.first_message_sent,
+          session_created: leadDetails.session_created,
+          decoy_thread_count: decoyThreadCount,
+          notes: leadDetails.notes,
+          location: leadDetails.location,
+          mileage: leadDetails.mileage,
+          is_primary: leadDetails.is_primary,
+          bidding_session_count: biddingSessionCount,
+        }
       })
     )
 
-    // Update the leads array with the new data
-    const updatedLeads = [...leadsToUse]
-    updatedPageLeads.forEach((updatedLead, index) => {
-      updatedLeads[startIndex + index] = updatedLead
-    })
-
-    console.log("[E2E] Car IDs and message status fetched successfully for page", page)
-    setLeads(updatedLeads)
+    // Update the leads array by matching IDs instead of using indices
+    setLeads((prevLeads) =>
+      prevLeads.map((lead) => {
+        const updated = updatedPageLeads.find((ul) => ul.id === lead.id)
+        if (updated) {
+          return updated
+        }
+        return lead
+      })
+    )
     setLoadingCarIds(false)
   }
 
-  function formatDate(dateString: string) {
+  function formatDate(dateString: string | number) {
     const date = new Date(dateString)
     return date.toLocaleString("vi-VN", {
       day: "2-digit",
@@ -565,11 +2234,75 @@ export function E2EManagement() {
     }
   }
 
+  function formatCarInfo(lead: Lead): string {
+    const parts = []
+    if (lead.brand) parts.push(lead.brand)
+    if (lead.model) parts.push(lead.model)
+    if (lead.variant) parts.push(lead.variant)
+    if (lead.year) parts.push(lead.year.toString())
+    return parts.length > 0 ? parts.join(" ") : "N/A"
+  }
+
+  function getStageStyle(stage: string | null | undefined): string {
+    if (!stage) return "bg-gray-100 text-gray-800"
+
+    const stageLower = stage.toLowerCase()
+
+    // Stage color mapping
+    if (stageLower === 'undefined') {
+      return "bg-white-100 text-white-800"
+    }
+    if (stageLower === 'cannot_contact') {
+      return "bg-white-100 text-white-800"
+    }
+    if (stageLower === 'contacted') {
+      return "bg-cyan-100 text-cyan-800"
+    }
+    if (stageLower === 'negotiation') {
+      return "bg-purple-100 text-purple-800"
+    }
+    if (stageLower === 'car_view') {
+      return "bg-emerald-100 text-emerald-800"
+    }
+    if (stageLower === 'deposit_view') {
+      return "bg-blue-100 text-blue-800"
+    }
+    if (stageLower === 'completed') {
+      return "bg-green-100 text-green-800"
+    }
+    if (stageLower === 'failed') {
+      return "bg-green-100 text-green-800"
+    }
+
+    // Default color for unknown stages
+    return "bg-white-100 text-white-800"
+  }
+
+  // Filter leads by phone search and tab (client-side filtering)
+  const filteredLeads = leads.filter((lead) => {
+    // Filter by phone search
+    if (appliedSearchPhone) {
+      const phone = lead.phone || lead.additional_phone || ""
+      if (!phone.includes(appliedSearchPhone)) return false
+    }
+
+    // Filter by tab (priority vs nurture)
+    if (activeTab === "priority") {
+      return lead.is_primary === true
+    } else {
+      return lead.is_primary !== true
+    }
+  })
+
+  // Count for tabs - undefined is_primary is treated as "Nuôi dưỡng"
+  const priorityCount = leads.filter(lead => lead.is_primary === true).length
+  const nurtureCount = leads.filter(lead => lead.is_primary !== true).length
+
   // Pagination calculations
-  const totalPages = Math.ceil(leads.length / ITEMS_PER_PAGE)
+  const totalPages = Math.ceil(filteredLeads.length / ITEMS_PER_PAGE)
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
   const endIndex = startIndex + ITEMS_PER_PAGE
-  const currentPageLeads = leads.slice(startIndex, endIndex)
+  const currentPageLeads = filteredLeads.slice(startIndex, endIndex)
 
   const handlePreviousPage = () => {
     if (currentPage > 1) {
@@ -583,290 +2316,1642 @@ export function E2EManagement() {
     }
   }
 
-  const selectedAccountName = ACCOUNTS.find((acc) => acc.uid === selectedAccount)?.name || ""
-
   return (
-    <Card className="shadow-sm">
-      <CardHeader>
-        <CardTitle>Quản lý E2E</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Account Selection */}
-        <div className="space-y-3">
-          <Label className="text-sm font-medium">Chọn tài khoản</Label>
-          <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-            <SelectTrigger className="w-[250px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ACCOUNTS.map((account) => (
-                <SelectItem key={account.uid} value={account.uid}>
-                  <div className="flex items-center gap-2">
-                    <User className="h-4 w-4" />
-                    {account.name}
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+    <div className="w-full">
+      {/* Top Header - Account Selector */}
+      <div className="bg-white border-b px-8 py-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-gray-900">Quản lý E2E</h1>
+          <div className="flex items-center gap-3">
+            <Label className="text-sm font-medium text-gray-700">Chọn tài khoản:</Label>
+            <Select value={selectedAccount} onValueChange={setSelectedAccount} disabled={loading || loadingCarIds}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Chọn tài khoản..." />
+              </SelectTrigger>
+              <SelectContent>
+                {ACCOUNTS.map((account) => (
+                  <SelectItem key={account.uid} value={account.uid}>
+                    <div className="flex items-center gap-2">
+                      <User className="h-4 w-4" />
+                      {account.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+      </div>
 
-        {/* Loading State */}
-        {loading && (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <span className="ml-3 text-muted-foreground">Đang tải leads của {selectedAccountName}...</span>
+      {/* Split View Layout */}
+      <div className="flex h-[calc(100vh-180px)] bg-gray-50">
+        {/* Left Sidebar - Leads List */}
+        <div className="w-80 border-r flex flex-col bg-white">
+          <div className="p-4 border-b bg-gray-100">
+            <h2 className="text-lg font-bold mb-4">LeadOS</h2>
+            <SearchInput
+              placeholder="Tìm kiếm danh sách..."
+              value={searchPhone}
+              onChange={(e) => setSearchPhone(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !loading && !loadingCarIds && selectedAccount) {
+                  searchLeadByPhone()
+                }
+              }}
+              disabled={loading || loadingCarIds || !selectedAccount}
+            />
           </div>
-        )}
 
-        {/* Error State */}
-        {error && !loading && (
-          <div className="text-center py-8">
-            <p className="text-sm text-destructive mb-4">{error}</p>
+          {/* Filter Tabs */}
+          <div className="px-4 py-3 border-b flex gap-4">
+            <button
+              onClick={() => {
+                setActiveTab("priority")
+                setCurrentPage(1)
+              }}
+              className={`flex items-center gap-2 text-sm font-medium pb-2 transition-colors ${activeTab === "priority"
+                ? "text-purple-600 border-b-2 border-purple-600"
+                : "text-gray-500 hover:text-gray-700"
+                }`}
+            >
+              <Zap className="h-4 w-4" />
+              Ưu tiên
+              <Badge className={activeTab === "priority" ? "bg-purple-600 text-white text-xs" : "bg-gray-200 text-gray-700 text-xs"}>
+                {priorityCount}
+              </Badge>
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab("nurture")
+                setCurrentPage(1)
+              }}
+              className={`flex items-center gap-2 text-sm font-medium pb-2 transition-colors ${activeTab === "nurture"
+                ? "text-emerald-600 border-b-2 border-emerald-600"
+                : "text-gray-500 hover:text-gray-700"
+                }`}
+            >
+              <MessageCircle className="h-4 w-4" />
+              Nuôi dưỡng
+              <Badge className={activeTab === "nurture" ? "bg-emerald-600 text-white text-xs" : "bg-gray-200 text-gray-700 text-xs"}>
+                {nurtureCount}
+              </Badge>
+            </button>
           </div>
-        )}
 
-        {/* Leads List */}
-        {!loading && !error && leads.length > 0 && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-sm">
-                Danh sách Leads - {selectedAccountName} (Hiển thị {startIndex + 1}-{Math.min(endIndex, leads.length)} / {leads.length} leads)
-              </h3>
-              {loadingCarIds && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  <span>Đang tải dữ liệu...</span>
+          {/* Leads List in Sidebar */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="divide-y divide-gray-100">
+              {!selectedAccount ? (
+                <div className="flex flex-col items-center justify-center py-20 px-6">
+                  <User className="h-16 w-16 text-gray-300 mb-4" />
+                  <p className="text-gray-500 text-center text-sm">
+                    Vui lòng chọn tài khoản ở trên để xem danh sách leads
+                  </p>
                 </div>
+              ) : loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                </div>
+              ) : currentPageLeads.length === 0 ? (
+                <div className="text-center py-12 text-gray-400 text-sm">
+                  <p>Không có leads nào</p>
+                </div>
+              ) : (
+                currentPageLeads.map((lead) => (
+                  <div
+                    key={lead.id}
+                    className={`p-4 transition-colors ${loading || loadingCarIds
+                      ? "cursor-not-allowed opacity-50"
+                      : "hover:bg-blue-50"
+                      } ${selectedLead?.id === lead.id ? "bg-blue-50 border-l-4 border-blue-600" : ""}`}
+                  >
+                    <div className="flex items-center gap-3 mb-2">
+                      <div
+                        onClick={() => {
+                          if (!loading && !loadingCarIds) {
+                            handleLeadClick(lead)
+                          }
+                        }}
+                        className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-bold flex-shrink-0 cursor-pointer"
+                      >
+                        {lead.name?.charAt(0).toUpperCase() || "?"}
+                      </div>
+                      <div
+                        onClick={() => {
+                          if (!loading && !loadingCarIds) {
+                            handleLeadClick(lead)
+                          }
+                        }}
+                        className="flex-1 min-w-0 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="font-medium text-gray-900 truncate">{lead.name}</p>
+                          {lead.source && (
+                            <Badge variant="outline" className="text-xs shrink-0">
+                              {lead.source === "zalo" ? "Zalo" : lead.source === "facebook" ? "Facebook" : lead.source}
+                            </Badge>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-5 w-5 p-0 ml-auto shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (lead.car_id && !updatingPrimary) {
+                                const newPrimaryStatus = !lead.is_primary
+                                setUpdatingPrimary(true)
+                                fetch("/api/e2e/update-primary", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    car_id: lead.car_id,
+                                    is_primary: newPrimaryStatus
+                                  }),
+                                })
+                                  .then(res => res.json())
+                                  .then(data => {
+                                    if (data.success) {
+                                      setLeads((prevLeads) =>
+                                        prevLeads.map((l) =>
+                                          l.id === lead.id ? { ...l, is_primary: newPrimaryStatus } : l
+                                        )
+                                      )
+                                      if (selectedLead?.id === lead.id) {
+                                        setSelectedLead({ ...lead, is_primary: newPrimaryStatus })
+                                      }
+                                      toast({
+                                        title: "Thành công",
+                                        description: newPrimaryStatus
+                                          ? "Đã đánh dấu xe là Primary"
+                                          : "Đã bỏ đánh dấu Primary",
+                                      })
+                                    }
+                                  })
+                                  .catch(() => {
+                                    toast({
+                                      title: "Lỗi",
+                                      description: "Không thể cập nhật trạng thái Primary",
+                                      variant: "destructive",
+                                    })
+                                  })
+                                  .finally(() => setUpdatingPrimary(false))
+                              }
+                            }}
+                            disabled={!lead.car_id || updatingPrimary}
+                            title={lead.is_primary ? "Bỏ đánh dấu Primary" : "Đánh dấu là Primary"}
+                          >
+                            {updatingPrimary && selectedLead?.id === lead.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                            ) : (
+                              <Star
+                                className={`h-4 w-4 ${lead.is_primary
+                                  ? "fill-blue-600 text-blue-600"
+                                  : "text-gray-300 hover:text-gray-500"
+                                  }`}
+                              />
+                            )}
+                          </Button>
+                        </div>
+                        <p className="text-sm text-gray-700 truncate">
+                          {formatCarInfo(lead)}
+                        </p>
+                        <p className="text-xs text-emerald-600 font-semibold mt-1">
+                          {lead.price_customer ? formatPrice(lead.price_customer) : "Chưa có giá"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))
               )}
             </div>
+          </div>
 
-            <div className="border rounded-xl overflow-hidden">
-              <div className="overflow-x-auto">
+          {/* Pagination in Sidebar */}
+          {totalPages > 1 && (
+            <div className="border-t p-3 bg-gray-50">
+              <div className="flex items-center justify-center gap-1 mb-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handlePreviousPage}
+                  disabled={currentPage === 1}
+                  className="h-7 px-2 text-gray-600"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                {/* Page Numbers */}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? "default" : "ghost"}
+                        size="sm"
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`h-7 w-7 p-0 text-xs ${currentPage === pageNum
+                          ? "bg-blue-600 hover:bg-blue-700 text-white"
+                          : "text-gray-600 hover:bg-gray-100"
+                          }`}
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleNextPage}
+                  disabled={currentPage === totalPages}
+                  className="h-7 px-2 text-gray-600"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="text-center text-xs text-gray-500">
+                Trang {currentPage} / {totalPages}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right Panel - Lead Details */}
+        {!selectedAccount ? (
+          <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
+            <User className="h-24 w-24 text-gray-300 mb-4" />
+            <p className="text-lg font-medium">Chọn tài khoản để bắt đầu</p>
+            <p className="text-sm mt-2">Vui lòng chọn tài khoản từ menu phía trên</p>
+          </div>
+        ) : selectedLead ? (
+          <div className="flex-1 overflow-hidden flex flex-col bg-gray-50">
+            {/* Details content will go here - we'll move the modal content */}
+            <div className="flex-1 overflow-y-auto">
+              {/* Header */}
+              <div className="px-8 pt-6 pb-6 bg-gray-100 border-b sticky top-0 z-10">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xl font-bold">
+                      {selectedLead.name?.charAt(0).toUpperCase() || "?"}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-gray-900">{selectedLead.name}</h2>
+                        <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-gray-50 border border-gray-200">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-5 w-5 p-0 hover:bg-transparent"
+                            onClick={handleTogglePrimary}
+                            disabled={updatingPrimary || !selectedLead.car_id}
+                            title={selectedLead.is_primary ? "Bỏ đánh dấu Primary" : "Đánh dấu là Primary"}
+                          >
+                            {updatingPrimary ? (
+                              <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                            ) : (
+                              <Star
+                                className={`h-4 w-4 ${selectedLead.is_primary
+                                  ? "fill-purple-600 text-purple-600"
+                                  : "text-gray-400 hover:text-gray-500"
+                                  }`}
+                              />
+                            )}
+                          </Button>
+                          <span className={`text-xs font-medium ${selectedLead.is_primary
+                            ? "text-purple-600"
+                            : "text-gray-600"
+                            }`}>
+                            {selectedLead.is_primary ? "Ưu tiên" : "Nuôi dưỡng"}
+                          </span>
+                        </div>
+                        <Clock className="h-4 w-4 text-gray-400" />
+                        <span className="text-sm text-gray-500">
+                          {new Date(selectedLead.created_at).toLocaleDateString("vi-VN")}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-base font-medium text-gray-700">
+                          {formatCarInfo(selectedLead)}
+                        </p>
+                        {selectedLead.price_customer && (
+                          <span className="text-emerald-600 font-semibold">
+                            {formatPrice(selectedLead.price_customer)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSyncCurrentLead}
+                      disabled={syncing}
+                      className="text-gray-600"
+                    >
+                      <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
+                      {syncing ? "Đang đồng bộ..." : "Đồng bộ"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                      onClick={() => setInspectionSystemOpen(true)}
+                    >
+                      Đặt lịch KD
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Tabs */}
+                <div className="flex items-center gap-6 border-b -mb-6">
+                  <button
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "workflow"
+                      ? "text-blue-600 border-blue-600"
+                      : "text-gray-500 border-transparent hover:text-gray-700"
+                      }`}
+                    onClick={() => setActiveDetailView("workflow")}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Zap className="h-4 w-4" />
+                      Workflow Tracker
+                    </div>
+                  </button>
+                  <button
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "decoy-web"
+                      ? "text-orange-600 border-orange-600"
+                      : "text-gray-500 border-transparent hover:text-gray-700"
+                      }`}
+                    onClick={() => {
+                      setActiveDetailView("decoy-web")
+                      if (selectedLead) handleViewDecoyWebChat(selectedLead)
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <MessageCircle className="h-4 w-4" />
+                      Decoy Web Chat
+                    </div>
+                  </button>
+                  <button
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "zalo-chat"
+                      ? "text-purple-600 border-purple-600"
+                      : "text-gray-500 border-transparent hover:text-gray-700"
+                      }`}
+                    onClick={() => {
+                      setActiveDetailView("zalo-chat")
+                      if (selectedLead) handleViewZaloChat(selectedLead)
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <MessageCircle className="h-4 w-4" />
+                      Zalo Chat
+                      <Badge variant="outline" className="text-xs">Kênh chính</Badge>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Content sections - same as before */}
+              <div className="px-8 py-6 space-y-6">
+                {activeDetailView === "workflow" && (
+                  <>
+                    {/* Workflow Tracker */}
+                    <div className="bg-white rounded-lg p-8 shadow-sm">
+                      <div className="flex items-center justify-between mb-8">
+                        <div className="flex items-center gap-3">
+                          <h3 className="text-lg font-semibold text-gray-900">Tiến độ quy trình</h3>
+                          {(selectedLead.bidding_session_count || 0) > 0 && (
+                            <div className="flex items-center gap-2 ml-4">
+                              <span className="text-sm text-gray-600">Đang xem:</span>
+                              <button
+                                onClick={() => setActiveWorkflowView("purchase")}
+                                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${activeWorkflowView === "purchase"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                                  }`}
+                              >
+                                Quy trình Thu Mua
+                              </button>
+                              <button
+                                onClick={() => setActiveWorkflowView("seeding")}
+                                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${activeWorkflowView === "seeding"
+                                  ? "bg-purple-100 text-purple-700"
+                                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                                  }`}
+                              >
+                                Quy trình Seeding (WF 2)
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        {selectedLead.session_created && (selectedLead.workflow2_is_active === false) && (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => {
+                              // Populate default values
+                              setWorkflow2Data({
+                                duration: "6",
+                                minPrice: selectedLead?.price_customer?.toString() || "",
+                                maxPrice: selectedLead?.price_highest_bid?.toString() || "",
+                                comment: true,
+                                numberOfComments: "20",
+                                bid: true
+                              })
+                              setWorkflow2Open(true)
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-700"
+                          >
+                            Kích hoạt WF 2
+                          </Button>
+                        )}
+                      </div>
+
+                      {/* Workflow Steps */}
+                      {activeWorkflowView === "purchase" ? (
+                        <div className="flex items-start justify-around mb-8">
+                          {/* Tin nhắn đầu */}
+                          <div className="flex flex-col items-center gap-3">
+                            <WorkflowStep
+                              icon={<CheckCircle className="w-8 h-8" />}
+                              title="Tin nhắn đầu"
+                              status={selectedLead.has_enough_images ? "Đã có ảnh" : "Chưa có ảnh"}
+                              isCompleted={selectedLead.has_enough_images || false}
+                              onClick={() => {
+                                setActiveDetailView("zalo-chat")
+                                handleViewZaloChat(selectedLead)
+                              }}
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleSendFirstMessage}
+                              disabled={sendingMessage || selectedLead.first_message_sent}
+                              className="text-xs"
+                            >
+                              {sendingMessage ? "Đang gửi..." : selectedLead.first_message_sent ? "Đã gửi" : "Gửi tin nhắn đầu"}
+                            </Button>
+                          </div>
+
+                          {/* Chào Dealer */}
+                          <div className="flex flex-col items-center gap-3">
+                            <WorkflowStep
+                              icon={<DollarSign className="w-8 h-8" />}
+                              title="Chào Dealer"
+                              status={selectedLead.dealer_bidding?.status === "got_price" ? "Đã có giá Dealer" : "Chưa có giá"}
+                              isCompleted={selectedLead.dealer_bidding?.status === "got_price"}
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => selectedLead.car_id && fetchBiddingHistory(selectedLead.car_id)}
+                              disabled={!selectedLead.car_id}
+                              className="text-xs"
+                            >
+                              Xem lịch sử giá
+                            </Button>
+                          </div>
+
+                          {/* Tạo Phiên */}
+                          <div className="flex flex-col items-center gap-3">
+                            <WorkflowStep
+                              icon={<Play className="w-8 h-8" />}
+                              title="Tạo Phiên"
+                              status={selectedLead.session_created ? "Phiên đã tạo" : "Chưa tạo phiên"}
+                              isCompleted={selectedLead.session_created || false}
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setConfirmSessionOpen(true)}
+                              disabled={creatingSession || selectedLead.session_created}
+                              className="text-xs"
+                            >
+                              {creatingSession ? "Đang tạo..." : selectedLead.session_created ? "Đã tạo" : "Tạo Phiên"}
+                            </Button>
+                          </div>
+
+                          {/* E2E Bot */}
+                          <div className="flex flex-col items-center gap-3">
+                            <WorkflowStep
+                              icon={<Zap className="w-8 h-8" />}
+                              title="E2E Bot"
+                              status={selectedLead.bot_active ? "Bot đang chạy" : "Bot chưa chạy"}
+                              isCompleted={selectedLead.bot_active || false}
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleBotToggle(selectedLead, !selectedLead.bot_active)}
+                              disabled={togglingBot}
+                              className={`text-xs ${selectedLead.bot_active ? "bg-red-50 text-red-600 hover:bg-red-100" : ""}`}
+                            >
+                              {togglingBot ? "Đang xử lý..." : selectedLead.bot_active ? "Tắt Bot" : "Bật Bot"}
+                            </Button>
+                          </div>
+
+                          {/* Decoy Web */}
+                          <div className="flex flex-col items-center gap-3">
+                            <WorkflowStep
+                              icon={<Search className="w-8 h-8" />}
+                              title="Decoy Web"
+                              status={`${selectedLead.decoy_thread_count || 0} threads`}
+                              isCompleted={(selectedLead.decoy_thread_count || 0) > 0}
+                              onClick={() => {
+                                setActiveDetailView("decoy-web")
+                                handleViewDecoyWebChat(selectedLead)
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-start justify-around mb-8">
+                          {/* Tạo Phiên 2 */}
+                          <div className="flex flex-col items-center gap-3">
+                            <WorkflowStep
+                              icon={<Play className={`w-8 h-8 ${selectedLead.workflow2_is_active ? "" : "text-gray-400"}`} />}
+                              title={`Tạo Phiên 2`}
+                              status={selectedLead.workflow2_is_active ? "Đã kích hoạt" : "Chưa kích hoạt"}
+                              isCompleted={selectedLead.workflow2_is_active === true}
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs"
+                              disabled
+                            >
+                              Chạy ngay
+                            </Button>
+                          </div>
+
+                          {/* Decoy Zalo */}
+                          <div className="flex flex-col items-center gap-3">
+                            <WorkflowStep
+                              icon={<MessageCircle className="w-8 h-8" />}
+                              title="Decoy Zalo"
+                              status="Tương tác Zalo ảo"
+                              isCompleted={false}
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs"
+                              onClick={() => setDecoyDialogOpen(true)}
+                            >
+                              Mở Zalo Decoy
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Other Action Buttons - Only for purchase workflow */}
+                      {activeWorkflowView === "purchase" && (
+                        <div className="flex items-center gap-3">
+                          <Button
+                            variant="outline"
+                            onClick={handleRenameLead}
+                            disabled={renamingLead || !selectedLead?.pic_id}
+                            className="text-gray-700"
+                          >
+                            {renamingLead ? "Đang đổi tên..." : "Đổi tên Lead"}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Additional Info Cards */}
+                    <div className="grid grid-cols-3 gap-4">
+                      {/* Contact Info */}
+                      <div className="bg-white rounded-lg p-6 shadow-sm">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Thông tin liên hệ</h4>
+                        <div className="space-y-2">
+                          <div>
+                            <p className="text-xs text-gray-500">Số điện thoại</p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {selectedLead.phone ? maskPhone(selectedLead.phone) : "N/A"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Biển số xe</p>
+                            <p className="text-sm font-medium text-gray-900">{selectedLead.plate || "N/A"}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Price Info */}
+                      <div className="bg-white rounded-lg p-6 shadow-sm">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Thông tin giá</h4>
+                        <div className="space-y-2">
+                          <div>
+                            <p className="text-xs text-gray-500">Giá khách mong muốn</p>
+                            <p className="text-sm font-semibold text-emerald-600">
+                              {selectedLead.price_customer ? formatPrice(selectedLead.price_customer) : "N/A"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Giá cao nhất (Dealer)</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-semibold text-blue-600">
+                                {selectedLead.dealer_bidding?.maxPrice ? formatPrice(selectedLead.dealer_bidding.maxPrice) : "N/A"}
+                              </p>
+                              {selectedLead.dealer_bidding?.status === "got_price" &&
+                                selectedLead.price_customer &&
+                                selectedLead.dealer_bidding?.maxPrice &&
+                                selectedLead.dealer_bidding.maxPrice > selectedLead.price_customer && (
+                                  <Badge variant="destructive" className="text-xs">Override</Badge>
+                                )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Activity Log */}
+                      <div className="bg-white rounded-lg p-6 shadow-sm">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Hoạt động gần đây</h4>
+                        {loadingActivity ? (
+                          <div className="text-center py-8">
+                            <Loader2 className="h-6 w-6 animate-spin mx-auto text-gray-400" />
+                            <p className="text-sm text-gray-400 mt-2">Đang tải...</p>
+                          </div>
+                        ) : activityLog.length === 0 ? (
+                          <div className="text-center py-8 text-gray-400">
+                            <p className="text-sm">Chưa có hoạt động nào</p>
+                          </div>
+                        ) : (
+                          <div className="max-h-96 overflow-y-auto space-y-3">
+                            {activityLog.map((activity, index) => (
+                              <div
+                                key={index}
+                                className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200"
+                              >
+                                <div className="flex-shrink-0 w-2 h-2 bg-purple-500 rounded-full mt-1.5" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-gray-900">{activity.event_name}</p>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    {new Date(activity.time).toLocaleString('vi-VN', {
+                                      year: 'numeric',
+                                      month: '2-digit',
+                                      day: '2-digit',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      second: '2-digit'
+                                    })}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {activeDetailView === "decoy-web" && (
+                  <div className="bg-white rounded-lg shadow-sm h-[600px] flex flex-col overflow-hidden">
+                    <div className="flex-1 flex gap-4 overflow-hidden">
+                      {/* Left Panel - Thread List */}
+                      <div className="w-80 border-r overflow-y-auto p-4">
+                        {loadingDecoyWeb ? (
+                          <div className="flex items-center justify-center h-full">
+                            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                          </div>
+                        ) : decoyWebThreads.length === 0 ? (
+                          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                            Chưa có threads
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {decoyWebThreads.map((thread) => (
+                              <button
+                                key={thread.id}
+                                onClick={() => setSelectedDecoyWebThreadId(thread.id)}
+                                className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedDecoyWebThreadId === thread.id
+                                  ? "bg-orange-100 text-orange-900 border-orange-300"
+                                  : "bg-muted/30 hover:bg-muted/50"
+                                  }`}
+                              >
+                                <div className="font-semibold text-sm mb-1">
+                                  Bot: {thread.bot_name || "Unknown"}
+                                </div>
+                                <div className="text-xs opacity-70">
+                                  {new Date(thread.created_at).toLocaleString("vi-VN")}
+                                </div>
+                                <div className="text-xs opacity-70 mt-1">
+                                  {thread.messages.length} tin nhắn
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right Panel - Messages */}
+                      <div className="flex-1 overflow-y-auto p-4">
+                        {!selectedDecoyWebThreadId ? (
+                          <div className="flex items-center justify-center h-full text-muted-foreground">
+                            Chọn một thread để xem tin nhắn
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {decoyWebThreads
+                              .find((t) => t.id === selectedDecoyWebThreadId)
+                              ?.messages.map((msg, index) => {
+                                const isBot = msg.sender === "bot" || msg.sender === "system"
+                                const timestamp = msg.displayed_at
+                                  ? new Date(msg.displayed_at).toLocaleString("vi-VN")
+                                  : ""
+
+                                return (
+                                  <div
+                                    key={index}
+                                    className={`flex ${isBot ? "justify-end" : "justify-start"}`}
+                                  >
+                                    <div
+                                      className={`max-w-[70%] rounded-lg p-3 ${isBot
+                                        ? "bg-orange-500 text-white"
+                                        : "bg-gray-200 text-gray-900"
+                                        }`}
+                                    >
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-xs font-semibold">
+                                          {isBot ? "Decoy Bot" : "Khách hàng"}
+                                        </span>
+                                        <span className="text-xs opacity-70">{timestamp}</span>
+                                      </div>
+                                      <p className="text-sm whitespace-pre-wrap break-words">
+                                        {msg.content}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeDetailView === "zalo-chat" && (
+                  <div className="bg-white rounded-lg shadow-sm h-[600px] flex flex-col overflow-hidden">
+                    {/* E2E Action Button - Fixed at top */}
+                    <div className="border-b p-4 bg-purple-50">
+                      <Button
+                        onClick={handleRunE2E}
+                        disabled={runningE2E}
+                        className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                      >
+                        {runningE2E ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Đang chạy E2E...
+                          </>
+                        ) : (
+                          "Chạy E2E"
+                        )}
+                      </Button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                      {loadingE2eMessages ? (
+                        <div className="flex items-center justify-center h-full">
+                          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                          <span className="ml-2 text-muted-foreground">Đang tải tin nhắn...</span>
+                        </div>
+                      ) : e2eMessages.length === 0 ? (
+                        <div className="flex items-center justify-center h-full text-muted-foreground">
+                          Chưa có tin nhắn
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {e2eMessages.map((msg: ChatMessage, index: number) => {
+                            const isVuCar = msg.uidFrom === "0" || msg.uidFrom === "bot" || msg.uidFrom === "system"
+                            const timestamp = msg.timestamp
+                              ? new Date(msg.timestamp).toLocaleString("vi-VN")
+                              : msg.dateAction || ""
+
+                            return (
+                              <div
+                                key={msg._id || index}
+                                className={`flex ${isVuCar ? "justify-end" : "justify-start"}`}
+                              >
+                                <div
+                                  className={`max-w-[70%] rounded-lg p-3 ${isVuCar
+                                    ? "bg-purple-500 text-white"
+                                    : "bg-gray-200 text-gray-900"
+                                    }`}
+                                >
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-xs font-semibold">
+                                      {isVuCar ? "VuCar" : "Khách hàng"}
+                                    </span>
+                                    <span className="text-xs opacity-70">{timestamp}</span>
+                                  </div>
+                                  {msg.img && (
+                                    <img
+                                      src={msg.img}
+                                      alt="Message image"
+                                      className="max-w-[200px] max-h-[200px] object-cover rounded mb-2"
+                                    />
+                                  )}
+                                  <p className="text-sm whitespace-pre-wrap break-words">
+                                    {msg.content}
+                                  </p>
+                                  {msg.type && msg.type !== "text" && (
+                                    <span className="text-xs opacity-70 mt-1 block">
+                                      Type: {msg.type}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
+            <MessageCircle className="h-24 w-24 text-gray-300 mb-4" />
+            <p className="text-lg font-medium">Chọn một lead để xem chi tiết</p>
+            <p className="text-sm mt-2">Nhấp vào lead bên trái để xem thông tin chi tiết</p>
+          </div>
+        )
+        }
+      </div >
+
+      {/* Create Bidding Confirmation Dialog */}
+      < Dialog open={confirmBiddingOpen} onOpenChange={setConfirmBiddingOpen} >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Xác nhận tạo Bidding</DialogTitle>
+            <DialogDescription>
+              Bạn có chắc chắn muốn tạo bidding cho lead <strong>{leadToCreateBidding?.name}</strong>?
+              <br />
+              <span className="text-xs text-muted-foreground">
+                SĐT: {leadToCreateBidding?.phone ? maskPhone(leadToCreateBidding.phone) : maskPhone(leadToCreateBidding?.additional_phone || "")}
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setConfirmBiddingOpen(false)
+                setLeadToCreateBidding(null)
+              }}
+              disabled={creatingBidding}
+            >
+              Hủy
+            </Button>
+            <Button
+              onClick={confirmCreateBidding}
+              disabled={creatingBidding}
+            >
+              {creatingBidding ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Đang tạo...
+                </>
+              ) : (
+                "Xác nhận"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog >
+
+      {/* Create Session Confirmation Dialog */}
+      < Dialog open={confirmSessionOpen} onOpenChange={setConfirmSessionOpen} >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Chọn phiên bản tạo phiên</DialogTitle>
+            <DialogDescription>
+              Bạn muốn tạo phiên cho xe {formatCarInfo(selectedLead || {} as Lead)} với phiên bản nào?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto p-4"
+              onClick={() => handleCreateSession(1)}
+              disabled={creatingSession}
+            >
+              <div className="text-left">
+                <div className="font-semibold">Version 1: No Bid</div>
+                <div className="text-xs text-muted-foreground">Tạo phiên không có trả giá từ dealer</div>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto p-4"
+              onClick={() => handleCreateSession(2)}
+              disabled={creatingSession}
+            >
+              <div className="text-left">
+                <div className="font-semibold">Version 2: Have Bid</div>
+                <div className="text-xs text-muted-foreground">Tạo phiên có trả giá từ dealer</div>
+              </div>
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmSessionOpen(false)} disabled={creatingSession}>
+              Hủy
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog >
+
+      {/* Workflow 2 Activation Dialog */}
+      < Dialog open={workflow2Open} onOpenChange={setWorkflow2Open} >
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Kích hoạt Workflow 2</DialogTitle>
+            <DialogDescription>
+              Nhập các thông số để kích hoạt workflow 2 cho xe {formatCarInfo(selectedLead || {} as Lead)}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="duration">Duration</Label>
+              <Input
+                id="duration"
+                type="number"
+                placeholder="Nhập duration"
+                value={workflow2Data.duration}
+                onChange={(e) => setWorkflow2Data({ ...workflow2Data, duration: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="minPrice">Min Price</Label>
+              <Input
+                id="minPrice"
+                type="number"
+                placeholder="Nhập giá tối thiểu"
+                value={workflow2Data.minPrice}
+                onChange={(e) => setWorkflow2Data({ ...workflow2Data, minPrice: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="maxPrice">Max Price</Label>
+              <Input
+                id="maxPrice"
+                type="number"
+                placeholder="Nhập giá tối đa"
+                value={workflow2Data.maxPrice}
+                onChange={(e) => setWorkflow2Data({ ...workflow2Data, maxPrice: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="numberOfComments">Number of Comments</Label>
+              <Input
+                id="numberOfComments"
+                type="number"
+                placeholder="Nhập số lượng comments"
+                value={workflow2Data.numberOfComments}
+                onChange={(e) => setWorkflow2Data({ ...workflow2Data, numberOfComments: e.target.value })}
+              />
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="comment"
+                checked={workflow2Data.comment}
+                onCheckedChange={(checked) => setWorkflow2Data({ ...workflow2Data, comment: checked === true })}
+              />
+              <Label htmlFor="comment" className="text-sm font-normal cursor-pointer">
+                Comment
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="bid"
+                checked={workflow2Data.bid}
+                onCheckedChange={(checked) => setWorkflow2Data({ ...workflow2Data, bid: checked === true })}
+              />
+              <Label htmlFor="bid" className="text-sm font-normal cursor-pointer">
+                Bid
+              </Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setWorkflow2Open(false)}
+              disabled={activatingWorkflow2}
+            >
+              Hủy
+            </Button>
+            <Button
+              onClick={handleActivateWorkflow2}
+              disabled={activatingWorkflow2}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {activatingWorkflow2 ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Đang kích hoạt...
+                </>
+              ) : (
+                "Kích hoạt"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog >
+
+      {/* Bidding History Dialog */}
+      < Dialog open={biddingHistoryOpen} onOpenChange={setBiddingHistoryOpen} >
+        <DialogContent className="w-[95vw] h-[85vh] flex flex-col sm:max-w-[95vw] md:max-w-[90vw] lg:max-w-[95rem]">
+          <DialogHeader>
+            <DialogTitle>Lịch sử trả giá - {selectedLead?.name}</DialogTitle>
+            <DialogDescription>
+              Danh sách các dealer đã trả giá cho xe {formatCarInfo(selectedLead || {} as Lead)}
+            </DialogDescription>
+            <div className="mt-2 flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAddBiddingForm(!showAddBiddingForm)}
+              >
+                {showAddBiddingForm ? "Ẩn thêm giá" : "Thêm thông tin"}
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleOpenSendDealerDialog}
+                className="bg-emerald-600 hover:bg-emerald-700"
+              >
+                Gửi thêm dealer
+              </Button>
+            </div>
+          </DialogHeader>
+
+          {showAddBiddingForm && (
+            <div className="flex items-end gap-2 p-4 bg-muted/20 rounded-lg border mb-4 mt-4">
+              <div className="grid gap-2 flex-1">
+                <Label>Chọn Dealer</Label>
+                <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={openCombobox}
+                      className="w-full justify-between"
+                    >
+                      {newBidDealerId
+                        ? dealers.find((dealer) => dealer.id === newBidDealerId)?.name
+                        : "Chọn dealer..."}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0">
+                    <Command>
+                      <CommandInput placeholder="Tìm kiếm dealer..." />
+                      <CommandList>
+                        <CommandEmpty>Không tìm thấy dealer.</CommandEmpty>
+                        <CommandGroup>
+                          {dealers.map((dealer) => (
+                            <CommandItem
+                              key={dealer.id}
+                              value={dealer.name}
+                              onSelect={() => {
+                                setNewBidDealerId(dealer.id === newBidDealerId ? "" : dealer.id)
+                                setOpenCombobox(false)
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  newBidDealerId === dealer.id ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {dealer.name} {dealer.group_zalo_name ? `(${dealer.group_zalo_name})` : ""}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="grid gap-2 w-32">
+                <Label>Giá (VNĐ)</Label>
+                <Input
+                  type="number"
+                  placeholder="Nhập giá"
+                  value={newBidPrice}
+                  onChange={(e) => setNewBidPrice(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2 flex-1">
+                <Label>Ghi chú</Label>
+                <Input
+                  placeholder="Nhập ghi chú (tùy chọn)"
+                  value={newBidComment}
+                  onChange={(e) => setNewBidComment(e.target.value)}
+                />
+              </div>
+              <Button
+                onClick={handleCreateBiddingManual}
+                disabled={creatingBiddingManual || !newBidDealerId || !newBidPrice}
+              >
+                {creatingBiddingManual ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+                Thêm giá
+              </Button>
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto">
+            {loadingBiddingHistory ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <span className="ml-3 text-muted-foreground">Đang tải lịch sử...</span>
+              </div>
+            ) : biddingHistory.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <p>Chưa có dealer nào trả giá</p>
+              </div>
+            ) : (
+              <div className="border rounded-lg overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50">
                     <tr>
-                      <th className="px-4 py-3 text-left font-medium">Tên</th>
-                      <th className="px-4 py-3 text-left font-medium">SĐT</th>
-                      <th className="px-4 py-3 text-left font-medium">Car ID</th>
-                      <th className="px-4 py-3 text-left font-medium">First Message Sent</th>
-                      <th className="px-4 py-3 text-left font-medium">Enough Images</th>
-                      <th className="px-4 py-3 text-left font-medium">Dealer Bidding</th>
-                      <th className="px-4 py-3 text-left font-medium">Bot Active</th>
-                      <th className="px-4 py-3 text-left font-medium">Ngày tạo</th>
+                      <th className="px-4 py-3 text-left font-medium">STT</th>
+                      <th className="px-4 py-3 text-left font-medium">Tên Dealer</th>
+                      <th className="px-4 py-3 text-left font-medium">Giá trả</th>
+                      <th className="px-4 py-3 text-left font-medium">Thời gian</th>
+                      <th className="px-4 py-3 text-left font-medium">Ghi chú</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {currentPageLeads.map((lead) => (
-                      <tr key={lead.id} className="hover:bg-muted/30 transition-colors">
-                        <td
-                          className="px-4 py-3 cursor-pointer hover:text-primary"
-                          onClick={() => handleLeadClick(lead)}
-                        >
-                          <div className="font-medium flex items-center gap-2">
-                            <MessageCircle className="h-4 w-4 opacity-50" />
-                            {lead.name}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-xs">
-                          {getDisplayPhone(lead) !== "N/A" ? maskPhone(getDisplayPhone(lead)) : "N/A"}
-                        </td>
+                    {biddingHistory.map((bid, index) => (
+                      <tr key={bid.id} className="hover:bg-muted/30 transition-colors">
+                        <td className="px-4 py-3 text-muted-foreground">{index + 1}</td>
+                        <td className="px-4 py-3 font-medium">{bid.dealer_name}</td>
                         <td className="px-4 py-3">
-                          {loadingCarIds && !lead.car_id ? (
-                            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                          ) : (
-                            <span className="text-xs font-mono">{lead.car_id || "N/A"}</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            {loadingCarIds && lead.first_message_sent === undefined ? (
-                              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                            ) : (
-                              <>
-                                <Checkbox checked={lead.first_message_sent || false} disabled />
-                                <span className="text-xs text-muted-foreground">
-                                  {lead.first_message_sent ? "Sent" : "Not Sent"}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            {loadingCarIds && lead.has_enough_images === undefined ? (
-                              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                            ) : (
-                              <>
-                                <Checkbox checked={lead.has_enough_images || false} disabled />
-                                <span className="text-xs text-muted-foreground">
-                                  {lead.has_enough_images ? "Yes" : "No"}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          {loadingCarIds && !lead.dealer_bidding ? (
-                            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                          ) : (
-                            <Badge
-                              variant={
-                                lead.dealer_bidding?.status === "got_price"
-                                  ? "default"
-                                  : lead.dealer_bidding?.status === "sent"
-                                    ? "secondary"
-                                    : "outline"
-                              }
-                              className="text-xs"
-                            >
-                              {getDealerBiddingDisplay(lead.dealer_bidding)}
-                            </Badge>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            {loadingCarIds && lead.bot_active === undefined ? (
-                              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                            ) : (
-                              <Checkbox
-                                checked={lead.bot_active || false}
-                                onCheckedChange={(checked) => handleBotToggle(lead, checked as boolean)}
-                                disabled={!lead.phone && !lead.additional_phone}
+                          {editingBiddingId === bid.id ? (
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                value={editingPrice}
+                                onChange={(e) => setEditingPrice(e.target.value)}
+                                className="h-8 w-32"
+                                autoFocus
                               />
-                            )}
-                          </div>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                onClick={() => handleUpdateBiddingPrice(bid.id)}
+                                disabled={updatingBidding}
+                              >
+                                {updatingBidding ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => setEditingBiddingId(null)}
+                                disabled={updatingBidding}
+                              >
+                                <div className="h-4 w-4 flex items-center justify-center font-bold">✕</div>
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 group">
+                              <div className={`font-semibold ${bid.price < 2 ? "text-muted-foreground italic" : "text-primary"}`}>
+                                {bid.price < 2 ? "Chưa có giá" : formatPrice(bid.price)}
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => {
+                                  setEditingBiddingId(bid.id)
+                                  setEditingPrice(bid.price.toString())
+                                }}
+                              >
+                                <div className="h-3 w-3">✎</div>
+                              </Button>
+                            </div>
+                          )}
                         </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(lead.created_at)}</td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {formatDate(bid.created_at)}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {bid.price < 2 ? "Đã gửi thông tin xe" : (bid.comment || "-")}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </div>
-
-            {/* Pagination Controls */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between pt-4">
-                <div className="text-sm text-muted-foreground">
-                  Trang {currentPage} / {totalPages} ({leads.length} leads)
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handlePreviousPage}
-                    disabled={currentPage === 1 || loadingCarIds}
-                  >
-                    <ChevronLeft className="h-4 w-4 mr-1" />
-                    Trước
-                  </Button>
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                      <Button
-                        key={page}
-                        variant={currentPage === page ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setCurrentPage(page)}
-                        disabled={loadingCarIds}
-                        className="w-8 h-8 p-0"
-                      >
-                        {page}
-                      </Button>
-                    ))}
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleNextPage}
-                    disabled={currentPage === totalPages || loadingCarIds}
-                  >
-                    Sau
-                    <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </div>
-              </div>
             )}
           </div>
-        )}
 
-        {/* Empty State */}
-        {!loading && !error && leads.length === 0 && (
-          <div className="text-center py-8 text-muted-foreground">
-            <p>Không có leads nào cho tài khoản {selectedAccountName}</p>
-          </div>
-        )}
-      </CardContent>
-
-      {/* Chat Messages Modal */}
-      <Dialog open={chatModalOpen} onOpenChange={setChatModalOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh]">
-          <DialogHeader>
-            <div className="flex items-center justify-between">
-              <DialogTitle className="flex items-center gap-2">
-                <MessageCircle className="h-5 w-5" />
-                Chat với {selectedLead?.name || "Lead"} ({selectedLead?.phone ? maskPhone(selectedLead.phone) : "N/A"})
-              </DialogTitle>
-              <Button onClick={handleRunE2E} disabled={runningE2E || loadingMessages} size="sm">
-                {runningE2E ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Running...
-                  </>
-                ) : (
-                  "Run E2E"
-                )}
+          <DialogFooter className="border-t pt-4">
+            <div className="flex items-center justify-between w-full">
+              <div className="text-sm text-muted-foreground">
+                Tổng số: <span className="font-semibold">{biddingHistory.length}</span> dealer trả giá
+              </div>
+              <Button variant="outline" onClick={() => setBiddingHistoryOpen(false)}>
+                Đóng
               </Button>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog >
+
+      {/* E2E Messages Dialog */}
+      < Dialog open={e2eMessagesOpen} onOpenChange={setE2eMessagesOpen} >
+        <DialogContent className="w-[95vw] h-[85vh] flex flex-col sm:max-w-[95vw] md:max-w-[90vw] lg:max-w-[95rem]">
+          <DialogHeader>
+            <DialogTitle>Tin nhắn E2E - {selectedLead?.name}</DialogTitle>
+            <DialogDescription>
+              Lịch sử tin nhắn Zalo cho xe {formatCarInfo(selectedLead || {} as Lead)}
+            </DialogDescription>
           </DialogHeader>
 
-          {/* Chat Messages */}
-          <div className="overflow-y-auto max-h-[60vh] space-y-3 p-4">
-            {loadingMessages && (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <span className="ml-3 text-muted-foreground">Đang tải tin nhắn...</span>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {loadingE2eMessages ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-muted-foreground">Đang tải tin nhắn...</span>
               </div>
-            )}
-
-            {!loadingMessages && chatMessages.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>Chưa có tin nhắn nào</p>
+            ) : e2eMessages.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-muted-foreground">
+                Chưa có tin nhắn
               </div>
-            )}
+            ) : (
+              <div className="space-y-3">
+                {e2eMessages.map((msg: ChatMessage, index: number) => {
+                  const isVuCar = msg.uidFrom === "0" || msg.uidFrom === "bot" || msg.uidFrom === "system"
+                  const timestamp = msg.timestamp
+                    ? new Date(msg.timestamp).toLocaleString("vi-VN")
+                    : msg.dateAction || ""
 
-            {!loadingMessages &&
-              chatMessages.map((message, index) => {
-                const isFromSale = message.uidFrom === "0"
-                const messageTime = new Date(message.dateAction).toLocaleString("vi-VN", {
-                  day: "2-digit",
-                  month: "2-digit",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-
-                return (
-                  <div key={message._id || `${message.timestamp}-${index}`} className={`flex ${isFromSale ? "justify-end" : "justify-start"}`}>
+                  return (
                     <div
-                      className={`max-w-[70%] rounded-lg p-3 ${
-                        isFromSale ? "bg-primary text-primary-foreground" : "bg-muted"
-                      }`}
+                      key={msg._id || index}
+                      className={`flex ${isVuCar ? "justify-end" : "justify-start"}`}
                     >
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-semibold">{isFromSale ? "Sale" : "Customer"}</span>
-                        <span className="text-xs opacity-70">{messageTime}</span>
+                      <div
+                        className={`max-w-[70%] rounded-lg p-3 ${isVuCar
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-foreground"
+                          }`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-semibold">
+                            {isVuCar ? "VuCar" : "Khách hàng"}
+                          </span>
+                          <span className="text-xs opacity-70">{timestamp}</span>
+                        </div>
+                        {msg.img && (
+                          <img
+                            src={msg.img}
+                            alt="Message image"
+                            className="max-w-[200px] max-h-[200px] object-cover rounded mb-2"
+                          />
+                        )}
+                        <p className="text-sm whitespace-pre-wrap break-words">
+                          {msg.content}
+                        </p>
+                        {msg.type && msg.type !== "text" && (
+                          <span className="text-xs opacity-70 mt-1 block">
+                            Type: {msg.type}
+                          </span>
+                        )}
                       </div>
-                      {message.type === "text" && <p className="text-sm whitespace-pre-wrap">{message.content}</p>}
-                      {message.type === "image" && message.img && (
-                        <img src={message.img} alt="Image" className="max-w-full rounded mt-2" />
-                      )}
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
+            )}
           </div>
+
+          <DialogFooter className="border-t pt-4">
+            <div className="flex items-center justify-between w-full">
+              <div className="text-sm text-muted-foreground">
+                Tổng số: <span className="font-semibold">{e2eMessages.length}</span> tin nhắn
+              </div>
+              <Button variant="outline" onClick={() => setE2eMessagesOpen(false)}>
+                Đóng
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog >
+
+      {/* Decoy Web Dialog */}
+      < Dialog open={decoyWebOpen} onOpenChange={setDecoyWebOpen} >
+        <DialogContent className="w-[95vw] h-[85vh] flex flex-col sm:max-w-[95vw] md:max-w-[90vw] lg:max-w-[95rem]">
+          <DialogHeader>
+            <DialogTitle>Decoy Web Threads - {selectedLead?.name}</DialogTitle>
+            <DialogDescription>
+              Danh sách các cuộc trò chuyện Decoy Web cho {formatCarInfo(selectedLead || {} as Lead)}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 flex gap-4 overflow-hidden">
+            {/* Left Panel - Thread List */}
+            <div className="w-80 border-r overflow-y-auto">
+              {loadingDecoyWeb ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : decoyWebThreads.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                  Chưa có threads
+                </div>
+              ) : (
+                <div className="space-y-2 p-2">
+                  {decoyWebThreads.map((thread) => (
+                    <button
+                      key={thread.id}
+                      onClick={() => setSelectedDecoyWebThreadId(thread.id)}
+                      className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedDecoyWebThreadId === thread.id
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted/30 hover:bg-muted/50"
+                        }`}
+                    >
+                      <div className="font-semibold text-sm mb-1">
+                        Bot: {thread.bot_name || "Unknown"}
+                      </div>
+                      <div className="text-xs opacity-70">
+                        {new Date(thread.created_at).toLocaleString("vi-VN")}
+                      </div>
+                      <div className="text-xs opacity-70 mt-1">
+                        {thread.messages.length} tin nhắn
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Right Panel - Messages */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {!selectedDecoyWebThreadId ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  Chọn một thread để xem tin nhắn
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {decoyWebThreads
+                    .find((t) => t.id === selectedDecoyWebThreadId)
+                    ?.messages.map((msg, index) => {
+                      const isBot = msg.sender === "bot" || msg.sender === "system"
+                      const timestamp = msg.displayed_at
+                        ? new Date(msg.displayed_at).toLocaleString("vi-VN")
+                        : ""
+
+                      return (
+                        <div
+                          key={index}
+                          className={`flex ${isBot ? "justify-end" : "justify-start"}`}
+                        >
+                          <div
+                            className={`max-w-[70%] rounded-lg p-3 ${isBot
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-foreground"
+                              }`}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs font-semibold">
+                                {isBot ? "Decoy Bot" : "Khách hàng"}
+                              </span>
+                              <span className="text-xs opacity-70">{timestamp}</span>
+                            </div>
+                            <p className="text-sm whitespace-pre-wrap break-words">
+                              {msg.content}
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="border-t pt-4">
+            <div className="flex items-center justify-between w-full">
+              <div className="text-sm text-muted-foreground">
+                Tổng số: <span className="font-semibold">{decoyWebThreads.length}</span> threads
+              </div>
+              <Button variant="outline" onClick={() => setDecoyWebOpen(false)}>
+                Đóng
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog >
+
+      {/* Decoy Trigger Dialog */}
+      <Dialog open={decoyDialogOpen} onOpenChange={setDecoyDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Gửi Decoy Zalo</DialogTitle>
+            <DialogDescription>
+              Chọn lý do quây để gửi tin nhắn decoy cho khách hàng {selectedLead?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="segment">Lý do quây</Label>
+              <Select value={decoySegment} onValueChange={setDecoySegment}>
+                <SelectTrigger id="segment">
+                  <SelectValue placeholder="Chọn lý do..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="negotiation">Đàm phán / Cứng giá</SelectItem>
+                  <SelectItem value="ghost">Ghost / Lead nguội</SelectItem>
+                  <SelectItem value="check_sold">Check var đã bán chưa</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="minutes">Số phút trước khi bot chat</Label>
+              <Input
+                id="minutes"
+                type="number"
+                placeholder="Nhập số phút..."
+                value={decoyMinutes || "30"}
+                onChange={(e) => setDecoyMinutes(e.target.value)}
+                min="0"
+              />
+            </div>
+            <div className="text-sm text-muted-foreground">
+              <p>Hệ thống sẽ tự động chọn ngẫu nhiên tài khoản:</p>
+              <ul className="list-disc list-inside mt-1">
+                <li>Minh Anh</li>
+                <li>Huy Hồ</li>
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDecoyDialogOpen(false)} disabled={sendingDecoy}>
+              Hủy
+            </Button>
+            <Button onClick={handleSendDecoy} disabled={!decoySegment || sendingDecoy} className="bg-emerald-600 hover:bg-emerald-700">
+              {sendingDecoy ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Đang gửi...
+                </>
+              ) : (
+                "Gửi Decoy"
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Card>
+
+      {/* Inspection System Dialog */}
+      < Dialog open={inspectionSystemOpen} onOpenChange={setInspectionSystemOpen} >
+        <DialogContent className="w-[95vw] h-[85vh] flex flex-col sm:max-w-[95vw] md:max-w-[90vw] lg:max-w-[95rem]">
+          <DialogHeader>
+            <DialogTitle>Inspection System</DialogTitle>
+            <DialogDescription>
+              Hệ thống kiểm tra xe - {selectedLead ? formatCarInfo(selectedLead) : ""}
+              <br />
+              View key: FOj9A9bloEZAIpe119ec76
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden">
+            <iframe
+              src="https://inspectionsystem.vucar.vn/"
+              className="w-full h-full border-0"
+              title="Inspection System"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInspectionSystemOpen(false)}>
+              Đóng
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog >
+
+      {/* Send to Dealer Groups Dialog */}
+      <Dialog open={sendDealerDialogOpen} onOpenChange={setSendDealerDialogOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Gửi thông tin xe đến nhóm dealer</DialogTitle>
+            <DialogDescription>
+              Chọn các nhóm dealer để gửi thông tin xe {formatCarInfo(selectedLead || {} as Lead)}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="px-6 pb-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Tìm kiếm nhóm dealer..."
+                value={dealerGroupSearch}
+                onChange={(e) => setDealerGroupSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-6">
+            {loadingDealerGroups ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <span className="ml-3 text-muted-foreground">Đang tải danh sách nhóm...</span>
+              </div>
+            ) : (() => {
+              // Only show groups that have matching dealers
+              const filteredGroups = dealerGroups
+                .filter(group => group.dealerId) // Only groups with dealer ID
+                .filter(group =>
+                  group.groupName.toLowerCase().includes(dealerGroupSearch.toLowerCase())
+                )
+
+              return filteredGroups.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <p>{dealerGroupSearch ? "Không tìm thấy nhóm phù hợp" : "Không tìm thấy nhóm dealer nào"}</p>
+                </div>
+              ) : (
+                <div className="space-y-2 pb-4">
+                  {filteredGroups.map((group) => (
+                    <div
+                      key={group.groupId}
+                      className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-muted/30 transition-colors"
+                    >
+                      <Checkbox
+                        id={group.groupId}
+                        checked={selectedGroupIds.includes(group.groupId)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedGroupIds([...selectedGroupIds, group.groupId])
+                          } else {
+                            setSelectedGroupIds(selectedGroupIds.filter(id => id !== group.groupId))
+                          }
+                        }}
+                      />
+                      <Label
+                        htmlFor={group.groupId}
+                        className="flex-1 cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                      >
+                        {group.groupName}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+          </div>
+
+          <DialogFooter>
+            <div className="flex items-center justify-between w-full">
+              <div className="text-sm text-muted-foreground">
+                Đã chọn: <span className="font-semibold">{selectedGroupIds.length}</span> nhóm
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setSendDealerDialogOpen(false)}
+                  disabled={sendingToGroups}
+                >
+                  Hủy
+                </Button>
+                <Button
+                  onClick={handleSendToGroups}
+                  disabled={selectedGroupIds.length === 0 || sendingToGroups}
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                >
+                  {sendingToGroups ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Đang gửi...
+                    </>
+                  ) : (
+                    `Gửi đến ${selectedGroupIds.length} nhóm`
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div >
   )
 }

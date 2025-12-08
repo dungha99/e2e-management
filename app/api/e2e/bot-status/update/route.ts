@@ -11,8 +11,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Phone and bot_status are required" }, { status: 400 })
     }
 
-    console.log("[E2E Bot Status UPDATE] Updating bot status for phone:", phone, "to:", bot_status)
-
     const response = await fetch(BOT_STATUS_UPDATE_API_URL, {
       method: "PUT",
       headers: {
@@ -27,7 +25,6 @@ export async function POST(request: Request) {
     }
 
     const data = await response.json()
-    console.log("[E2E Bot Status UPDATE] Successfully updated bot status")
 
     return NextResponse.json({ success: true, ...data })
   } catch (error) {

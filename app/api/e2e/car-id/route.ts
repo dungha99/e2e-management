@@ -11,8 +11,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Phone is required" }, { status: 400 })
     }
 
-    console.log("[E2E Car ID API] Fetching car_id for phone:", phone)
-
     const response = await fetch(CAR_ID_API_URL, {
       method: "POST",
       headers: {
@@ -31,7 +29,6 @@ export async function POST(request: Request) {
     }
 
     const data = await response.json()
-    console.log("[E2E Car ID API] Successfully fetched car_id:", data.car_id)
 
     return NextResponse.json(data)
   } catch (error) {

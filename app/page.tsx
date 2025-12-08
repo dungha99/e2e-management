@@ -59,7 +59,7 @@ export default function DecoyCampaignManager() {
       </header>
 
       <main className="container mx-auto px-8 py-8 flex-1">
-        <Tabs defaultValue="campaigns" className="w-full">
+        <Tabs defaultValue="e2e" className="w-full">
           <TabsList className="mb-6">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>

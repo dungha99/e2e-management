@@ -17,7 +17,7 @@ import {
 import { SearchInput } from "@/components/ui/search-input"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, User, ChevronLeft, ChevronRight, MessageCircle, RefreshCw, Star, CheckCircle, DollarSign, Play, Zap, Search, Clock, Copy, FileText, CalendarIcon } from "lucide-react"
+import { Loader2, User, ChevronLeft, ChevronRight, MessageCircle, RefreshCw, Star, CheckCircle, DollarSign, Play, Zap, Search, Clock, Copy, FileText, CalendarIcon, Pencil } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { maskPhone } from "@/lib/utils"
@@ -2137,6 +2137,18 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     setEditedPriceHighestBid("")
   }
 
+  function handleQuickEdit(lead: Lead, e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!lead) return
+
+    setSelectedLead(lead)
+    setEditMode(true)
+    setEditedStage(lead.stage || "")
+    setEditedPriceCustomer(lead.price_customer?.toLocaleString("vi-VN") || "")
+    setEditedPriceHighestBid(lead.price_highest_bid?.toLocaleString("vi-VN") || "")
+    setDetailDialogOpen(true)
+  }
+
   async function handleSaveChanges() {
     if (!selectedLead) return
 
@@ -2701,6 +2713,15 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
                             {selectedLead.is_primary ? "Ưu tiên" : "Nuôi dưỡng"}
                           </span>
                         </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 hover:bg-transparent text-gray-400 hover:text-blue-600"
+                          onClick={(e) => selectedLead && handleQuickEdit(selectedLead, e)}
+                          title="Chỉnh sửa nhanh"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
                         <Clock className="h-4 w-4 text-gray-400" />
                         <span className="text-sm text-gray-500">
                           {new Date(selectedLead.created_at).toLocaleDateString("vi-VN")}
@@ -4025,7 +4046,9 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
                       </SelectContent>
                     </Select>
                   ) : (
-                    <p className="text-base font-semibold text-gray-900">{selectedLead.stage || "N/A"}</p>
+                    <Badge className={`text-base font-semibold px-3 py-1 ${getStageStyle(selectedLead.stage)} border-0`}>
+                      {selectedLead.stage || "N/A"}
+                    </Badge>
                   )}
                 </div>
               </div>

@@ -22,6 +22,7 @@ export async function POST(request: Request) {
         u.user_name as pic_name,
         c.id as car_id,
         c.plate,
+        ss.id as sale_status_id,
         ss.price_customer,
         ss.bot_status,
         ss.price_highest_bid,
@@ -34,6 +35,8 @@ export async function POST(request: Request) {
         c.year,
         c.location,
         c.mileage,
+        c.sku,
+        c.created_at as car_created_at,
         c.additional_images
        FROM leads l
        LEFT JOIN users u ON l.pic_id = u.id
@@ -120,6 +123,7 @@ export async function POST(request: Request) {
         pic_name: leadData.pic_name,
       },
       sale_status: {
+        id: leadData.sale_status_id,
         car_id: leadData.car_id,
         price_customer: leadData.price_customer,
         bot_status: leadData.bot_status || false,
@@ -141,6 +145,8 @@ export async function POST(request: Request) {
         is_primary,
         workflow2_is_active,
         additional_images: additionalImages,
+        sku: leadData.sku,
+        created_at: leadData.car_created_at,
       },
     })
   } catch (error) {

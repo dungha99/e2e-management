@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -15,7 +15,7 @@ import {
 import { SearchInput } from "@/components/ui/search-input"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, User, ChevronLeft, ChevronRight, MessageCircle, RefreshCw, Star, CheckCircle, DollarSign, Play, Zap, Search, Clock, Plus } from "lucide-react"
+import { Loader2, User, ChevronLeft, ChevronRight, MessageCircle, RefreshCw, Star, CheckCircle, DollarSign, Play, Zap, Search, Clock, Plus, FileText, Pencil, Copy, CalendarIcon } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
@@ -23,6 +23,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Check, ChevronsUpDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { maskPhone } from "@/lib/utils"
+import { Calendar } from "@/components/ui/calendar"
 
 interface DealerBiddingStatus {
   status: "not_sent" | "sent" | "got_price"
@@ -47,7 +48,7 @@ interface Lead {
   bank_account_number: string | null
   otp_verified: string
   created_at: string
-  pic_id: string
+  pic_id: string | null
   pic_og: string
   source: string | null
   url: string | null
@@ -83,6 +84,9 @@ interface Lead {
     outside?: Array<{key: string, url: string, name: string, type: string}>
     [key: string]: Array<{key: string, url: string, name: string, type: string}> | undefined
   }
+  sku?: string | null
+  car_created_at?: string | null
+  image?: string | null
 }
 
 interface DecoyMessage {
@@ -149,6 +153,24 @@ const SEGMENT_TO_REASON_MAP: Record<string, string> = {
 }
 
 const ITEMS_PER_PAGE = 10
+
+const handlePriceFormat = (
+  value: string,
+  setter: (value: string) => void
+) => {
+  // Remove non-digits
+  const rawValue = value.replace(/\D/g, "")
+  if (rawValue === "") {
+    setter("")
+    return
+  }
+
+  let numValue = parseFloat(rawValue)
+
+  // Format with dots for thousands (standard vi-VN)
+  setter(numValue.toLocaleString("vi-VN"))
+}
+
 
 // New Workflow Step Component
 interface WorkflowStepProps {
@@ -239,6 +261,15 @@ export function E2EManagement() {
   const [selectedDecoyWebThreadId, setSelectedDecoyWebThreadId] = useState<string | null>(null)
   const [loadingDecoyWeb, setLoadingDecoyWeb] = useState(false)
 
+  // Create thread state
+  const [createThreadOpen, setCreateThreadOpen] = useState(false)
+  const [createThreadLoading, setCreateThreadLoading] = useState(false)
+  const [fourDigitsInput, setFourDigitsInput] = useState("")
+  const [firstMessageInput, setFirstMessageInput] = useState("Hello")
+
+
+
+
   // Sync state
   const [syncing, setSyncing] = useState(false)
 
@@ -262,7 +293,7 @@ export function E2EManagement() {
   const [activeTab, setActiveTab] = useState<"priority" | "nurture">("priority")
 
   // Detail view tab state
-  const [activeDetailView, setActiveDetailView] = useState<"workflow" | "decoy-web" | "zalo-chat">("workflow")
+  const [activeDetailView, setActiveDetailView] = useState<"workflow" | "decoy-web" | "zalo-chat" | "recent-activity">("workflow")
 
   // Workflow 2 activation state
   const [workflow2Open, setWorkflow2Open] = useState(false)
@@ -275,6 +306,7 @@ export function E2EManagement() {
     bid: false
   })
   const [activatingWorkflow2, setActivatingWorkflow2] = useState(false)
+  const [workflow2Activated, setWorkflow2Activated] = useState(false)
   const [activeWorkflowView, setActiveWorkflowView] = useState<"purchase" | "seeding">("purchase")
 
   // Decoy trigger state
@@ -294,6 +326,104 @@ export function E2EManagement() {
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([])
   const [sendingToGroups, setSendingToGroups] = useState(false)
   const [dealerGroupSearch, setDealerGroupSearch] = useState("")
+
+  // Detail dialog state
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false)
+
+  // Edit mode state for detail dialog
+  const [editMode, setEditMode] = useState(false)
+  const [editedStage, setEditedStage] = useState<string>("")
+  const [editedPriceCustomer, setEditedPriceCustomer] = useState<string>("")
+  const [editedPriceHighestBid, setEditedPriceHighestBid] = useState<string>("")
+  const [updatingSaleStatus, setUpdatingSaleStatus] = useState(false)
+
+  // Image gallery state
+  const [galleryOpen, setGalleryOpen] = useState(false)
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+  const [galleryImages, setGalleryImages] = useState<string[]>([])
+
+  // Summary report state
+  const [summaryDialogOpen, setSummaryDialogOpen] = useState(false)
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date())
+  const [summaryReport, setSummaryReport] = useState<any>(null)
+  const [loadingSummary, setLoadingSummary] = useState(false)
+  const [summaryError, setSummaryError] = useState<string | null>(null)
+
+
+  // Keyboard navigation for gallery
+  useEffect(() => {
+    if (!galleryOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' && selectedImageIndex > 0) {
+        setSelectedImageIndex(prev => prev - 1);
+      } else if (e.key === 'ArrowRight' && selectedImageIndex < galleryImages.length - 1) {
+        setSelectedImageIndex(prev => prev + 1);
+      } else if (e.key === 'Escape') {
+        setGalleryOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [galleryOpen, selectedImageIndex, galleryImages.length]);
+
+  // Memoize processed images to avoid re-processing on every render
+  const processedImages = useMemo(() => {
+    try {
+      if (!selectedLead?.additional_images) {
+        return [];
+      }
+
+      // Handle both string and object types
+      let imagesData;
+      if (typeof selectedLead.additional_images === 'string') {
+        imagesData = JSON.parse(selectedLead.additional_images);
+      } else {
+        imagesData = selectedLead.additional_images;
+      }
+
+      // Extract all image URLs from all categories
+      const allImages: string[] = [];
+
+      if (imagesData && typeof imagesData === 'object') {
+        // Iterate through all categories (paper, inside, outside, thumbnail)
+        Object.entries(imagesData).forEach(([, categoryData]: [string, any]) => {
+          if (Array.isArray(categoryData)) {
+            categoryData.forEach((img: any) => {
+              if (img && img.url) {
+                allImages.push(img.url);
+              }
+            });
+          }
+        });
+      }
+
+      return allImages;
+    } catch (e) {
+      return [];
+    }
+  }, [selectedLead?.additional_images]);
+
+  // Memoize image count
+  const imageCount = useMemo(() => {
+    try {
+      if (!selectedLead?.additional_images) return 0;
+      const images = typeof selectedLead.additional_images === 'string'
+        ? JSON.parse(selectedLead.additional_images)
+        : selectedLead.additional_images;
+
+      // Count all images across all categories
+      if (typeof images === 'object' && !Array.isArray(images)) {
+        return Object.values(images).reduce((count: number, category) => {
+          return count + (Array.isArray(category) ? category.length : 0);
+        }, 0 as number);
+      }
+      return Array.isArray(images) ? images.length : 0;
+    } catch {
+      return 0;
+    }
+  }, [selectedLead?.additional_images]);
 
   useEffect(() => {
     if (selectedAccount) {
@@ -374,6 +504,9 @@ export function E2EManagement() {
     is_primary: boolean
     workflow2_is_active: boolean | null
     additional_images?: any
+    sku: string | null
+    car_created_at: string | null
+    image: string | null
   }> {
     try {
       const response = await fetch("/api/e2e/lead-details", {
@@ -404,6 +537,10 @@ export function E2EManagement() {
           mileage: null,
           is_primary: false,
           workflow2_is_active: null,
+          sku: null,
+          car_created_at: null,
+          image: null,
+          additional_images: null,
         }
       }
 
@@ -431,6 +568,9 @@ export function E2EManagement() {
         is_primary: data.car_info?.is_primary || false,
         workflow2_is_active: data.car_info?.workflow2_is_active ?? null,
         additional_images: data.car_info?.additional_images || null,
+        sku: data.car_info?.sku || null,
+        car_created_at: data.car_info?.created_at || null,
+        image: data.car_info?.image || null,
       }
     } catch (error) {
       console.error("[E2E] Error fetching lead details for phone:", phone, error)
@@ -455,6 +595,10 @@ export function E2EManagement() {
         mileage: null,
         is_primary: false,
         workflow2_is_active: null,
+        sku: null,
+        car_created_at: null,
+        image: null,
+        additional_images: null,
       }
     }
   }
@@ -1168,6 +1312,69 @@ export function E2EManagement() {
     }
   }
 
+  // Create new chat thread
+  async function handleCreateThread() {
+    if (!selectedLead) return
+
+    // Validate 4 digits
+    if (!/^\d{4}$/.test(fourDigitsInput)) {
+      toast({
+        title: "Lỗi",
+        description: "Vui lòng nhập đúng 4 số cuối điện thoại",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setCreateThreadLoading(true)
+    try {
+      const response = await fetch("/api/e2e/create-thread", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lead_id: selectedLead.id,
+          fourDigits: fourDigitsInput,
+          firstMessage: firstMessageInput || "Hello"
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        toast({
+          title: "Lỗi",
+          description: data.error || "Không thể tạo thread",
+          variant: "destructive",
+        })
+        return
+      }
+
+      if (data.success) {
+        toast({
+          title: "Thành công",
+          description: "Đã tạo thread mới",
+        })
+        // Refresh thread list
+        await viewDecoyWebThreads(selectedLead.id)
+        // Close create modal and reset input
+        setCreateThreadOpen(false)
+        setFourDigitsInput("")
+        setFirstMessageInput("Hello")
+
+
+      }
+    } catch (error) {
+      console.error("[E2E] Error creating thread:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể tạo thread mới",
+        variant: "destructive",
+      })
+    } finally {
+      setCreateThreadLoading(false)
+    }
+  }
+
   async function handleCreateSession(version: 1 | 2) {
     if (!selectedLead) return
 
@@ -1384,6 +1591,8 @@ export function E2EManagement() {
 
       setWorkflow2Open(false)
       setActiveWorkflowView("seeding")
+      setWorkflow2Open(false)
+      setWorkflow2Activated(true)
 
       // Open decoy dialog after successful activation
       setDecoyDialogOpen(true)
@@ -1709,10 +1918,6 @@ export function E2EManagement() {
     }
   }
 
-
-
-
-
   async function fetchDealers() {
     try {
       const response = await fetch("/api/e2e/dealers")
@@ -1766,6 +1971,53 @@ export function E2EManagement() {
       })
     } finally {
       setCreatingBiddingManual(false)
+    }
+  }
+
+  async function handleCopyLeadInfo() {
+    if (!selectedLead) return;
+
+    try {
+      // Build car details
+      const carName = [selectedLead.brand, selectedLead.model, selectedLead.variant, selectedLead.year]
+        .filter(Boolean)
+        .join(" ") || "N/A";
+
+      // Format mileage
+      const mileageText = selectedLead.mileage
+        ? `${selectedLead.mileage.toLocaleString('vi-VN')} km`
+        : "N/A";
+
+      // Format location
+      const locationText = selectedLead.location || "N/A";
+
+      // Format date and time
+      const now = new Date();
+      const timeString = now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      const dateString = now.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+      // Build the copy text
+      const copyText = `Thời gian nhận thông tin: ${timeString} ${dateString}
+Thông tin chi tiết xe: ${carName}
+Số km đã đi (Odo): ${mileageText}
+Khu vực:  - ${locationText}
+Car_id: ${selectedLead.car_id || "N/A"}
+Tình trạng pháp lý: Chưa rõ - Chưa rõ
+Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
+
+      await navigator.clipboard.writeText(copyText);
+
+      toast({
+        title: "Đã sao chép!",
+        description: "Thông tin xe đã được sao chép vào clipboard",
+      });
+    } catch (error) {
+      console.error('[COPY] Error copying to clipboard:', error);
+      toast({
+        title: "Lỗi",
+        description: "Không thể sao chép thông tin",
+        variant: "destructive",
+      });
     }
   }
 
@@ -1938,6 +2190,10 @@ export function E2EManagement() {
               mileage: merged.mileage || current.mileage,
               is_primary: merged.is_primary || current.is_primary,
               workflow2_is_active: merged.workflow2_is_active ?? current.workflow2_is_active,
+              sku: merged.sku || current.sku,
+              car_created_at: merged.car_created_at || current.car_created_at,
+              image: merged.image || current.image,
+              additional_images: merged.additional_images || current.additional_images,
             }
           }, allLeadDetails[0])
 
@@ -2179,6 +2435,9 @@ export function E2EManagement() {
           notes: leadDetails.notes,
           location: leadDetails.location,
           mileage: leadDetails.mileage,
+          sku: leadDetails.sku,
+          car_created_at: leadDetails.car_created_at,
+          additional_images: leadDetails.additional_images,
           is_primary: leadDetails.is_primary,
           bidding_session_count: biddingSessionCount,
         }
@@ -2240,6 +2499,7 @@ export function E2EManagement() {
     if (lead.model) parts.push(lead.model)
     if (lead.variant) parts.push(lead.variant)
     if (lead.year) parts.push(lead.year.toString())
+    if (lead.mileage) parts.push(`${lead.mileage.toLocaleString()}km`)
     return parts.length > 0 ? parts.join(" ") : "N/A"
   }
 
@@ -2316,6 +2576,256 @@ export function E2EManagement() {
     }
   }
 
+  // Handler functions for edit mode in detail dialog
+  function handleEditToggle() {
+    if (!selectedLead) return
+
+    setEditMode(true)
+    setEditedStage(selectedLead.stage || "")
+    setEditedPriceCustomer(selectedLead.price_customer?.toLocaleString("vi-VN") || "")
+    setEditedPriceHighestBid(selectedLead.price_highest_bid?.toLocaleString("vi-VN") || "")
+  }
+
+  function handleCancelEdit() {
+    setEditMode(false)
+    setEditedStage("")
+    setEditedPriceCustomer("")
+    setEditedPriceHighestBid("")
+  }
+
+  function handleQuickEdit(lead: Lead, e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!lead) return
+
+    setSelectedLead(lead)
+    setEditMode(true)
+    setEditedStage(lead.stage || "")
+    setEditedPriceCustomer(lead.price_customer?.toLocaleString("vi-VN") || "")
+    setEditedPriceHighestBid(lead.price_highest_bid?.toLocaleString("vi-VN") || "")
+    setDetailDialogOpen(true)
+  }
+
+  async function handleSaveChanges() {
+    if (!selectedLead) return
+
+    // Get sale_status_id from the lead details
+    const phone = selectedLead.phone || selectedLead.additional_phone
+    if (!phone) {
+      toast({
+        title: "Lỗi",
+        description: "Không có số điện thoại",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Validate prices
+    // Remove dots (thousands separators) before parsing
+    const cleanPrice = (priceStr: string) => {
+      if (!priceStr) return undefined
+      // Remove all dots and commas before parsing
+      const cleaned = priceStr.replace(/[.,]/g, "")
+      let val = parseFloat(cleaned)
+
+      // If value < 10,000, assume it's a shortcut for millions (e.g. 350 -> 350,000,000)
+      if (!isNaN(val) && val < 10000) {
+        val *= 1000000
+      }
+      return val
+    }
+
+    const priceCustomer = cleanPrice(editedPriceCustomer)
+    const priceHighestBid = cleanPrice(editedPriceHighestBid)
+
+    if (priceCustomer !== undefined && (isNaN(priceCustomer) || priceCustomer < 0)) {
+      toast({
+        title: "Lỗi",
+        description: "Giá mong muốn phải là số >= 0",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (priceHighestBid !== undefined && (isNaN(priceHighestBid) || priceHighestBid < 0)) {
+      toast({
+        title: "Lỗi",
+        description: "Giá cao nhất phải là số >= 0",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setUpdatingSaleStatus(true)
+
+    try {
+      // First, fetch the sale_status_id
+      const detailsResponse = await fetch("/api/e2e/lead-details", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone }),
+      })
+
+      if (!detailsResponse.ok) {
+        throw new Error("Failed to fetch lead details")
+      }
+
+      const detailsData = await detailsResponse.json()
+      const saleStatusId = detailsData.sale_status?.id
+
+      if (!saleStatusId) {
+        throw new Error("Sale status ID not found")
+      }
+
+      // Build payload with only changed fields
+      const payload: any = { saleStatusId }
+
+      if (editedStage && editedStage !== selectedLead.stage) {
+        payload.stage = editedStage
+      }
+
+      if (priceCustomer !== undefined && priceCustomer !== selectedLead.price_customer) {
+        payload.price_customer = priceCustomer
+      }
+
+      if (priceHighestBid !== undefined && priceHighestBid !== selectedLead.price_highest_bid) {
+        payload.price_highest_bid = priceHighestBid
+      }
+
+      // Check if there are any changes
+      if (Object.keys(payload).length === 1) {
+        toast({
+          title: "Thông báo",
+          description: "Không có thay đổi nào",
+        })
+        setUpdatingSaleStatus(false)
+        return
+      }
+
+      // Call update API
+      const response = await fetch("/api/e2e/update-sale-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Failed to update")
+      }
+
+      // Update local state
+      const updatedLead = {
+        ...selectedLead,
+        stage: editedStage || selectedLead.stage,
+        price_customer: priceCustomer !== undefined ? priceCustomer : selectedLead.price_customer,
+        price_highest_bid: priceHighestBid !== undefined ? priceHighestBid : selectedLead.price_highest_bid,
+      }
+
+      setSelectedLead(updatedLead)
+      setLeads((prevLeads) =>
+        prevLeads.map((l) => (l.id === selectedLead.id ? updatedLead : l))
+      )
+
+      toast({
+        title: "Thành công",
+        description: "Đã cập nhật thông tin",
+      })
+
+      // Exit edit mode
+      setEditMode(false)
+      setEditedStage("")
+      setEditedPriceCustomer("")
+      setEditedPriceHighestBid("")
+    } catch (error) {
+      console.error("[E2E] Error updating sale status:", error)
+      toast({
+        title: "Lỗi",
+        description: error instanceof Error ? error.message : "Không thể cập nhật thông tin",
+        variant: "destructive",
+      })
+    } finally {
+      setUpdatingSaleStatus(false)
+    }
+  }
+
+  async function fetchSummaryReport() {
+    if (!selectedAccount) {
+      toast({
+        title: "Lỗi",
+        description: "Vui lòng chọn tài khoản trước",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!selectedDate) {
+      toast({
+        title: "Lỗi",
+        description: "Vui lòng chọn ngày",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setLoadingSummary(true)
+    setSummaryError(null)
+    setSummaryReport(null)
+
+    try {
+      // Format date as YYYY-MM-DD-HH-MM
+      const year = selectedDate.getFullYear()
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0')
+      const day = String(selectedDate.getDate()).padStart(2, '0')
+
+      // Get current time for the request
+      const now = new Date()
+      const hours = String(now.getHours()).padStart(2, '0')
+      const minutes = String(now.getMinutes()).padStart(2, '0')
+
+      const formattedDate = `${year}-${month}-${day}-${hours}-${minutes}`
+
+      const response = await fetch(
+        `https://n8n.vucar.vn/webhook/summarye2e?pic_id=${selectedAccount}&created_at=${formattedDate}`,
+        {
+          method: "GET",
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error("Không thể tải báo cáo")
+      }
+
+      const data = await response.json()
+
+      if (Array.isArray(data) && data.length > 0) {
+        setSummaryReport(data[0])
+        toast({
+          title: "Thành công",
+          description: "Đã tải báo cáo",
+        })
+      } else {
+        setSummaryError("Không có dữ liệu cho ngày này")
+        toast({
+          title: "Thông báo",
+          description: "Không có dữ liệu cho ngày này",
+        })
+      }
+    } catch (error) {
+      console.error("[E2E] Error fetching summary report:", error)
+      setSummaryError(error instanceof Error ? error.message : "Không thể tải báo cáo")
+      toast({
+        title: "Lỗi",
+        description: "Không thể tải báo cáo",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingSummary(false)
+    }
+  }
+
+
+
   return (
     <div className="w-full">
       {/* Top Header - Account Selector */}
@@ -2348,7 +2858,18 @@ export function E2EManagement() {
         {/* Left Sidebar - Leads List */}
         <div className="w-80 border-r flex flex-col bg-white">
           <div className="p-4 border-b bg-gray-100">
-            <h2 className="text-lg font-bold mb-4">LeadOS</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">LeadOS</h2>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setSummaryDialogOpen(true)}
+                title="Xem báo cáo tổng hợp"
+              >
+                <FileText className="h-4 w-4" />
+              </Button>
+            </div>
             <SearchInput
               placeholder="Tìm kiếm danh sách..."
               value={searchPhone}
@@ -2512,9 +3033,22 @@ export function E2EManagement() {
                             )}
                           </Button>
                         </div>
-                        <p className="text-sm text-gray-700 truncate">
-                          {formatCarInfo(lead)}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm text-gray-700 truncate">
+                            {formatCarInfo(lead)}
+                          </p>
+                          {lead.car_created_at && (
+                            <p className="text-xs text-gray-500 shrink-0">
+                              {new Date(lead.car_created_at).toLocaleString("vi-VN", {
+                                year: 'numeric',
+                                month: '2-digit',
+                                day: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          )}
+                        </div>
                         <p className="text-xs text-emerald-600 font-semibold mt-1">
                           {lead.price_customer ? formatPrice(lead.price_customer) : "Chưa có giá"}
                         </p>
@@ -2635,9 +3169,18 @@ export function E2EManagement() {
                             {selectedLead.is_primary ? "Ưu tiên" : "Nuôi dưỡng"}
                           </span>
                         </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 hover:bg-transparent text-gray-400 hover:text-blue-600"
+                          onClick={(e) => selectedLead && handleQuickEdit(selectedLead, e)}
+                          title="Chỉnh sửa nhanh"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
                         <Clock className="h-4 w-4 text-gray-400" />
                         <span className="text-sm text-gray-500">
-                          {new Date(selectedLead.created_at).toLocaleDateString("vi-VN")}
+                          {formatDate(selectedLead.created_at)}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 mt-1">
@@ -2662,7 +3205,15 @@ export function E2EManagement() {
                     >
                       <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
                       {syncing ? "Đang đồng bộ..." : "Đồng bộ"}
+                    </Button>                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setDetailDialogOpen(true)}
+                      className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                    >
+                      Chi tiết
                     </Button>
+
                     <Button
                       size="sm"
                       className="bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -2718,6 +3269,18 @@ export function E2EManagement() {
                       <Badge variant="outline" className="text-xs">Kênh chính</Badge>
                     </div>
                   </button>
+                  <button
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "recent-activity"
+                      ? "text-emerald-600 border-emerald-600"
+                      : "text-gray-500 border-transparent hover:text-gray-700"
+                      }`}
+                    onClick={() => setActiveDetailView("recent-activity")}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4" />
+                      Hoạt động gần đây
+                    </div>
+                  </button>
                 </div>
               </div>
 
@@ -2749,7 +3312,7 @@ export function E2EManagement() {
                                   : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                                   }`}
                               >
-                                Quy trình Seeding (WF 2)
+                                Quy trình Seeding (WF2)
                               </button>
                             </div>
                           )}
@@ -2945,6 +3508,22 @@ export function E2EManagement() {
                             <p className="text-xs text-gray-500">Biển số xe</p>
                             <p className="text-sm font-medium text-gray-900">{selectedLead.plate || "N/A"}</p>
                           </div>
+                          <div>
+                            <p className="text-xs text-gray-500">SKU</p>
+                            <p className="text-sm font-medium text-gray-900">{selectedLead.sku || "N/A"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Số km</p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {selectedLead.mileage ? `${selectedLead.mileage.toLocaleString()} km` : "N/A"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Ngày tạo xe</p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {selectedLead.car_created_at ? new Date(selectedLead.car_created_at).toLocaleDateString("vi-VN") : "N/A"}
+                            </p>
+                          </div>
                         </div>
                       </div>
 
@@ -3021,83 +3600,123 @@ export function E2EManagement() {
                   <div className="bg-white rounded-lg shadow-sm h-[600px] flex flex-col overflow-hidden">
                     <div className="flex-1 flex gap-4 overflow-hidden">
                       {/* Left Panel - Thread List */}
-                      <div className="w-80 border-r overflow-y-auto p-4">
-                        {loadingDecoyWeb ? (
-                          <div className="flex items-center justify-center h-full">
-                            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                          </div>
-                        ) : decoyWebThreads.length === 0 ? (
-                          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                            Chưa có threads
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {decoyWebThreads.map((thread) => (
-                              <button
-                                key={thread.id}
-                                onClick={() => setSelectedDecoyWebThreadId(thread.id)}
-                                className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedDecoyWebThreadId === thread.id
-                                  ? "bg-orange-100 text-orange-900 border-orange-300"
-                                  : "bg-muted/30 hover:bg-muted/50"
-                                  }`}
-                              >
-                                <div className="font-semibold text-sm mb-1">
-                                  Bot: {thread.bot_name || "Unknown"}
-                                </div>
-                                <div className="text-xs opacity-70">
-                                  {new Date(thread.created_at).toLocaleString("vi-VN")}
-                                </div>
-                                <div className="text-xs opacity-70 mt-1">
-                                  {thread.messages.length} tin nhắn
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                      <div className="w-80 border-r overflow-y-auto flex flex-col">
+                        {/* Create Thread Button */}
+                        <div className="p-3 border-b bg-gray-50">
+                          <Button
+                            onClick={() => setCreateThreadOpen(true)}
+                            className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+                            size="sm"
+                          >
+                            <MessageCircle className="h-4 w-4 mr-2" />
+                            Tạo thread mới
+                          </Button>
+                        </div>
+                        <div className="flex-1 p-4 overflow-y-auto">
+                          {loadingDecoyWeb ? (
+                            <div className="flex items-center justify-center h-full">
+                              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                            </div>
+                          ) : decoyWebThreads.length === 0 ? (
+                            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                              Chưa có threads
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {decoyWebThreads.map((thread) => (
+                                <button
+                                  key={thread.id}
+                                  onClick={() => setSelectedDecoyWebThreadId(thread.id)}
+                                  className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedDecoyWebThreadId === thread.id
+                                    ? "bg-orange-100 text-orange-900 border-orange-300"
+                                    : "bg-muted/30 hover:bg-muted/50"
+                                    }`}
+                                >
+                                  <div className="font-semibold text-sm mb-1">
+                                    Bot: {thread.bot_name || "Unknown"}
+                                  </div>
+                                  <div className="text-xs opacity-70">
+                                    {new Date(thread.created_at).toLocaleString("vi-VN")}
+                                  </div>
+                                  <div className="text-xs opacity-70 mt-1">
+                                    {thread.messages.length} tin nhắn
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Right Panel - Messages */}
-                      <div className="flex-1 overflow-y-auto p-4">
-                        {!selectedDecoyWebThreadId ? (
-                          <div className="flex items-center justify-center h-full text-muted-foreground">
-                            Chọn một thread để xem tin nhắn
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {decoyWebThreads
-                              .find((t) => t.id === selectedDecoyWebThreadId)
-                              ?.messages.map((msg, index) => {
-                                const isBot = msg.sender === "bot" || msg.sender === "system"
-                                const timestamp = msg.displayed_at
-                                  ? new Date(msg.displayed_at).toLocaleString("vi-VN")
-                                  : ""
-
-                                return (
-                                  <div
-                                    key={index}
-                                    className={`flex ${isBot ? "justify-end" : "justify-start"}`}
-                                  >
-                                    <div
-                                      className={`max-w-[70%] rounded-lg p-3 ${isBot
-                                        ? "bg-orange-500 text-white"
-                                        : "bg-gray-200 text-gray-900"
-                                        }`}
-                                    >
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-xs font-semibold">
-                                          {isBot ? "Decoy Bot" : "Khách hàng"}
-                                        </span>
-                                        <span className="text-xs opacity-70">{timestamp}</span>
-                                      </div>
-                                      <p className="text-sm whitespace-pre-wrap break-words">
-                                        {msg.content}
-                                      </p>
-                                    </div>
-                                  </div>
-                                )
-                              })}
+                      <div className="flex-1 flex flex-col overflow-hidden bg-gray-50/30">
+                        {/* CRM Banner */}
+                        {selectedDecoyWebThreadId && (
+                          <div className="bg-blue-50 border-b border-blue-100 p-3 px-4 flex items-center justify-between shrink-0 animate-in fade-in slide-in-from-top-1">
+                            <div className="flex items-center gap-2 text-sm text-blue-700">
+                              <MessageCircle className="h-4 w-4" />
+                              <span>Để chat tiếp hãy vào đường link bên CRM</span>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="bg-white hover:bg-blue-50 text-blue-600 border-blue-200 h-8 text-xs font-medium shadow-sm transition-all hover:shadow"
+                              onClick={() => {
+                                const phone = selectedLead.phone || selectedLead.additional_phone || ""
+                                if (selectedDecoyWebThreadId && phone) {
+                                  const crmUrl = `https://dashboard.vucar.vn/gui-tin/tin-da-gui?threadId=${selectedDecoyWebThreadId}&phone=${phone}`
+                                  window.open(crmUrl, '_blank')
+                                }
+                              }}
+                            >
+                              Chat trên CRM (Tab mới)
+                            </Button>
                           </div>
                         )}
+
+                        {/* Messages Area */}
+                        <div className="flex-1 overflow-y-auto p-4">
+                          {!selectedDecoyWebThreadId ? (
+                            <div className="flex items-center justify-center h-full text-muted-foreground">
+                              Chọn một thread để xem tin nhắn
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {decoyWebThreads
+                                .find((t) => t.id === selectedDecoyWebThreadId)
+                                ?.messages.map((msg, index) => {
+                                  const isBot = msg.sender === "bot" || msg.sender === "system"
+                                  const timestamp = msg.displayed_at
+                                    ? new Date(msg.displayed_at).toLocaleString("vi-VN")
+                                    : ""
+
+                                  return (
+                                    <div
+                                      key={index}
+                                      className={`flex ${isBot ? "justify-end" : "justify-start"}`}
+                                    >
+                                      <div
+                                        className={`max-w-[70%] rounded-lg p-3 ${isBot
+                                          ? "bg-orange-500 text-white"
+                                          : "bg-gray-200 text-gray-900"
+                                          }`}
+                                      >
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <span className="text-xs font-semibold">
+                                            {isBot ? "Decoy Bot" : "Khách hàng"}
+                                          </span>
+                                          <span className="text-xs opacity-70">{timestamp}</span>
+                                        </div>
+                                        <p className="text-sm whitespace-pre-wrap break-words">
+                                          {msg.content}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -3178,6 +3797,17 @@ export function E2EManagement() {
                           })}
                         </div>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {activeDetailView === "recent-activity" && (
+                  <div className="bg-white rounded-lg shadow-sm p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-6">Hoạt động gần đây</h3>
+                    <div className="text-center py-12 text-gray-400">
+                      <Clock className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+                      <p className="text-sm">Chưa có hoạt động nào</p>
+                      <p className="text-xs mt-2">Các hoạt động của lead sẽ được hiển thị ở đây</p>
                     </div>
                   </div>
                 )}
@@ -3823,6 +4453,263 @@ export function E2EManagement() {
         </DialogContent>
       </Dialog>
 
+
+      {/* Detail Dialog */}
+      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+                <DialogTitle className="text-base">Thông tin xe chi tiết</DialogTitle>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCopyLeadInfo}
+                className="flex items-center gap-2"
+              >
+                <Copy className="h-4 w-4" />
+                Sao chép
+              </Button>
+            </div>
+          </DialogHeader>
+
+          {selectedLead && (
+            <div className="space-y-4">
+              {/* Car Title and Price */}
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                    {[selectedLead.brand, selectedLead.model, selectedLead.variant]
+                      .filter(Boolean)
+                      .join(" ") || "N/A"}
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    {selectedLead.year && (
+                      <span className="px-3 py-1 bg-blue-100 text-blue-700 text-sm font-medium rounded">
+                        {selectedLead.year}
+                      </span>
+                    )}
+                    {selectedLead.location && (
+                      <span className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded">
+                        {selectedLead.location}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-gray-500 uppercase mb-1">Giá mong muốn</p>
+                  {editMode ? (
+                    <Input
+                      type="text"
+                      value={editedPriceCustomer}
+                      onChange={(e) => setEditedPriceCustomer(e.target.value)}
+                      onBlur={(e) => handlePriceFormat(e.target.value, setEditedPriceCustomer)}
+                      className="text-right text-xl font-bold text-emerald-600 h-12"
+                      placeholder="Nhập giá"
+                    />
+                  ) : (
+                    <p className="text-2xl font-bold text-emerald-600">
+                      {selectedLead.price_customer ? formatPrice(selectedLead.price_customer) : "N/A"}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Car Images - Now in 2nd position */}
+              {selectedLead.additional_images && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <svg className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <h3 className="text-sm font-semibold text-gray-900">
+                        Hình ảnh thực tế ({imageCount})
+                      </h3>
+                    </div>
+                    <div className="grid grid-cols-4 gap-3">
+                      {processedImages.length > 0 ? (
+                        processedImages.slice(0, 8).map((imgUrl, idx) => (
+                          <div
+                            key={idx}
+                            className="aspect-square rounded-lg overflow-hidden bg-gray-100 cursor-pointer"
+                            onClick={() => {
+                              setGalleryImages(processedImages);
+                              setSelectedImageIndex(idx);
+                              setGalleryOpen(true);
+                            }}
+                          >
+                            <img
+                              src={imgUrl}
+                              alt={`Car ${idx}`}
+                              className="w-full h-full object-cover hover:scale-110 transition-transform"
+                              onError={(e) => {
+                                e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23f3f4f6" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%239ca3af"%3ENo Image%3C/text%3E%3C/svg%3E';
+                              }}
+                            />
+                          </div>
+                        ))
+                      ) : (
+                        <div className="col-span-4 text-center py-8 text-gray-400">
+                          <p className="text-sm">Chưa có ảnh</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+              {/* Car Details Grid */}
+              <div className="grid grid-cols-2 gap-4 py-4 border-y">
+                <div>
+                  <p className="text-xs text-gray-500 uppercase mb-1">ODO</p>
+                  <p className="text-base font-semibold text-gray-900">
+                    {selectedLead.mileage ? `${selectedLead.mileage.toLocaleString()} km` : "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase mb-1">Phiên bản</p>
+                  <p className="text-base font-semibold text-gray-900">
+                    {selectedLead.variant || "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase mb-1">Màu sắc</p>
+                  <p className="text-base font-semibold text-gray-900">N/A</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase mb-1">Động cơ</p>
+                  <p className="text-base font-semibold text-gray-900">N/A</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase mb-1">Hộp số</p>
+                  <p className="text-base font-semibold text-gray-900">N/A</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase mb-1">Biển số</p>
+                  <p className="text-base font-semibold text-yellow-600 bg-yellow-50 px-2 py-1 rounded inline-block">
+                    {selectedLead.plate || "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase mb-1">Giai đoạn</p>
+                  {editMode ? (
+                    <Select value={editedStage} onValueChange={setEditedStage}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Chọn giai đoạn..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="CANNOT_CONTACT">Không liên lạc được</SelectItem>
+                        <SelectItem value="CONTACTED">Đã liên hệ</SelectItem>
+                        <SelectItem value="NEGOTIATION">Đang đàm phán</SelectItem>
+                        <SelectItem value="CAR_VIEW">Xem xe</SelectItem>
+                        <SelectItem value="DEPOSIT_PAID">Đã đặt cọc</SelectItem>
+                        <SelectItem value="COMPLETED">Hoàn thành</SelectItem>
+                        <SelectItem value="FAILED">Thất bại</SelectItem>
+                        <SelectItem value="UNDEFINED">Chưa xác định</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Badge className={`text-base font-semibold px-3 py-1 ${getStageStyle(selectedLead.stage)} border-0`}>
+                      {selectedLead.stage || "N/A"}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              {/* Additional Info */}
+              <div className="grid grid-cols-2 gap-4 pt-2">
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">SKU</p>
+                  <p className="text-sm font-medium text-gray-900">{selectedLead.sku || "N/A"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Ngày tạo xe</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {selectedLead.car_created_at ? new Date(selectedLead.car_created_at).toLocaleDateString("vi-VN") : "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Tên khách hàng</p>
+                  <p className="text-sm font-medium text-gray-900">{selectedLead.name}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Số điện thoại</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {selectedLead.phone ? maskPhone(selectedLead.phone) : "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">PIC</p>
+                  <p className="text-sm font-medium text-gray-900">{selectedLead.pic_name || "N/A"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Giá cao nhất (Dealer)</p>
+                  {editMode ? (
+                    <Input
+                      type="text"
+                      value={editedPriceHighestBid}
+                      onChange={(e) => setEditedPriceHighestBid(e.target.value)}
+                      onBlur={(e) => handlePriceFormat(e.target.value, setEditedPriceHighestBid)}
+                      className="text-sm font-semibold text-blue-600"
+                      placeholder="Nhập giá"
+                    />
+                  ) : (
+                    <p className="text-sm font-semibold text-blue-600">
+                      {selectedLead.price_highest_bid ? formatPrice(selectedLead.price_highest_bid) :
+                        (selectedLead.dealer_bidding?.maxPrice ? formatPrice(selectedLead.dealer_bidding.maxPrice) : "N/A")}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => {
+              setDetailDialogOpen(false)
+              setEditMode(false)
+            }}>
+              Đóng
+            </Button>
+            {editMode ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={handleCancelEdit}
+                  disabled={updatingSaleStatus}
+                >
+                  Hủy
+                </Button>
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={handleSaveChanges}
+                  disabled={updatingSaleStatus}
+                >
+                  {updatingSaleStatus ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Đang lưu...
+                    </>
+                  ) : (
+                    "Lưu"
+                  )}
+                </Button>
+              </>
+            ) : (
+              <Button
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={handleEditToggle}
+              >
+                Chỉnh sửa
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Inspection System Dialog */}
       < Dialog open={inspectionSystemOpen} onOpenChange={setInspectionSystemOpen} >
         <DialogContent className="w-[95vw] h-[85vh] flex flex-col sm:max-w-[95vw] md:max-w-[90vw] lg:max-w-[95rem]">
@@ -3952,6 +4839,467 @@ export function E2EManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Image Gallery Modal */}
+      <Dialog open={galleryOpen} onOpenChange={setGalleryOpen}>
+        <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-black/95">
+          <div className="relative w-full h-[95vh] flex items-center justify-center">
+            {/* Close Button */}
+            <button
+              onClick={() => setGalleryOpen(false)}
+              className="absolute top-4 right-4 z-50 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            {/* Image Counter */}
+            <div className="absolute top-4 left-4 z-50 px-4 py-2 rounded-full bg-white/10 text-white text-sm font-medium">
+              {selectedImageIndex + 1} / {galleryImages.length}
+            </div>
+
+            {/* Previous Button */}
+            {selectedImageIndex > 0 && (
+              <button
+                onClick={() => setSelectedImageIndex(prev => prev - 1)}
+                className="absolute left-4 z-50 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+              >
+                <ChevronLeft className="w-8 h-8" />
+              </button>
+            )}
+
+            {/* Main Image */}
+            <div className="w-full h-full flex items-center justify-center p-16">
+              <img
+                src={galleryImages[selectedImageIndex]}
+                alt={`Car image ${selectedImageIndex + 1}`}
+                className="max-w-full max-h-full object-contain"
+                onError={(e) => {
+                  e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="400"%3E%3Crect fill="%23374151" width="400" height="400"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%239ca3af" font-size="20"%3EImage not available%3C/text%3E%3C/svg%3E';
+                }}
+              />
+            </div>
+
+            {/* Next Button */}
+            {selectedImageIndex < galleryImages.length - 1 && (
+              <button
+                onClick={() => setSelectedImageIndex(prev => prev + 1)}
+                className="absolute right-4 z-50 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+              >
+                <ChevronRight className="w-8 h-8" />
+              </button>
+            )}
+
+            {/* Thumbnail Strip */}
+            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-50 flex gap-2 max-w-[90vw] overflow-x-auto px-4 py-2 bg-black/50 rounded-lg">
+              {galleryImages.map((img, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setSelectedImageIndex(idx)}
+                  className={`flex-shrink-0 w-16 h-16 rounded overflow-hidden border-2 transition-all ${idx === selectedImageIndex
+                    ? 'border-white scale-110'
+                    : 'border-transparent opacity-60 hover:opacity-100'
+                    }`}
+                >
+                  <img
+                    src={img}
+                    alt={`Thumbnail ${idx + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Summary Report Dialog */}
+      <Dialog open={summaryDialogOpen} onOpenChange={setSummaryDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Báo Cáo Tổng Hợp</DialogTitle>
+            <DialogDescription>
+              Xem báo cáo tổng hợp theo ngày và người phụ trách
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Filter Section */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Date Picker */}
+              <div className="space-y-2">
+                <Label>Chọn ngày</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {selectedDate ? (
+                        new Intl.DateTimeFormat('vi-VN', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric'
+                        }).format(selectedDate)
+                      ) : (
+                        <span>Chọn ngày</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={(date) => date && setSelectedDate(date)}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Account Display */}
+              <div className="space-y-2">
+                <Label>Người phụ trách</Label>
+                <div className="flex items-center h-10 px-3 py-2 border rounded-md bg-gray-50">
+                  <User className="mr-2 h-4 w-4 text-gray-500" />
+                  <span className="text-sm">
+                    {selectedAccount
+                      ? ACCOUNTS.find((acc) => acc.uid === selectedAccount)?.name || "Chưa chọn"
+                      : "Chưa chọn tài khoản"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Button */}
+            <Button
+              onClick={fetchSummaryReport}
+              disabled={!selectedAccount || !selectedDate || loadingSummary}
+              className="w-full"
+            >
+              {loadingSummary ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Đang tải...
+                </>
+              ) : (
+                "Xem Báo Cáo"
+              )}
+            </Button>
+
+            {/* Report Display Section */}
+            {loadingSummary && (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+              </div>
+            )}
+
+            {!loadingSummary && summaryError && (
+              <div className="text-center py-8 text-gray-500">
+                <p className="text-sm">{summaryError}</p>
+              </div>
+            )}
+
+            {!loadingSummary && summaryReport && (
+              <div className="border rounded-lg p-6 bg-gray-50 space-y-4">
+                {/* Header */}
+                <div className="flex items-start justify-between border-b pb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">
+                      {summaryReport.name}
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {summaryReport.created_at}
+                    </p>
+                  </div>
+                  {summaryReport.row_number && (
+                    <Badge variant="secondary">#{summaryReport.row_number}</Badge>
+                  )}
+                </div>
+
+                {/* Report Content */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-gray-700">Nội dung báo cáo:</Label>
+                  <div
+                    className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed bg-white p-4 rounded border"
+                    style={{ whiteSpace: 'pre-wrap' }}
+                  >
+                    {summaryReport.reports}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Thread Dialog */}
+      <Dialog open={createThreadOpen} onOpenChange={setCreateThreadOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Tạo thread mới</DialogTitle>
+            <DialogDescription>
+              Nhập 4 số cuối điện thoại của khách hàng để tạo thread chat mới.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="fourDigits" className="text-right">
+                4 số cuối SĐT
+              </Label>
+              <Input
+                id="fourDigits"
+                value={fourDigitsInput}
+                onChange={(e) => {
+                  // Only allow digits and max 4 characters
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 4)
+                  setFourDigitsInput(value)
+                }}
+                placeholder="1234"
+                className="col-span-3"
+                maxLength={4}
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="firstMessage" className="text-right">
+                Tin nhắn đầu
+              </Label>
+              <Input
+                id="firstMessage"
+                value={firstMessageInput}
+                onChange={(e) => setFirstMessageInput(e.target.value)}
+                placeholder="Hello"
+                className="col-span-3"
+              />
+            </div>
+            <p className="text-xs text-gray-500 text-center">
+              Tên hiển thị: ******{fourDigitsInput || "XXXX"}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreateThreadOpen(false)
+                setFourDigitsInput("")
+                setFirstMessageInput("Hello")
+              }}
+            >
+              Hủy
+            </Button>
+            <Button
+              onClick={handleCreateThread}
+              disabled={createThreadLoading || fourDigitsInput.length !== 4}
+              className="bg-orange-500 hover:bg-orange-600"
+            >
+              {createThreadLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Đang tạo...
+                </>
+              ) : (
+                "Bắt đầu"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Summary Report Dialog */}
+      <Dialog open={summaryDialogOpen} onOpenChange={setSummaryDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Báo Cáo Tổng Hợp</DialogTitle>
+            <DialogDescription>
+              Xem báo cáo tổng hợp theo ngày và người phụ trách
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Filter Section */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Date Picker */}
+              <div className="space-y-2">
+                <Label>Chọn ngày</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {selectedDate ? (
+                        new Intl.DateTimeFormat('vi-VN', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric'
+                        }).format(selectedDate)
+                      ) : (
+                        <span>Chọn ngày</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={(date) => date && setSelectedDate(date)}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Account Display */}
+              <div className="space-y-2">
+                <Label>Người phụ trách</Label>
+                <div className="flex items-center h-10 px-3 py-2 border rounded-md bg-gray-50">
+                  <User className="mr-2 h-4 w-4 text-gray-500" />
+                  <span className="text-sm">
+                    {selectedAccount
+                      ? ACCOUNTS.find((acc) => acc.uid === selectedAccount)?.name || "Chưa chọn"
+                      : "Chưa chọn tài khoản"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Button */}
+            <Button
+              onClick={fetchSummaryReport}
+              disabled={!selectedAccount || !selectedDate || loadingSummary}
+              className="w-full"
+            >
+              {loadingSummary ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Đang tải...
+                </>
+              ) : (
+                "Xem Báo Cáo"
+              )}
+            </Button>
+
+            {/* Report Display Section */}
+            {loadingSummary && (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+              </div>
+            )}
+
+            {!loadingSummary && summaryError && (
+              <div className="text-center py-8 text-gray-500">
+                <p className="text-sm">{summaryError}</p>
+              </div>
+            )}
+
+            {!loadingSummary && summaryReport && (
+              <div className="border rounded-lg p-6 bg-gray-50 space-y-4">
+                {/* Header */}
+                <div className="flex items-start justify-between border-b pb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">
+                      {summaryReport.name}
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {summaryReport.created_at}
+                    </p>
+                  </div>
+                  {summaryReport.row_number && (
+                    <Badge variant="secondary">#{summaryReport.row_number}</Badge>
+                  )}
+                </div>
+
+                {/* Report Content */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-gray-700">Nội dung báo cáo:</Label>
+                  <div
+                    className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed bg-white p-4 rounded border"
+                    style={{ whiteSpace: 'pre-wrap' }}
+                  >
+                    {summaryReport.reports}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Thread Dialog */}
+      <Dialog open={createThreadOpen} onOpenChange={setCreateThreadOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Tạo thread mới</DialogTitle>
+            <DialogDescription>
+              Nhập 4 số cuối điện thoại của khách hàng để tạo thread chat mới.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="fourDigits" className="text-right">
+                4 số cuối SĐT
+              </Label>
+              <Input
+                id="fourDigits"
+                value={fourDigitsInput}
+                onChange={(e) => {
+                  // Only allow digits and max 4 characters
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 4)
+                  setFourDigitsInput(value)
+                }}
+                placeholder="1234"
+                className="col-span-3"
+                maxLength={4}
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="firstMessage" className="text-right">
+                Tin nhắn đầu
+              </Label>
+              <Input
+                id="firstMessage"
+                value={firstMessageInput}
+                onChange={(e) => setFirstMessageInput(e.target.value)}
+                placeholder="Hello"
+                className="col-span-3"
+              />
+            </div>
+            <p className="text-xs text-gray-500 text-center">
+              Tên hiển thị: ******{fourDigitsInput || "XXXX"}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreateThreadOpen(false)
+                setFourDigitsInput("")
+                setFirstMessageInput("Hello")
+              }}
+            >
+              Hủy
+            </Button>
+            <Button
+              onClick={handleCreateThread}
+              disabled={createThreadLoading || fourDigitsInput.length !== 4}
+              className="bg-orange-500 hover:bg-orange-600"
+            >
+              {createThreadLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Đang tạo...
+                </>
+              ) : (
+                "Bắt đầu"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div >
+
   )
 }

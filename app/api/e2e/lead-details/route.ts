@@ -54,8 +54,18 @@ export async function POST(request: Request) {
 
     const leadData = result.rows[0]
 
+    // Parse additional_images if it's a string
+    let additionalImages = leadData.additional_images || {}
+    if (typeof additionalImages === 'string') {
+      try {
+        additionalImages = JSON.parse(additionalImages)
+      } catch (e) {
+        console.error("[E2E Lead Details] Error parsing additional_images:", e)
+        additionalImages = {}
+      }
+    }
+
     // Check if has enough images (1 outside + 1 paper)
-    const additionalImages = leadData.additional_images || {}
     const hasOutside = Array.isArray(additionalImages.outside) && additionalImages.outside.length > 0
     const hasPaper = Array.isArray(additionalImages.paper) && additionalImages.paper.length > 0
     const has_enough_images = hasOutside && hasPaper
@@ -90,6 +100,18 @@ export async function POST(request: Request) {
       }
     }
 
+    // Check workflow 2 is_active status from campaigns table
+    let workflow2_is_active: boolean | null = null
+    if (leadData.car_id) {
+      const campaignActiveResult = await vucarV2Query(
+        `SELECT is_active FROM campaigns WHERE car_auction_id = $1 LIMIT 1`,
+        [leadData.car_id]
+      )
+      if (campaignActiveResult.rows.length > 0) {
+        workflow2_is_active = campaignActiveResult.rows[0].is_active
+      }
+    }
+
     return NextResponse.json({
       lead: {
         id: leadData.id,
@@ -119,11 +141,12 @@ export async function POST(request: Request) {
         plate: leadData.plate,
         location: leadData.location,
         mileage: leadData.mileage,
-        sku: leadData.sku,
-        created_at: leadData.car_created_at,
-        additional_images: leadData.additional_images,
         has_enough_images,
         is_primary,
+        workflow2_is_active,
+        additional_images: additionalImages,
+        sku: leadData.sku,
+        created_at: leadData.car_created_at,
       },
     })
   } catch (error) {

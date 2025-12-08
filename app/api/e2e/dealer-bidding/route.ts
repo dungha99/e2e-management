@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { query } from "@/lib/db"
 
 export async function POST(request: Request) {
   try {
@@ -10,20 +10,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "car_id is required" }, { status: 400 })
     }
 
-    const supabase = await createClient()
+    // Query the database directly
+    const result = await query(
+      `SELECT id, dealer_id, car_id, price, created_at, comment
+       FROM dealer_biddings
+       WHERE car_id = $1
+       ORDER BY created_at DESC`,
+      [car_id]
+    )
 
-    const { data, error } = await supabase
-      .from("dealer_biddings")
-      .select("id, dealer_id, car_id, price, created_at, comment")
-      .eq("car_id", car_id)
-      .order("created_at", { ascending: false })
-
-    if (error) {
-      console.error("[E2E Dealer Bidding DB] Error fetching dealer bidding:", error)
-      return NextResponse.json([])
-    }
-
-    return NextResponse.json(data || [])
+    return NextResponse.json(result.rows)
   } catch (error) {
     console.error("[E2E Dealer Bidding DB] Error fetching dealer bidding:", error)
     // Return empty array instead of error to allow graceful handling

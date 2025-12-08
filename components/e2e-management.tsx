@@ -1,11 +1,9 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar } from "@/components/ui/calendar"
 import {
   Dialog,
   DialogContent,
@@ -17,10 +15,15 @@ import {
 import { SearchInput } from "@/components/ui/search-input"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, User, ChevronLeft, ChevronRight, MessageCircle, RefreshCw, Star, CheckCircle, DollarSign, Play, Zap, Search, Clock, Copy, FileText, CalendarIcon, Pencil } from "lucide-react"
+import { Loader2, User, ChevronLeft, ChevronRight, MessageCircle, RefreshCw, Star, CheckCircle, DollarSign, Play, Zap, Search, Clock, Plus, FileText, Pencil, Copy, CalendarIcon } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Check, ChevronsUpDown } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { maskPhone } from "@/lib/utils"
+import { Calendar } from "@/components/ui/calendar"
 
 interface DealerBiddingStatus {
   status: "not_sent" | "sent" | "got_price"
@@ -45,7 +48,7 @@ interface Lead {
   bank_account_number: string | null
   otp_verified: string
   created_at: string
-  pic_id: string
+  pic_id: string | null
   pic_og: string
   source: string | null
   url: string | null
@@ -72,12 +75,18 @@ interface Lead {
   pic_name?: string | null
   location?: string | null
   mileage?: number | null
+  is_primary?: boolean
+  bidding_session_count?: number
+  workflow2_is_active?: boolean | null
+  additional_images?: {
+    paper?: Array<{key: string, url: string, name: string, type: string}>
+    inside?: Array<{key: string, url: string, name: string, type: string}>
+    outside?: Array<{key: string, url: string, name: string, type: string}>
+    [key: string]: Array<{key: string, url: string, name: string, type: string}> | undefined
+  }
   sku?: string | null
   car_created_at?: string | null
   image?: string | null
-  additional_images?: string | null
-  is_primary?: boolean
-  bidding_session_count?: number
 }
 
 interface DecoyMessage {
@@ -103,10 +112,22 @@ interface BiddingHistory {
   comment: string | null
 }
 
+interface Dealer {
+  id: string
+  name: string
+  group_zalo_name: string | null
+}
+
 const ACCOUNTS = [
   { name: "Dũng", uid: "9ee91b08-448b-4cf4-8b3d-79c6f1c71fef" },
   { name: "Trường", uid: "286af2a8-a866-496a-8ed0-da30df3120ec" },
   { name: "Thư", uid: "2ffa8389-2641-4d8b-98a6-5dc2dd2d20a4" },
+  { name: "PTr", uid: "3c9c5780-5e95-44b5-8b9a-ae5b9f8c9053" },
+  { name: "Huân Đạt", uid: "0ae61721-214f-49f7-8514-f64ee8438c4f" },
+  { name: "Minh Châu", uid: "456cf5f7-2b77-4be4-87bb-43038216dacb" },
+  { name: "Bảo Ngân", uid: "d4a2fc3a-2212-4299-b8bb-7ebded7e77c0" },
+  { name: "Thanh Hòa", uid: "00d0d47e-2041-4857-a828-83e0c28cb615" },
+  { name: "Phát", uid: "4cb28319-9dd0-4951-b9c9-e35e1e8dd578" },
 ]
 
 const DECOY_ACCOUNTS = [
@@ -194,6 +215,16 @@ export function E2EManagement() {
   const [currentPage, setCurrentPage] = useState(1)
   const [searchPhone, setSearchPhone] = useState<string>("")
   const [appliedSearchPhone, setAppliedSearchPhone] = useState<string>("")
+  const [editingBiddingId, setEditingBiddingId] = useState<string | null>(null)
+  const [editingPrice, setEditingPrice] = useState<string>("")
+  const [updatingBidding, setUpdatingBidding] = useState(false)
+  const [dealers, setDealers] = useState<Dealer[]>([])
+  const [creatingBiddingManual, setCreatingBiddingManual] = useState(false)
+  const [newBidDealerId, setNewBidDealerId] = useState<string>("")
+  const [newBidPrice, setNewBidPrice] = useState<string>("")
+  const [newBidComment, setNewBidComment] = useState<string>("")
+  const [showAddBiddingForm, setShowAddBiddingForm] = useState(false)
+  const [openCombobox, setOpenCombobox] = useState(false)
 
   // Selected lead state
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
@@ -281,7 +312,20 @@ export function E2EManagement() {
   // Decoy trigger state
   const [decoyDialogOpen, setDecoyDialogOpen] = useState(false)
   const [decoySegment, setDecoySegment] = useState("")
+  const [decoyMinutes, setDecoyMinutes] = useState("")
   const [sendingDecoy, setSendingDecoy] = useState(false)
+
+  // Activity log state
+  const [activityLog, setActivityLog] = useState<Array<{ event_name: string, time: string }>>([])
+  const [loadingActivity, setLoadingActivity] = useState(false)
+
+  // Send to dealer groups state
+  const [sendDealerDialogOpen, setSendDealerDialogOpen] = useState(false)
+  const [dealerGroups, setDealerGroups] = useState<Array<{groupId: string, groupName: string, dealerId: string | null}>>([])
+  const [loadingDealerGroups, setLoadingDealerGroups] = useState(false)
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([])
+  const [sendingToGroups, setSendingToGroups] = useState(false)
+  const [dealerGroupSearch, setDealerGroupSearch] = useState("")
 
   // Detail dialog state
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
@@ -323,6 +367,63 @@ export function E2EManagement() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [galleryOpen, selectedImageIndex, galleryImages.length]);
+
+  // Memoize processed images to avoid re-processing on every render
+  const processedImages = useMemo(() => {
+    try {
+      if (!selectedLead?.additional_images) {
+        return [];
+      }
+
+      // Handle both string and object types
+      let imagesData;
+      if (typeof selectedLead.additional_images === 'string') {
+        imagesData = JSON.parse(selectedLead.additional_images);
+      } else {
+        imagesData = selectedLead.additional_images;
+      }
+
+      // Extract all image URLs from all categories
+      const allImages: string[] = [];
+
+      if (imagesData && typeof imagesData === 'object') {
+        // Iterate through all categories (paper, inside, outside, thumbnail)
+        Object.entries(imagesData).forEach(([, categoryData]: [string, any]) => {
+          if (Array.isArray(categoryData)) {
+            categoryData.forEach((img: any) => {
+              if (img && img.url) {
+                allImages.push(img.url);
+              }
+            });
+          }
+        });
+      }
+
+      return allImages;
+    } catch (e) {
+      return [];
+    }
+  }, [selectedLead?.additional_images]);
+
+  // Memoize image count
+  const imageCount = useMemo(() => {
+    try {
+      if (!selectedLead?.additional_images) return 0;
+      const images = typeof selectedLead.additional_images === 'string'
+        ? JSON.parse(selectedLead.additional_images)
+        : selectedLead.additional_images;
+
+      // Count all images across all categories
+      if (typeof images === 'object' && !Array.isArray(images)) {
+        return Object.values(images).reduce((count: number, category) => {
+          return count + (Array.isArray(category) ? category.length : 0);
+        }, 0 as number);
+      }
+      return Array.isArray(images) ? images.length : 0;
+    } catch {
+      return 0;
+    }
+  }, [selectedLead?.additional_images]);
 
   useEffect(() => {
     if (selectedAccount) {
@@ -400,11 +501,12 @@ export function E2EManagement() {
     pic_name: string | null
     location: string | null
     mileage: number | null
+    is_primary: boolean
+    workflow2_is_active: boolean | null
+    additional_images?: any
     sku: string | null
     car_created_at: string | null
     image: string | null
-    additional_images: string | null
-    is_primary: boolean
   }> {
     try {
       const response = await fetch("/api/e2e/lead-details", {
@@ -433,11 +535,12 @@ export function E2EManagement() {
           pic_name: null,
           location: null,
           mileage: null,
+          is_primary: false,
+          workflow2_is_active: null,
           sku: null,
           car_created_at: null,
           image: null,
           additional_images: null,
-          is_primary: false,
         }
       }
 
@@ -462,11 +565,12 @@ export function E2EManagement() {
         pic_name: data.lead?.pic_name || null,
         location: data.car_info?.location || null,
         mileage: data.car_info?.mileage || null,
+        is_primary: data.car_info?.is_primary || false,
+        workflow2_is_active: data.car_info?.workflow2_is_active ?? null,
+        additional_images: data.car_info?.additional_images || null,
         sku: data.car_info?.sku || null,
         car_created_at: data.car_info?.created_at || null,
         image: data.car_info?.image || null,
-        additional_images: data.car_info?.additional_images || null,
-        is_primary: data.car_info?.is_primary || false,
       }
     } catch (error) {
       console.error("[E2E] Error fetching lead details for phone:", phone, error)
@@ -489,10 +593,12 @@ export function E2EManagement() {
         pic_name: null,
         location: null,
         mileage: null,
+        is_primary: false,
+        workflow2_is_active: null,
         sku: null,
         car_created_at: null,
+        image: null,
         additional_images: null,
-        is_primary: false,
       }
     }
   }
@@ -582,6 +688,173 @@ export function E2EManagement() {
     }
   }
 
+  async function fetchActivityLog(phone: string) {
+    setLoadingActivity(true)
+    try {
+      console.log("[E2E] Fetching activity log for phone:", phone)
+      const response = await fetch(`https://n8n.vucar.vn/webhook/824be9f2-9b69-4ca7-ac29-ffb91fe41cf4/824be9f2-9b69-4ca7-ac29-ffb91fe41cf4/${phone}`)
+
+      console.log("[E2E] Activity log response status:", response.status)
+
+      if (!response.ok) {
+        console.log("[E2E] Activity log response not OK")
+        setActivityLog([])
+        return
+      }
+
+      const data = await response.json()
+      console.log("[E2E] Activity log data received:", data)
+      setActivityLog(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error("[E2E] Error fetching activity log:", error)
+      setActivityLog([])
+    } finally {
+      setLoadingActivity(false)
+    }
+  }
+
+  async function fetchDealerGroups() {
+    setLoadingDealerGroups(true)
+    try {
+      const response = await fetch("/api/e2e/dealer-groups")
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch dealer groups")
+      }
+
+      const data = await response.json()
+      console.log("[E2E] Dealer groups data:", data)
+
+      setDealerGroups(data.groups || [])
+    } catch (error) {
+      console.error("[E2E] Error fetching dealer groups:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể tải danh sách nhóm dealer",
+        variant: "destructive",
+      })
+      setDealerGroups([])
+    } finally {
+      setLoadingDealerGroups(false)
+    }
+  }
+
+  function handleOpenSendDealerDialog() {
+    setSendDealerDialogOpen(true)
+    setSelectedGroupIds([])
+    setDealerGroupSearch("")
+    fetchDealerGroups()
+  }
+
+  async function handleSendToGroups() {
+    if (!selectedLead?.car_id || selectedGroupIds.length === 0) return
+
+    setSendingToGroups(true)
+    try {
+      // Get selected groups with dealer IDs
+      const selectedGroups = dealerGroups.filter(g => selectedGroupIds.includes(g.groupId))
+
+      // Get current time
+      const now = new Date()
+      const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`
+
+      // Prepare car information message using the template
+      const carInfo = `Thời gian nhận thông tin: ${timeString}\n` +
+        `Thông tin chi tiết xe: ${selectedLead.brand || ''} ${selectedLead.model || ''} ${selectedLead.year || ''}\n` +
+        `Số km đã đi (Odo): ${selectedLead.mileage ? selectedLead.mileage.toLocaleString() : 'N/A'} km\n` +
+        `Khu vực: ${selectedLead.location || 'N/A'}\n` +
+        `Giá mong muốn: ${selectedLead.price_customer || 'N/A'}\n` +
+        `Car_id: ${selectedLead.car_id}\n` +
+        `Vucar hỗ trợ tài chính: 80% giá trị xe, lãi suất từ 500đ/ngày/1 triệu đồng.`
+
+      // Extract image URLs from additional_images
+      const imageUrls: string[] = []
+      console.log("[E2E] selectedLead.additional_images:", selectedLead.additional_images)
+
+      if (selectedLead.additional_images) {
+        // Get images from all categories (paper, inside, outside, etc.)
+        Object.values(selectedLead.additional_images).forEach(images => {
+          if (Array.isArray(images)) {
+            images.forEach(img => {
+              if (img.url) {
+                imageUrls.push(img.url)
+              }
+            })
+          }
+        })
+      }
+
+      console.log("[E2E] Extracted imageUrls:", imageUrls)
+      console.log("[E2E] Number of images:", imageUrls.length)
+
+      // Send messages and images to groups via Zalo API
+      const sendResponse = await fetch("/api/e2e/send-to-groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          groupIds: selectedGroupIds,
+          message: carInfo,
+          imageUrls: imageUrls, // Send all images
+          phone: selectedLead.phone || "0986755669"
+        }),
+      })
+
+      const sendResult = await sendResponse.json()
+
+      // Create bidding records for groups that have dealer IDs
+      const biddingPromises = selectedGroups
+        .filter(group => group.dealerId) // Only groups with matching dealers
+        .map(group =>
+          fetch("/api/e2e/bidding-history/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              car_id: selectedLead.car_id,
+              dealer_id: group.dealerId,
+              price: 1, // Price 1 means "sent info only"
+              comment: "Đã gửi thông tin xe"
+            }),
+          })
+        )
+
+      const biddingResults = await Promise.all(biddingPromises)
+
+      // Check results
+      const sendSuccess = sendResult.successCount || 0
+
+      if (sendSuccess > 0) {
+        toast({
+          title: "Thành công",
+          description: `Đã gửi thông tin xe và ${imageUrls.length} ảnh đến ${sendSuccess} nhóm dealer`,
+        })
+      } else {
+        toast({
+          title: "Gửi thất bại",
+          description: "Không thể gửi tin nhắn đến các nhóm",
+          variant: "destructive",
+        })
+      }
+
+      // Refresh bidding history
+      if (selectedLead.car_id) {
+        fetchBiddingHistory(selectedLead.car_id)
+      }
+
+      // Close dialog
+      setSendDealerDialogOpen(false)
+      setSelectedGroupIds([])
+    } catch (error) {
+      console.error("[E2E] Error sending to groups:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể gửi thông tin xe",
+        variant: "destructive",
+      })
+    } finally {
+      setSendingToGroups(false)
+    }
+  }
+
   async function handleViewZaloChat(lead: Lead) {
     if (!lead.car_id) {
       toast({
@@ -638,6 +911,7 @@ export function E2EManagement() {
   async function handleLeadClick(lead: Lead) {
     setSelectedLead(lead)
     setActiveDetailView("workflow")
+    setActiveWorkflowView("purchase") // Reset to default workflow view
     setLoadingMessages(true)
     setChatMessages([])
 
@@ -649,6 +923,23 @@ export function E2EManagement() {
     setDecoyWebThreads([])
     setSelectedDecoyWebThreadId(null)
 
+    // Reset Activity Log state
+    setActivityLog([])
+    setLoadingActivity(false)
+
+    // Fetch fresh lead details to get workflow2_is_active and other updated info
+    const phone = lead.phone || lead.additional_phone
+    if (phone) {
+      const leadDetails = await fetchLeadDetails(phone)
+
+      // Update selected lead with fresh data
+      const updatedLead = {
+        ...lead,
+        ...leadDetails
+      }
+      setSelectedLead(updatedLead)
+    }
+
     // Fetch E2E messages if car_id exists
     if (lead.car_id) {
       const messages = await fetchChatMessages(lead.car_id)
@@ -659,6 +950,14 @@ export function E2EManagement() {
       fetchDecoyChat(lead.id)
     } else {
       setLoadingMessages(false)
+    }
+
+    // Fetch Activity Log if phone exists
+    if (phone) {
+      console.log("[E2E] Calling fetchActivityLog with phone:", phone)
+      fetchActivityLog(phone)
+    } else {
+      console.log("[E2E] No phone available for activity log")
     }
   }
 
@@ -1202,6 +1501,7 @@ export function E2EManagement() {
         dealer_bidding: dealerBiddingStatus,
         decoy_thread_count: decoyThreadCount,
         bidding_session_count: biddingSessionCount,
+        workflow2_is_active: leadDetails.workflow2_is_active,
       }
 
       setSelectedLead(updatedLead)
@@ -1277,6 +1577,20 @@ export function E2EManagement() {
         description: "Đã kích hoạt Workflow 2",
       })
 
+      // Update selected lead's workflow2_is_active status
+      if (selectedLead) {
+        setSelectedLead({
+          ...selectedLead,
+          workflow2_is_active: true
+        })
+        // Also update in leads list
+        setLeads(prevLeads => prevLeads.map(lead =>
+          lead.id === selectedLead.id ? { ...lead, workflow2_is_active: true } : lead
+        ))
+      }
+
+      setWorkflow2Open(false)
+      setActiveWorkflowView("seeding")
       setWorkflow2Open(false)
       setWorkflow2Activated(true)
 
@@ -1556,7 +1870,7 @@ export function E2EManagement() {
       }
 
       // Step 2: Trigger n8n webhook
-      await fetch("https://n8n.vucar.vn/webhook/57039721-04a9-42a1-945c-fdd24250e6a8", {
+      await fetch("https://n8n.vucar.vn/webhook/60362b14-0e05-4849-b3cd-ebbbdb854b49", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1566,6 +1880,7 @@ export function E2EManagement() {
           first_message: selectedAccount.default_message,
           account: selectedAccount.account,
           segment: decoySegment,
+          minutes: parseInt(decoyMinutes) || 0,
         }),
       })
 
@@ -1590,6 +1905,7 @@ export function E2EManagement() {
       // Close dialog and reset
       setDecoyDialogOpen(false)
       setDecoySegment("")
+      setDecoyMinutes("")
     } catch (error) {
       console.error("[E2E] Error sending decoy:", error)
       toast({
@@ -1599,6 +1915,62 @@ export function E2EManagement() {
       })
     } finally {
       setSendingDecoy(false)
+    }
+  }
+
+  async function fetchDealers() {
+    try {
+      const response = await fetch("/api/e2e/dealers")
+      if (response.ok) {
+        const data = await response.json()
+        setDealers(data.dealers || [])
+      }
+    } catch (error) {
+      console.error("[E2E] Error fetching dealers:", error)
+    }
+  }
+
+  async function handleCreateBiddingManual() {
+    if (!selectedLead?.car_id || !newBidDealerId || !newBidPrice) return
+
+    setCreatingBiddingManual(true)
+    try {
+      const response = await fetch("/api/e2e/bidding-history/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          car_id: selectedLead.car_id,
+          dealer_id: newBidDealerId,
+          price: parseFloat(newBidPrice),
+          comment: newBidComment
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to create bidding")
+      }
+
+      toast({
+        title: "Thành công",
+        description: "Đã thêm giá thành công",
+      })
+
+      // Reset form
+      setNewBidDealerId("")
+      setNewBidPrice("")
+      setNewBidComment("")
+
+      // Refresh list
+      fetchBiddingHistory(selectedLead.car_id)
+    } catch (error) {
+      console.error("[E2E] Error creating bidding:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể thêm giá",
+        variant: "destructive",
+      })
+    } finally {
+      setCreatingBiddingManual(false)
     }
   }
 
@@ -1652,6 +2024,8 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
   async function fetchBiddingHistory(car_id: string) {
     setLoadingBiddingHistory(true)
     setBiddingHistoryOpen(true)
+    setEditingBiddingId(null) // Reset editing state
+    fetchDealers() // Fetch dealers when opening history
 
     try {
       const response = await fetch("/api/e2e/bidding-history", {
@@ -1679,6 +2053,50 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
       setLoadingBiddingHistory(false)
     }
   }
+
+  async function handleUpdateBiddingPrice(id: string) {
+    if (!editingPrice) return
+
+    setUpdatingBidding(true)
+    try {
+      const response = await fetch("/api/e2e/bidding-history/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          price: parseFloat(editingPrice)
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to update price")
+      }
+
+      toast({
+        title: "Thành công",
+        description: "Đã cập nhật giá thành công",
+      })
+
+      setEditingBiddingId(null)
+      // Refresh list
+      if (selectedLead?.car_id) {
+        fetchBiddingHistory(selectedLead.car_id)
+      }
+    } catch (error) {
+      console.error("[E2E] Error updating bidding price:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể cập nhật giá",
+        variant: "destructive",
+      })
+    } finally {
+      setUpdatingBidding(false)
+    }
+  }
+
+
+
+
 
   async function searchLeadByPhone() {
     if (!searchPhone.trim()) {
@@ -1720,9 +2138,14 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
       // Fetch all details for matching leads
       const enrichedLeads = await Promise.all(
         matchingLeads.map(async (lead) => {
-          const phone = lead.phone || lead.additional_phone
+          // If lead has both phone and additional_phone, fetch details for both
+          const phonesToSearch = []
+          if (lead.phone) phonesToSearch.push(lead.phone)
+          if (lead.additional_phone && lead.additional_phone !== lead.phone) {
+            phonesToSearch.push(lead.additional_phone)
+          }
 
-          if (!phone) {
+          if (phonesToSearch.length === 0) {
             return {
               ...lead,
               car_id: null,
@@ -1739,7 +2162,40 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
             }
           }
 
-          const leadDetails = await fetchLeadDetails(phone)
+          // Fetch details for all phone numbers and merge results
+          const allLeadDetails = await Promise.all(
+            phonesToSearch.map(phone => fetchLeadDetails(phone))
+          )
+
+          // Use the first non-null result or merge data from multiple sources
+          const leadDetails = allLeadDetails.reduce((merged, current) => {
+            return {
+              car_id: merged.car_id || current.car_id,
+              price_customer: merged.price_customer || current.price_customer,
+              brand: merged.brand || current.brand,
+              model: merged.model || current.model,
+              variant: merged.variant || current.variant,
+              year: merged.year || current.year,
+              plate: merged.plate || current.plate,
+              stage: merged.stage || current.stage,
+              has_enough_images: merged.has_enough_images || current.has_enough_images,
+              bot_status: merged.bot_status || current.bot_status,
+              price_highest_bid: merged.price_highest_bid || current.price_highest_bid,
+              first_message_sent: merged.first_message_sent || current.first_message_sent,
+              session_created: merged.session_created || current.session_created,
+              notes: merged.notes || current.notes,
+              pic_id: merged.pic_id || current.pic_id,
+              pic_name: merged.pic_name || current.pic_name,
+              location: merged.location || current.location,
+              mileage: merged.mileage || current.mileage,
+              is_primary: merged.is_primary || current.is_primary,
+              workflow2_is_active: merged.workflow2_is_active ?? current.workflow2_is_active,
+              sku: merged.sku || current.sku,
+              car_created_at: merged.car_created_at || current.car_created_at,
+              image: merged.image || current.image,
+              additional_images: merged.additional_images || current.additional_images,
+            }
+          }, allLeadDetails[0])
 
           let dealer_bidding: DealerBiddingStatus = { status: "not_sent" }
 
@@ -2861,14 +3317,25 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
                             </div>
                           )}
                         </div>
-                        {selectedLead.session_created && !workflow2Activated && (
+                        {selectedLead.session_created && (selectedLead.workflow2_is_active === false) && (
                           <Button
                             variant="default"
                             size="sm"
-                            onClick={() => setWorkflow2Open(true)}
+                            onClick={() => {
+                              // Populate default values
+                              setWorkflow2Data({
+                                duration: "6",
+                                minPrice: selectedLead?.price_customer?.toString() || "",
+                                maxPrice: selectedLead?.price_highest_bid?.toString() || "",
+                                comment: true,
+                                numberOfComments: "20",
+                                bid: true
+                              })
+                              setWorkflow2Open(true)
+                            }}
                             className="bg-emerald-600 hover:bg-emerald-700"
                           >
-                            Kích hoạt Workflow 2
+                            Kích hoạt WF 2
                           </Button>
                         )}
                       </div>
@@ -2975,10 +3442,10 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
                           {/* Tạo Phiên 2 */}
                           <div className="flex flex-col items-center gap-3">
                             <WorkflowStep
-                              icon={<Play className="w-8 h-8" />}
-                              title="Tạo Phiên 2"
-                              status="Kích hoạt phiên Seeding"
-                              isCompleted={true}
+                              icon={<Play className={`w-8 h-8 ${selectedLead.workflow2_is_active ? "" : "text-gray-400"}`} />}
+                              title={`Tạo Phiên 2`}
+                              status={selectedLead.workflow2_is_active ? "Đã kích hoạt" : "Chưa kích hoạt"}
+                              isCompleted={selectedLead.workflow2_is_active === true}
                             />
                             <Button
                               variant="outline"
@@ -3074,17 +3541,56 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
                             <p className="text-xs text-gray-500">Giá cao nhất (Dealer)</p>
                             <div className="flex items-center gap-2">
                               <p className="text-sm font-semibold text-blue-600">
-                                {selectedLead.price_highest_bid ? formatPrice(selectedLead.price_highest_bid) :
-                                  (selectedLead.dealer_bidding?.maxPrice ? formatPrice(selectedLead.dealer_bidding.maxPrice) : "N/A")}
+                                {selectedLead.dealer_bidding?.maxPrice ? formatPrice(selectedLead.dealer_bidding.maxPrice) : "N/A"}
                               </p>
-                              {((selectedLead.price_highest_bid || selectedLead.dealer_bidding?.maxPrice) &&
+                              {selectedLead.dealer_bidding?.status === "got_price" &&
                                 selectedLead.price_customer &&
-                                (selectedLead.price_highest_bid || selectedLead.dealer_bidding?.maxPrice || 0) > selectedLead.price_customer) && (
+                                selectedLead.dealer_bidding?.maxPrice &&
+                                selectedLead.dealer_bidding.maxPrice > selectedLead.price_customer && (
                                   <Badge variant="destructive" className="text-xs">Override</Badge>
                                 )}
                             </div>
                           </div>
                         </div>
+                      </div>
+
+                      {/* Activity Log */}
+                      <div className="bg-white rounded-lg p-6 shadow-sm">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Hoạt động gần đây</h4>
+                        {loadingActivity ? (
+                          <div className="text-center py-8">
+                            <Loader2 className="h-6 w-6 animate-spin mx-auto text-gray-400" />
+                            <p className="text-sm text-gray-400 mt-2">Đang tải...</p>
+                          </div>
+                        ) : activityLog.length === 0 ? (
+                          <div className="text-center py-8 text-gray-400">
+                            <p className="text-sm">Chưa có hoạt động nào</p>
+                          </div>
+                        ) : (
+                          <div className="max-h-96 overflow-y-auto space-y-3">
+                            {activityLog.map((activity, index) => (
+                              <div
+                                key={index}
+                                className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200"
+                              >
+                                <div className="flex-shrink-0 w-2 h-2 bg-purple-500 rounded-full mt-1.5" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-gray-900">{activity.event_name}</p>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    {new Date(activity.time).toLocaleString('vi-VN', {
+                                      year: 'numeric',
+                                      month: '2-digit',
+                                      day: '2-digit',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      second: '2-digit'
+                                    })}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </>
@@ -3505,7 +4011,99 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
             <DialogDescription>
               Danh sách các dealer đã trả giá cho xe {formatCarInfo(selectedLead || {} as Lead)}
             </DialogDescription>
+            <div className="mt-2 flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAddBiddingForm(!showAddBiddingForm)}
+              >
+                {showAddBiddingForm ? "Ẩn thêm giá" : "Thêm thông tin"}
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleOpenSendDealerDialog}
+                className="bg-emerald-600 hover:bg-emerald-700"
+              >
+                Gửi thêm dealer
+              </Button>
+            </div>
           </DialogHeader>
+
+          {showAddBiddingForm && (
+            <div className="flex items-end gap-2 p-4 bg-muted/20 rounded-lg border mb-4 mt-4">
+              <div className="grid gap-2 flex-1">
+                <Label>Chọn Dealer</Label>
+                <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={openCombobox}
+                      className="w-full justify-between"
+                    >
+                      {newBidDealerId
+                        ? dealers.find((dealer) => dealer.id === newBidDealerId)?.name
+                        : "Chọn dealer..."}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0">
+                    <Command>
+                      <CommandInput placeholder="Tìm kiếm dealer..." />
+                      <CommandList>
+                        <CommandEmpty>Không tìm thấy dealer.</CommandEmpty>
+                        <CommandGroup>
+                          {dealers.map((dealer) => (
+                            <CommandItem
+                              key={dealer.id}
+                              value={dealer.name}
+                              onSelect={() => {
+                                setNewBidDealerId(dealer.id === newBidDealerId ? "" : dealer.id)
+                                setOpenCombobox(false)
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  newBidDealerId === dealer.id ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {dealer.name} {dealer.group_zalo_name ? `(${dealer.group_zalo_name})` : ""}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="grid gap-2 w-32">
+                <Label>Giá (VNĐ)</Label>
+                <Input
+                  type="number"
+                  placeholder="Nhập giá"
+                  value={newBidPrice}
+                  onChange={(e) => setNewBidPrice(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2 flex-1">
+                <Label>Ghi chú</Label>
+                <Input
+                  placeholder="Nhập ghi chú (tùy chọn)"
+                  value={newBidComment}
+                  onChange={(e) => setNewBidComment(e.target.value)}
+                />
+              </div>
+              <Button
+                onClick={handleCreateBiddingManual}
+                disabled={creatingBiddingManual || !newBidDealerId || !newBidPrice}
+              >
+                {creatingBiddingManual ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+                Thêm giá
+              </Button>
+            </div>
+          )}
 
           <div className="flex-1 overflow-y-auto">
             {loadingBiddingHistory ? (
@@ -3535,15 +4133,58 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
                         <td className="px-4 py-3 text-muted-foreground">{index + 1}</td>
                         <td className="px-4 py-3 font-medium">{bid.dealer_name}</td>
                         <td className="px-4 py-3">
-                          <div className="font-semibold text-primary">
-                            {formatPrice(bid.price)}
-                          </div>
+                          {editingBiddingId === bid.id ? (
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                value={editingPrice}
+                                onChange={(e) => setEditingPrice(e.target.value)}
+                                className="h-8 w-32"
+                                autoFocus
+                              />
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                onClick={() => handleUpdateBiddingPrice(bid.id)}
+                                disabled={updatingBidding}
+                              >
+                                {updatingBidding ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => setEditingBiddingId(null)}
+                                disabled={updatingBidding}
+                              >
+                                <div className="h-4 w-4 flex items-center justify-center font-bold">✕</div>
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 group">
+                              <div className={`font-semibold ${bid.price < 2 ? "text-muted-foreground italic" : "text-primary"}`}>
+                                {bid.price < 2 ? "Chưa có giá" : formatPrice(bid.price)}
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => {
+                                  setEditingBiddingId(bid.id)
+                                  setEditingPrice(bid.price.toString())
+                                }}
+                              >
+                                <div className="h-3 w-3">✎</div>
+                              </Button>
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">
                           {formatDate(bid.created_at)}
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">
-                          {bid.comment || "-"}
+                          {bid.price < 2 ? "Đã gửi thông tin xe" : (bid.comment || "-")}
                         </td>
                       </tr>
                     ))}
@@ -3775,6 +4416,17 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
                 </SelectContent>
               </Select>
             </div>
+            <div className="grid gap-2">
+              <Label htmlFor="minutes">Số phút trước khi bot chat</Label>
+              <Input
+                id="minutes"
+                type="number"
+                placeholder="Nhập số phút..."
+                value={decoyMinutes || "30"}
+                onChange={(e) => setDecoyMinutes(e.target.value)}
+                min="0"
+              />
+            </div>
             <div className="text-sm text-muted-foreground">
               <p>Hệ thống sẽ tự động chọn ngẫu nhiên tài khoản:</p>
               <ul className="list-disc list-inside mt-1">
@@ -3868,129 +4520,43 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
               </div>
 
               {/* Car Images - Now in 2nd position */}
-              {(() => {
-                console.log('[IMAGE SECTION] About to check if should display images');
-                console.log('[IMAGE SECTION] selectedLead.additional_images:', selectedLead.additional_images);
-                console.log('[IMAGE SECTION] Type:', typeof selectedLead.additional_images);
-                return true; // Always show section for debugging
-              })() && selectedLead.additional_images && (
+              {selectedLead.additional_images && (
                   <div>
                     <div className="flex items-center gap-2 mb-3">
                       <svg className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       </svg>
                       <h3 className="text-sm font-semibold text-gray-900">
-                        Hình ảnh thực tế ({(() => {
-                          try {
-                            const images = JSON.parse(selectedLead.additional_images);
-                            return Array.isArray(images) ? images.length : 0;
-                          } catch {
-                            return 0;
-                          }
-                        })()})
+                        Hình ảnh thực tế ({imageCount})
                       </h3>
                     </div>
                     <div className="grid grid-cols-4 gap-3">
-                      {(() => {
-                        console.log('[IMAGE DEBUG] Starting image display logic');
-                        console.log('[IMAGE DEBUG] selectedLead.additional_images:', selectedLead.additional_images);
-                        console.log('[IMAGE DEBUG] Type of additional_images:', typeof selectedLead.additional_images);
-
-                        try {
-                          if (!selectedLead.additional_images) {
-                            console.log('[IMAGE DEBUG] No additional_images found');
-                            return null;
-                          }
-
-                          // Handle both string and object types
-                          let imagesData;
-                          if (typeof selectedLead.additional_images === 'string') {
-                            console.log('[IMAGE DEBUG] additional_images is a string, parsing...');
-                            imagesData = JSON.parse(selectedLead.additional_images);
-                            console.log('[IMAGE DEBUG] Parsed imagesData:', imagesData);
-                          } else {
-                            console.log('[IMAGE DEBUG] additional_images is already an object');
-                            imagesData = selectedLead.additional_images;
-                          }
-
-                          // Extract all image URLs from all categories
-                          const allImages: string[] = [];
-
-                          if (imagesData && typeof imagesData === 'object') {
-                            console.log('[IMAGE DEBUG] imagesData is an object, extracting URLs...');
-                            console.log('[IMAGE DEBUG] imagesData keys:', Object.keys(imagesData));
-
-                            // Iterate through all categories (paper, inside, outside, thumbnail)
-                            Object.entries(imagesData).forEach(([category, categoryData]: [string, any]) => {
-                              console.log(`[IMAGE DEBUG] Processing category: ${category}`, categoryData);
-
-                              if (Array.isArray(categoryData)) {
-                                console.log(`[IMAGE DEBUG] Category ${category} is an array with ${categoryData.length} items`);
-
-                                categoryData.forEach((img: any, idx: number) => {
-                                  console.log(`[IMAGE DEBUG] Category ${category}, item ${idx}:`, img);
-
-                                  if (img && img.url) {
-                                    console.log(`[IMAGE DEBUG] Found URL: ${img.url}`);
-                                    allImages.push(img.url);
-                                  } else {
-                                    console.log(`[IMAGE DEBUG] Item ${idx} in ${category} has no URL`);
-                                  }
-                                });
-                              } else {
-                                console.log(`[IMAGE DEBUG] Category ${category} is not an array:`, typeof categoryData);
-                              }
-                            });
-                          } else {
-                            console.log('[IMAGE DEBUG] imagesData is not an object:', typeof imagesData);
-                          }
-
-                          console.log('[IMAGE DEBUG] Total images found:', allImages.length);
-                          console.log('[IMAGE DEBUG] All image URLs:', allImages);
-
-                          // Display up to 8 images
-                          if (allImages.length > 0) {
-                            console.log('[IMAGE DEBUG] Rendering', Math.min(allImages.length, 8), 'images');
-                            return allImages.slice(0, 8).map((imgUrl, idx) => (
-                              <div
-                                key={idx}
-                                className="aspect-square rounded-lg overflow-hidden bg-gray-100 cursor-pointer"
-                                onClick={() => {
-                                  setGalleryImages(allImages);
-                                  setSelectedImageIndex(idx);
-                                  setGalleryOpen(true);
-                                }}
-                              >
-                                <img
-                                  src={imgUrl}
-                                  alt={`Car ${idx}`}
-                                  className="w-full h-full object-cover hover:scale-110 transition-transform"
-                                  onLoad={() => console.log(`[IMAGE DEBUG] Image ${idx} loaded successfully:`, imgUrl)}
-                                  onError={(e) => {
-                                    console.error(`[IMAGE DEBUG] Image ${idx} failed to load:`, imgUrl);
-                                    e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23f3f4f6" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%239ca3af"%3ENo Image%3C/text%3E%3C/svg%3E';
-                                  }}
-                                />
-                              </div>
-                            ));
-                          }
-
-                          console.log('[IMAGE DEBUG] No images to display');
-                          return (
-                            <div className="col-span-4 text-center py-8 text-gray-400">
-                              <p className="text-sm">Chưa có ảnh</p>
-                            </div>
-                          );
-                        } catch (e) {
-                          console.error('[IMAGE DEBUG] Error in image display logic:', e);
-                          console.error('[IMAGE DEBUG] additional_images value:', selectedLead.additional_images);
-                          return (
-                            <div className="col-span-4 text-center py-8 text-gray-400">
-                              <p className="text-sm">Lỗi khi tải ảnh</p>
-                            </div>
-                          );
-                        }
-                      })()}
+                      {processedImages.length > 0 ? (
+                        processedImages.slice(0, 8).map((imgUrl, idx) => (
+                          <div
+                            key={idx}
+                            className="aspect-square rounded-lg overflow-hidden bg-gray-100 cursor-pointer"
+                            onClick={() => {
+                              setGalleryImages(processedImages);
+                              setSelectedImageIndex(idx);
+                              setGalleryOpen(true);
+                            }}
+                          >
+                            <img
+                              src={imgUrl}
+                              alt={`Car ${idx}`}
+                              className="w-full h-full object-cover hover:scale-110 transition-transform"
+                              onError={(e) => {
+                                e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23f3f4f6" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%239ca3af"%3ENo Image%3C/text%3E%3C/svg%3E';
+                              }}
+                            />
+                          </div>
+                        ))
+                      ) : (
+                        <div className="col-span-4 text-center py-8 text-gray-400">
+                          <p className="text-sm">Chưa có ảnh</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -4169,6 +4735,110 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
           </DialogFooter>
         </DialogContent>
       </Dialog >
+
+      {/* Send to Dealer Groups Dialog */}
+      <Dialog open={sendDealerDialogOpen} onOpenChange={setSendDealerDialogOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Gửi thông tin xe đến nhóm dealer</DialogTitle>
+            <DialogDescription>
+              Chọn các nhóm dealer để gửi thông tin xe {formatCarInfo(selectedLead || {} as Lead)}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="px-6 pb-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Tìm kiếm nhóm dealer..."
+                value={dealerGroupSearch}
+                onChange={(e) => setDealerGroupSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-6">
+            {loadingDealerGroups ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <span className="ml-3 text-muted-foreground">Đang tải danh sách nhóm...</span>
+              </div>
+            ) : (() => {
+              // Only show groups that have matching dealers
+              const filteredGroups = dealerGroups
+                .filter(group => group.dealerId) // Only groups with dealer ID
+                .filter(group =>
+                  group.groupName.toLowerCase().includes(dealerGroupSearch.toLowerCase())
+                )
+
+              return filteredGroups.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <p>{dealerGroupSearch ? "Không tìm thấy nhóm phù hợp" : "Không tìm thấy nhóm dealer nào"}</p>
+                </div>
+              ) : (
+                <div className="space-y-2 pb-4">
+                  {filteredGroups.map((group) => (
+                    <div
+                      key={group.groupId}
+                      className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-muted/30 transition-colors"
+                    >
+                      <Checkbox
+                        id={group.groupId}
+                        checked={selectedGroupIds.includes(group.groupId)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedGroupIds([...selectedGroupIds, group.groupId])
+                          } else {
+                            setSelectedGroupIds(selectedGroupIds.filter(id => id !== group.groupId))
+                          }
+                        }}
+                      />
+                      <Label
+                        htmlFor={group.groupId}
+                        className="flex-1 cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                      >
+                        {group.groupName}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+          </div>
+
+          <DialogFooter>
+            <div className="flex items-center justify-between w-full">
+              <div className="text-sm text-muted-foreground">
+                Đã chọn: <span className="font-semibold">{selectedGroupIds.length}</span> nhóm
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setSendDealerDialogOpen(false)}
+                  disabled={sendingToGroups}
+                >
+                  Hủy
+                </Button>
+                <Button
+                  onClick={handleSendToGroups}
+                  disabled={selectedGroupIds.length === 0 || sendingToGroups}
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                >
+                  {sendingToGroups ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Đang gửi...
+                    </>
+                  ) : (
+                    `Gửi đến ${selectedGroupIds.length} nhóm`
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Image Gallery Modal */}
       <Dialog open={galleryOpen} onOpenChange={setGalleryOpen}>

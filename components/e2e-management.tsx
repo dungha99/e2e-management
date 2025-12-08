@@ -133,6 +133,24 @@ const SEGMENT_TO_REASON_MAP: Record<string, string> = {
 
 const ITEMS_PER_PAGE = 10
 
+const handlePriceFormat = (
+  value: string,
+  setter: (value: string) => void
+) => {
+  // Remove non-digits
+  const rawValue = value.replace(/\D/g, "")
+  if (rawValue === "") {
+    setter("")
+    return
+  }
+
+  let numValue = parseFloat(rawValue)
+
+  // Format with dots for thousands (standard vi-VN)
+  setter(numValue.toLocaleString("vi-VN"))
+}
+
+
 // New Workflow Step Component
 interface WorkflowStepProps {
   icon: React.ReactNode
@@ -211,6 +229,15 @@ export function E2EManagement() {
   const [decoyWebThreads, setDecoyWebThreads] = useState<DecoyThread[]>([])
   const [selectedDecoyWebThreadId, setSelectedDecoyWebThreadId] = useState<string | null>(null)
   const [loadingDecoyWeb, setLoadingDecoyWeb] = useState(false)
+
+  // Create thread state
+  const [createThreadOpen, setCreateThreadOpen] = useState(false)
+  const [createThreadLoading, setCreateThreadLoading] = useState(false)
+  const [fourDigitsInput, setFourDigitsInput] = useState("")
+  const [firstMessageInput, setFirstMessageInput] = useState("Hello")
+
+
+
 
   // Sync state
   const [syncing, setSyncing] = useState(false)
@@ -986,6 +1013,69 @@ export function E2EManagement() {
     }
   }
 
+  // Create new chat thread
+  async function handleCreateThread() {
+    if (!selectedLead) return
+
+    // Validate 4 digits
+    if (!/^\d{4}$/.test(fourDigitsInput)) {
+      toast({
+        title: "Lỗi",
+        description: "Vui lòng nhập đúng 4 số cuối điện thoại",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setCreateThreadLoading(true)
+    try {
+      const response = await fetch("/api/e2e/create-thread", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lead_id: selectedLead.id,
+          fourDigits: fourDigitsInput,
+          firstMessage: firstMessageInput || "Hello"
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        toast({
+          title: "Lỗi",
+          description: data.error || "Không thể tạo thread",
+          variant: "destructive",
+        })
+        return
+      }
+
+      if (data.success) {
+        toast({
+          title: "Thành công",
+          description: "Đã tạo thread mới",
+        })
+        // Refresh thread list
+        await viewDecoyWebThreads(selectedLead.id)
+        // Close create modal and reset input
+        setCreateThreadOpen(false)
+        setFourDigitsInput("")
+        setFirstMessageInput("Hello")
+
+
+      }
+    } catch (error) {
+      console.error("[E2E] Error creating thread:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể tạo thread mới",
+        variant: "destructive",
+      })
+    } finally {
+      setCreateThreadLoading(false)
+    }
+  }
+
   async function handleCreateSession(version: 1 | 2) {
     if (!selectedLead) return
 
@@ -1516,85 +1606,32 @@ export function E2EManagement() {
     if (!selectedLead) return;
 
     try {
-      // Extract all image URLs
-      let imageUrls: string[] = [];
-      if (selectedLead.additional_images) {
-        try {
-          let imagesData;
-          if (typeof selectedLead.additional_images === 'string') {
-            imagesData = JSON.parse(selectedLead.additional_images);
-          } else {
-            imagesData = selectedLead.additional_images;
-          }
-
-          if (imagesData && typeof imagesData === 'object') {
-            Object.entries(imagesData).forEach(([category, categoryData]: [string, any]) => {
-              if (Array.isArray(categoryData)) {
-                categoryData.forEach((img: any) => {
-                  if (img && img.url) {
-                    imageUrls.push(img.url);
-                  }
-                });
-              }
-            });
-          }
-        } catch (e) {
-          console.error('[COPY] Error parsing images:', e);
-        }
-      }
-
-      // Format price helper
-      const formatPrice = (price: number | null | undefined) => {
-        if (!price) return "N/A";
-        return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
-      };
-
-      // Build the copy text
-      const carName = [selectedLead.brand, selectedLead.model, selectedLead.variant]
+      // Build car details
+      const carName = [selectedLead.brand, selectedLead.model, selectedLead.variant, selectedLead.year]
         .filter(Boolean)
         .join(" ") || "N/A";
 
-      const copyText = `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 THÔNG TIN XE CHI TIẾT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // Format mileage
+      const mileageText = selectedLead.mileage
+        ? `${selectedLead.mileage.toLocaleString('vi-VN')} km`
+        : "N/A";
 
-🚗 THÔNG TIN XE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Tên xe: ${carName}
-Năm sản xuất: ${selectedLead.year || "N/A"}
-Địa điểm: ${selectedLead.location || "N/A"}
-Biển số: ${selectedLead.plate || "N/A"}
-SKU: ${selectedLead.sku || "N/A"}
+      // Format location
+      const locationText = selectedLead.location || "N/A";
 
-📊 CHI TIẾT KỸ THUẬT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ODO: ${selectedLead.mileage ? `${selectedLead.mileage.toLocaleString()} km` : "N/A"}
-Phiên bản: ${selectedLead.variant || "N/A"}
-Màu sắc: N/A
-Động cơ: N/A
-Hộp số: N/A
+      // Format date and time
+      const now = new Date();
+      const timeString = now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      const dateString = now.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-💰 THÔNG TIN GIÁ
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Giá mong muốn: ${formatPrice(selectedLead.price_customer)}
-Giá cao nhất (Dealer): ${formatPrice(selectedLead.price_highest_bid || selectedLead.dealer_bidding?.maxPrice)}
-
-👤 THÔNG TIN KHÁCH HÀNG
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Tên khách hàng: ${selectedLead.name || "N/A"}
-Số điện thoại: ${selectedLead.phone || selectedLead.additional_phone || "N/A"}
-PIC: ${selectedLead.pic_name || "N/A"}
-Giai đoạn: ${selectedLead.stage || "N/A"}
-Ngày tạo lead: ${selectedLead.created_at ? new Date(selectedLead.created_at).toLocaleDateString("vi-VN") : "N/A"}
-Ngày tạo xe: ${selectedLead.car_created_at ? new Date(selectedLead.car_created_at).toLocaleDateString("vi-VN") : "N/A"}
-
-📸 HÌNH ẢNH (${imageUrls.length})
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${imageUrls.length > 0 ? imageUrls.map((url, idx) => `${idx + 1}. ${url}`).join('\n') : 'Chưa có ảnh'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`.trim();
+      // Build the copy text
+      const copyText = `Thời gian nhận thông tin: ${timeString} ${dateString}
+Thông tin chi tiết xe: ${carName}
+Số km đã đi (Odo): ${mileageText}
+Khu vực:  - ${locationText}
+Car_id: ${selectedLead.car_id || "N/A"}
+Tình trạng pháp lý: Chưa rõ - Chưa rõ
+Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
 
       await navigator.clipboard.writeText(copyText);
 
@@ -2089,8 +2126,8 @@ ${imageUrls.length > 0 ? imageUrls.map((url, idx) => `${idx + 1}. ${url}`).join(
 
     setEditMode(true)
     setEditedStage(selectedLead.stage || "")
-    setEditedPriceCustomer(selectedLead.price_customer?.toString() || "")
-    setEditedPriceHighestBid(selectedLead.price_highest_bid?.toString() || "")
+    setEditedPriceCustomer(selectedLead.price_customer?.toLocaleString("vi-VN") || "")
+    setEditedPriceHighestBid(selectedLead.price_highest_bid?.toLocaleString("vi-VN") || "")
   }
 
   function handleCancelEdit() {
@@ -2115,8 +2152,22 @@ ${imageUrls.length > 0 ? imageUrls.map((url, idx) => `${idx + 1}. ${url}`).join(
     }
 
     // Validate prices
-    const priceCustomer = editedPriceCustomer ? parseFloat(editedPriceCustomer) : undefined
-    const priceHighestBid = editedPriceHighestBid ? parseFloat(editedPriceHighestBid) : undefined
+    // Remove dots (thousands separators) before parsing
+    const cleanPrice = (priceStr: string) => {
+      if (!priceStr) return undefined
+      // Remove all dots and commas before parsing
+      const cleaned = priceStr.replace(/[.,]/g, "")
+      let val = parseFloat(cleaned)
+
+      // If value < 10,000, assume it's a shortcut for millions (e.g. 350 -> 350,000,000)
+      if (!isNaN(val) && val < 10000) {
+        val *= 1000000
+      }
+      return val
+    }
+
+    const priceCustomer = cleanPrice(editedPriceCustomer)
+    const priceHighestBid = cleanPrice(editedPriceHighestBid)
 
     if (priceCustomer !== undefined && (isNaN(priceCustomer) || priceCustomer < 0)) {
       toast({
@@ -3022,83 +3073,123 @@ ${imageUrls.length > 0 ? imageUrls.map((url, idx) => `${idx + 1}. ${url}`).join(
                   <div className="bg-white rounded-lg shadow-sm h-[600px] flex flex-col overflow-hidden">
                     <div className="flex-1 flex gap-4 overflow-hidden">
                       {/* Left Panel - Thread List */}
-                      <div className="w-80 border-r overflow-y-auto p-4">
-                        {loadingDecoyWeb ? (
-                          <div className="flex items-center justify-center h-full">
-                            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                          </div>
-                        ) : decoyWebThreads.length === 0 ? (
-                          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                            Chưa có threads
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {decoyWebThreads.map((thread) => (
-                              <button
-                                key={thread.id}
-                                onClick={() => setSelectedDecoyWebThreadId(thread.id)}
-                                className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedDecoyWebThreadId === thread.id
-                                  ? "bg-orange-100 text-orange-900 border-orange-300"
-                                  : "bg-muted/30 hover:bg-muted/50"
-                                  }`}
-                              >
-                                <div className="font-semibold text-sm mb-1">
-                                  Bot: {thread.bot_name || "Unknown"}
-                                </div>
-                                <div className="text-xs opacity-70">
-                                  {new Date(thread.created_at).toLocaleString("vi-VN")}
-                                </div>
-                                <div className="text-xs opacity-70 mt-1">
-                                  {thread.messages.length} tin nhắn
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                      <div className="w-80 border-r overflow-y-auto flex flex-col">
+                        {/* Create Thread Button */}
+                        <div className="p-3 border-b bg-gray-50">
+                          <Button
+                            onClick={() => setCreateThreadOpen(true)}
+                            className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+                            size="sm"
+                          >
+                            <MessageCircle className="h-4 w-4 mr-2" />
+                            Tạo thread mới
+                          </Button>
+                        </div>
+                        <div className="flex-1 p-4 overflow-y-auto">
+                          {loadingDecoyWeb ? (
+                            <div className="flex items-center justify-center h-full">
+                              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                            </div>
+                          ) : decoyWebThreads.length === 0 ? (
+                            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                              Chưa có threads
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {decoyWebThreads.map((thread) => (
+                                <button
+                                  key={thread.id}
+                                  onClick={() => setSelectedDecoyWebThreadId(thread.id)}
+                                  className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedDecoyWebThreadId === thread.id
+                                    ? "bg-orange-100 text-orange-900 border-orange-300"
+                                    : "bg-muted/30 hover:bg-muted/50"
+                                    }`}
+                                >
+                                  <div className="font-semibold text-sm mb-1">
+                                    Bot: {thread.bot_name || "Unknown"}
+                                  </div>
+                                  <div className="text-xs opacity-70">
+                                    {new Date(thread.created_at).toLocaleString("vi-VN")}
+                                  </div>
+                                  <div className="text-xs opacity-70 mt-1">
+                                    {thread.messages.length} tin nhắn
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Right Panel - Messages */}
-                      <div className="flex-1 overflow-y-auto p-4">
-                        {!selectedDecoyWebThreadId ? (
-                          <div className="flex items-center justify-center h-full text-muted-foreground">
-                            Chọn một thread để xem tin nhắn
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {decoyWebThreads
-                              .find((t) => t.id === selectedDecoyWebThreadId)
-                              ?.messages.map((msg, index) => {
-                                const isBot = msg.sender === "bot" || msg.sender === "system"
-                                const timestamp = msg.displayed_at
-                                  ? new Date(msg.displayed_at).toLocaleString("vi-VN")
-                                  : ""
-
-                                return (
-                                  <div
-                                    key={index}
-                                    className={`flex ${isBot ? "justify-end" : "justify-start"}`}
-                                  >
-                                    <div
-                                      className={`max-w-[70%] rounded-lg p-3 ${isBot
-                                        ? "bg-orange-500 text-white"
-                                        : "bg-gray-200 text-gray-900"
-                                        }`}
-                                    >
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-xs font-semibold">
-                                          {isBot ? "Decoy Bot" : "Khách hàng"}
-                                        </span>
-                                        <span className="text-xs opacity-70">{timestamp}</span>
-                                      </div>
-                                      <p className="text-sm whitespace-pre-wrap break-words">
-                                        {msg.content}
-                                      </p>
-                                    </div>
-                                  </div>
-                                )
-                              })}
+                      <div className="flex-1 flex flex-col overflow-hidden bg-gray-50/30">
+                        {/* CRM Banner */}
+                        {selectedDecoyWebThreadId && (
+                          <div className="bg-blue-50 border-b border-blue-100 p-3 px-4 flex items-center justify-between shrink-0 animate-in fade-in slide-in-from-top-1">
+                            <div className="flex items-center gap-2 text-sm text-blue-700">
+                              <MessageCircle className="h-4 w-4" />
+                              <span>Để chat tiếp hãy vào đường link bên CRM</span>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="bg-white hover:bg-blue-50 text-blue-600 border-blue-200 h-8 text-xs font-medium shadow-sm transition-all hover:shadow"
+                              onClick={() => {
+                                const phone = selectedLead.phone || selectedLead.additional_phone || ""
+                                if (selectedDecoyWebThreadId && phone) {
+                                  const crmUrl = `https://dashboard.vucar.vn/gui-tin/tin-da-gui?threadId=${selectedDecoyWebThreadId}&phone=${phone}`
+                                  window.open(crmUrl, '_blank')
+                                }
+                              }}
+                            >
+                              Chat trên CRM (Tab mới)
+                            </Button>
                           </div>
                         )}
+
+                        {/* Messages Area */}
+                        <div className="flex-1 overflow-y-auto p-4">
+                          {!selectedDecoyWebThreadId ? (
+                            <div className="flex items-center justify-center h-full text-muted-foreground">
+                              Chọn một thread để xem tin nhắn
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {decoyWebThreads
+                                .find((t) => t.id === selectedDecoyWebThreadId)
+                                ?.messages.map((msg, index) => {
+                                  const isBot = msg.sender === "bot" || msg.sender === "system"
+                                  const timestamp = msg.displayed_at
+                                    ? new Date(msg.displayed_at).toLocaleString("vi-VN")
+                                    : ""
+
+                                  return (
+                                    <div
+                                      key={index}
+                                      className={`flex ${isBot ? "justify-end" : "justify-start"}`}
+                                    >
+                                      <div
+                                        className={`max-w-[70%] rounded-lg p-3 ${isBot
+                                          ? "bg-orange-500 text-white"
+                                          : "bg-gray-200 text-gray-900"
+                                          }`}
+                                      >
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <span className="text-xs font-semibold">
+                                            {isBot ? "Decoy Bot" : "Khách hàng"}
+                                          </span>
+                                          <span className="text-xs opacity-70">{timestamp}</span>
+                                        </div>
+                                        <p className="text-sm whitespace-pre-wrap break-words">
+                                          {msg.content}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -3740,9 +3831,10 @@ ${imageUrls.length > 0 ? imageUrls.map((url, idx) => `${idx + 1}. ${url}`).join(
                   <p className="text-xs text-gray-500 uppercase mb-1">Giá mong muốn</p>
                   {editMode ? (
                     <Input
-                      type="number"
+                      type="text"
                       value={editedPriceCustomer}
                       onChange={(e) => setEditedPriceCustomer(e.target.value)}
+                      onBlur={(e) => handlePriceFormat(e.target.value, setEditedPriceCustomer)}
                       className="text-right text-xl font-bold text-emerald-600 h-12"
                       placeholder="Nhập giá"
                     />
@@ -3968,9 +4060,10 @@ ${imageUrls.length > 0 ? imageUrls.map((url, idx) => `${idx + 1}. ${url}`).join(
                   <p className="text-xs text-gray-500 mb-1">Giá cao nhất (Dealer)</p>
                   {editMode ? (
                     <Input
-                      type="number"
+                      type="text"
                       value={editedPriceHighestBid}
                       onChange={(e) => setEditedPriceHighestBid(e.target.value)}
+                      onBlur={(e) => handlePriceFormat(e.target.value, setEditedPriceHighestBid)}
                       className="text-sm font-semibold text-blue-600"
                       placeholder="Nhập giá"
                     />
@@ -4246,6 +4339,271 @@ ${imageUrls.length > 0 ? imageUrls.map((url, idx) => `${idx + 1}. ${url}`).join(
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Thread Dialog */}
+      <Dialog open={createThreadOpen} onOpenChange={setCreateThreadOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Tạo thread mới</DialogTitle>
+            <DialogDescription>
+              Nhập 4 số cuối điện thoại của khách hàng để tạo thread chat mới.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="fourDigits" className="text-right">
+                4 số cuối SĐT
+              </Label>
+              <Input
+                id="fourDigits"
+                value={fourDigitsInput}
+                onChange={(e) => {
+                  // Only allow digits and max 4 characters
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 4)
+                  setFourDigitsInput(value)
+                }}
+                placeholder="1234"
+                className="col-span-3"
+                maxLength={4}
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="firstMessage" className="text-right">
+                Tin nhắn đầu
+              </Label>
+              <Input
+                id="firstMessage"
+                value={firstMessageInput}
+                onChange={(e) => setFirstMessageInput(e.target.value)}
+                placeholder="Hello"
+                className="col-span-3"
+              />
+            </div>
+            <p className="text-xs text-gray-500 text-center">
+              Tên hiển thị: ******{fourDigitsInput || "XXXX"}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreateThreadOpen(false)
+                setFourDigitsInput("")
+                setFirstMessageInput("Hello")
+              }}
+            >
+              Hủy
+            </Button>
+            <Button
+              onClick={handleCreateThread}
+              disabled={createThreadLoading || fourDigitsInput.length !== 4}
+              className="bg-orange-500 hover:bg-orange-600"
+            >
+              {createThreadLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Đang tạo...
+                </>
+              ) : (
+                "Bắt đầu"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Summary Report Dialog */}
+      <Dialog open={summaryDialogOpen} onOpenChange={setSummaryDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Báo Cáo Tổng Hợp</DialogTitle>
+            <DialogDescription>
+              Xem báo cáo tổng hợp theo ngày và người phụ trách
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Filter Section */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Date Picker */}
+              <div className="space-y-2">
+                <Label>Chọn ngày</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {selectedDate ? (
+                        new Intl.DateTimeFormat('vi-VN', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric'
+                        }).format(selectedDate)
+                      ) : (
+                        <span>Chọn ngày</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={(date) => date && setSelectedDate(date)}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Account Display */}
+              <div className="space-y-2">
+                <Label>Người phụ trách</Label>
+                <div className="flex items-center h-10 px-3 py-2 border rounded-md bg-gray-50">
+                  <User className="mr-2 h-4 w-4 text-gray-500" />
+                  <span className="text-sm">
+                    {selectedAccount
+                      ? ACCOUNTS.find((acc) => acc.uid === selectedAccount)?.name || "Chưa chọn"
+                      : "Chưa chọn tài khoản"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Button */}
+            <Button
+              onClick={fetchSummaryReport}
+              disabled={!selectedAccount || !selectedDate || loadingSummary}
+              className="w-full"
+            >
+              {loadingSummary ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Đang tải...
+                </>
+              ) : (
+                "Xem Báo Cáo"
+              )}
+            </Button>
+
+            {/* Report Display Section */}
+            {loadingSummary && (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+              </div>
+            )}
+
+            {!loadingSummary && summaryError && (
+              <div className="text-center py-8 text-gray-500">
+                <p className="text-sm">{summaryError}</p>
+              </div>
+            )}
+
+            {!loadingSummary && summaryReport && (
+              <div className="border rounded-lg p-6 bg-gray-50 space-y-4">
+                {/* Header */}
+                <div className="flex items-start justify-between border-b pb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">
+                      {summaryReport.name}
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {summaryReport.created_at}
+                    </p>
+                  </div>
+                  {summaryReport.row_number && (
+                    <Badge variant="secondary">#{summaryReport.row_number}</Badge>
+                  )}
+                </div>
+
+                {/* Report Content */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-gray-700">Nội dung báo cáo:</Label>
+                  <div
+                    className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed bg-white p-4 rounded border"
+                    style={{ whiteSpace: 'pre-wrap' }}
+                  >
+                    {summaryReport.reports}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Thread Dialog */}
+      <Dialog open={createThreadOpen} onOpenChange={setCreateThreadOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Tạo thread mới</DialogTitle>
+            <DialogDescription>
+              Nhập 4 số cuối điện thoại của khách hàng để tạo thread chat mới.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="fourDigits" className="text-right">
+                4 số cuối SĐT
+              </Label>
+              <Input
+                id="fourDigits"
+                value={fourDigitsInput}
+                onChange={(e) => {
+                  // Only allow digits and max 4 characters
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 4)
+                  setFourDigitsInput(value)
+                }}
+                placeholder="1234"
+                className="col-span-3"
+                maxLength={4}
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="firstMessage" className="text-right">
+                Tin nhắn đầu
+              </Label>
+              <Input
+                id="firstMessage"
+                value={firstMessageInput}
+                onChange={(e) => setFirstMessageInput(e.target.value)}
+                placeholder="Hello"
+                className="col-span-3"
+              />
+            </div>
+            <p className="text-xs text-gray-500 text-center">
+              Tên hiển thị: ******{fourDigitsInput || "XXXX"}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreateThreadOpen(false)
+                setFourDigitsInput("")
+                setFirstMessageInput("Hello")
+              }}
+            >
+              Hủy
+            </Button>
+            <Button
+              onClick={handleCreateThread}
+              disabled={createThreadLoading || fourDigitsInput.length !== 4}
+              className="bg-orange-500 hover:bg-orange-600"
+            >
+              {createThreadLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Đang tạo...
+                </>
+              ) : (
+                "Bắt đầu"
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div >

@@ -2724,7 +2724,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
                         </Button>
                         <Clock className="h-4 w-4 text-gray-400" />
                         <span className="text-sm text-gray-500">
-                          {new Date(selectedLead.created_at).toLocaleDateString("vi-VN")}
+                          {formatDate(selectedLead.created_at)}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 mt-1">

@@ -128,6 +128,8 @@ const ACCOUNTS = [
   { name: "Bảo Ngân", uid: "d4a2fc3a-2212-4299-b8bb-7ebded7e77c0" },
   { name: "Thanh Hòa", uid: "00d0d47e-2041-4857-a828-83e0c28cb615" },
   { name: "Phát", uid: "4cb28319-9dd0-4951-b9c9-e35e1e8dd578" },
+  { name: "Thành Đạt", uid: "66d484b5-91ae-4f27-bf5d-93a8993ab6d7" },
+  { name: "Xuân Mai", uid: "b8dec215-1fd3-41e8-8ff0-6d5c103849a8" },
 ]
 
 const DECOY_ACCOUNTS = [

@@ -433,33 +433,12 @@ export function E2EManagement() {
       setSearchPhone("") // Clear search
       setAppliedSearchPhone("") // Clear applied search
       setActiveTab("priority") // Reset to priority tab
-      fetchLeads(selectedAccount, true)
+      fetchLeads(selectedAccount)
     }
   }, [selectedAccount])
 
-  useEffect(() => {
-    // Fetch additional data when page changes or leads change
-    // We need to calculate currentPageLeads here to pass to fetchPageData
-    const filtered = leads.filter((lead) => {
-      if (appliedSearchPhone) {
-        const phone = lead.phone || lead.additional_phone || ""
-        if (!phone.includes(appliedSearchPhone)) return false
-      }
-      if (activeTab === "priority") {
-        return lead.is_primary === true
-      } else {
-        return lead.is_primary !== true
-      }
-    })
-
-    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
-    const endIndex = startIndex + ITEMS_PER_PAGE
-    const pageLeads = filtered.slice(startIndex, endIndex)
-
-    if (pageLeads.length > 0) {
-      fetchPageData(pageLeads)
-    }
-  }, [currentPage, leads.length, appliedSearchPhone, activeTab])
+  // No longer needed - batch endpoint returns all enriched data upfront
+  // Client-side pagination happens in the useMemo below (filteredLeads, currentPageLeads)
 
   async function fetchMessagesZalo(car_id: string): Promise<boolean> {
     try {
@@ -2266,15 +2245,22 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     }
   }
 
-  async function fetchLeads(uid: string, forceFetchDetails = false) {
+  async function fetchLeads(uid: string) {
     setLoading(true)
+    setLoadingCarIds(true)
     setError(null)
 
     try {
-      const response = await fetch("/api/e2e/leads", {
+      // Fetch all leads using batch endpoint with high per_page to get all data at once
+      // This maintains compatibility with existing client-side filtering/pagination
+      const response = await fetch("/api/e2e/leads/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uid }),
+        body: JSON.stringify({
+          uid,
+          page: 1,
+          per_page: 1000 // High value to get all leads (adjust if needed)
+        }),
       })
 
       if (!response.ok) {
@@ -2283,69 +2269,70 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
 
       const data = await response.json()
 
-      // Remove duplicates based on lead ID
-      const uniqueLeads = data.reduce((acc: Lead[], current: Lead) => {
-        const exists = acc.find(item => item.id === current.id)
-        if (!exists) {
-          acc.push(current)
-        }
-        return acc
-      }, [])
-
-      // Batch fetch primary status for all leads
-      const car_ids = uniqueLeads.map((lead: Lead) => lead.car_id).filter((id: string | null) => id != null)
-
-      if (car_ids.length > 0) {
-        try {
-          const primaryResponse = await fetch("/api/e2e/batch-primary", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ car_ids }),
-          })
-
-          const primaryData = await primaryResponse.json()
-          const primaryStatuses = primaryData.primary_statuses || {}
-
-          // Merge primary status into leads
-          const leadsWithPrimary = uniqueLeads.map((lead: Lead) => ({
-            ...lead,
-            is_primary: lead.car_id ? (primaryStatuses[lead.car_id] || false) : false
-          }))
-
-          setLeads(leadsWithPrimary)
-
-          setLoading(false)
-
-          // Fetch data for the first page only if not searching or forced
-          if (leadsWithPrimary.length > 0 && (!appliedSearchPhone || forceFetchDetails)) {
-            // Get first page leads
-            const firstPageLeads = leadsWithPrimary.slice(0, ITEMS_PER_PAGE)
-            await fetchPageData(firstPageLeads)
+      // Transform batch response to match frontend Lead interface
+      const enrichedLeads = data.leads.map((lead: any) => ({
+        id: lead.id,
+        name: lead.name,
+        phone: lead.phone,
+        additional_phone: lead.additional_phone,
+        identify_number: lead.identify_number,
+        bank_account_number: lead.bank_account_number,
+        otp_verified: lead.otp_verified,
+        created_at: lead.created_at,
+        pic_id: lead.pic_id,
+        pic_og: lead.pic_og,
+        pic_name: lead.pic_name,
+        source: lead.source,
+        url: lead.url,
+        qx_qc_scoring: lead.qx_qc_scoring,
+        customer_feedback: lead.customer_feedback,
+        is_referral: lead.is_referral,
+        car_id: lead.car_id,
+        plate: lead.plate,
+        brand: lead.brand,
+        model: lead.model,
+        variant: lead.variant,
+        year: lead.year,
+        mileage: lead.mileage,
+        sku: lead.sku,
+        location: lead.location,
+        has_enough_images: lead.has_enough_images,
+        workflow2_is_active: lead.workflow2_is_active,
+        additional_images: lead.additional_images,
+        is_primary: lead.is_primary,
+        // Sale status fields
+        price_customer: lead.sale_status?.price_customer,
+        bot_active: lead.sale_status?.bot_status || false,
+        price_highest_bid: lead.sale_status?.price_highest_bid,
+        stage: lead.sale_status?.stage || "UNDEFINED",
+        notes: lead.sale_status?.notes,
+        first_message_sent: lead.sale_status?.first_message_sent || false,
+        session_created: lead.sale_status?.session_created || false,
+        // Dealer bidding - transform to match DealerBiddingStatus interface
+        dealer_bidding: (() => {
+          if (lead.sale_status?.price_highest_bid) {
+            return {
+              status: "got_price" as const,
+              maxPrice: lead.sale_status.price_highest_bid
+            }
+          } else if (lead.dealer_bidding && lead.dealer_bidding.length > 0) {
+            const maxPrice = Math.max(...lead.dealer_bidding.map((b: any) => b.price))
+            return {
+              status: "got_price" as const,
+              maxPrice: maxPrice
+            }
+          } else {
+            return { status: "not_sent" as const }
           }
-        } catch (error) {
-          console.error("[E2E] Error fetching batch primary:", error)
-          // Set default is_primary to false if batch fetch fails
-          const leadsWithPrimary = uniqueLeads.map((lead: Lead) => ({
-            ...lead,
-            is_primary: false
-          }))
-          setLeads(leadsWithPrimary)
-          setLoading(false)
+        })(),
+        decoy_thread_count: lead.decoy_thread_count || 0,
+        bidding_session_count: lead.bidding_session_count || 0,
+        car_created_at: lead.created_at,
+      }))
 
-          if (leadsWithPrimary.length > 0 && (!appliedSearchPhone || forceFetchDetails)) {
-            const firstPageLeads = leadsWithPrimary.slice(0, ITEMS_PER_PAGE)
-            await fetchPageData(firstPageLeads)
-          }
-        }
-      } else {
-        setLeads(uniqueLeads)
-        setLoading(false)
-
-        if (uniqueLeads.length > 0 && (!appliedSearchPhone || forceFetchDetails)) {
-          const firstPageLeads = uniqueLeads.slice(0, ITEMS_PER_PAGE)
-          await fetchPageData(firstPageLeads)
-        }
-      }
+      setLeads(enrichedLeads)
+      setLoading(false)
+      setLoadingCarIds(false)
     } catch (err) {
       console.error("[E2E] Error fetching leads:", err)
       setError(err instanceof Error ? err.message : "Failed to fetch leads")
@@ -2354,110 +2341,11 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     }
   }
 
-  async function fetchPageData(pageLeadsToFetch: Lead[]) {
-    if (pageLeadsToFetch.length === 0) return
-
-    // Check if we already have data for these leads
-    // car_id comes from /api/e2e/leads, so we check for enriched fields instead
-    const needsFetch = pageLeadsToFetch.some((lead) =>
-      lead.brand === undefined ||
-      lead.price_customer === undefined ||
-      lead.bot_active === undefined
-    )
-
-    if (!needsFetch) {
-      return
-    }
-
-    setLoadingCarIds(true)
-
-    // Fetch car_ids, car details, image status, dealer bidding, and bot status for current page leads
-    const updatedPageLeads = await Promise.all(
-      pageLeadsToFetch.map(async (lead: Lead) => {
-        const phone = lead.phone || lead.additional_phone
-        if (!phone) {
-          return {
-            ...lead,
-            car_id: null,
-            has_enough_images: false,
-            dealer_bidding: { status: "not_sent" as const },
-            bot_active: false,
-            price_customer: null,
-            brand: null,
-            model: null,
-            variant: null,
-            year: null,
-            first_message_sent: false,
-            decoy_thread_count: 0,
-          }
-        }
-
-        // Fetch lead details (includes bot_status)
-        const leadDetails = await fetchLeadDetails(phone)
-
-        // If we have car_id, fetch dealer bidding
-        let dealer_bidding: DealerBiddingStatus = { status: "not_sent" }
-
-        // Priority 1: Check price_highest_bid from sale_status
-        if (leadDetails.price_highest_bid) {
-          dealer_bidding = {
-            status: "got_price",
-            maxPrice: leadDetails.price_highest_bid
-          }
-        }
-        // Priority 2: Check dealer_biddings table if we have car_id
-        else if (leadDetails.car_id) {
-          dealer_bidding = await checkDealerBidding(leadDetails.car_id)
-        }
-
-        // Fetch decoy thread count
-        const decoyThreadCount = await fetchDecoyThreadCount(lead.id)
-
-        // Fetch bidding session count
-        const biddingSessionCount = leadDetails.car_id
-          ? await fetchBiddingSessionCount(leadDetails.car_id)
-          : 0
-
-        return {
-          ...lead,
-          car_id: leadDetails.car_id,
-          has_enough_images: leadDetails.has_enough_images,
-          dealer_bidding,
-          bot_active: leadDetails.bot_status,
-          price_customer: leadDetails.price_customer,
-          brand: leadDetails.brand,
-          model: leadDetails.model,
-          variant: leadDetails.variant,
-          year: leadDetails.year,
-          plate: leadDetails.plate,
-          stage: leadDetails.stage,
-          first_message_sent: leadDetails.first_message_sent,
-          session_created: leadDetails.session_created,
-          decoy_thread_count: decoyThreadCount,
-          notes: leadDetails.notes,
-          location: leadDetails.location,
-          mileage: leadDetails.mileage,
-          sku: leadDetails.sku,
-          car_created_at: leadDetails.car_created_at,
-          additional_images: leadDetails.additional_images,
-          is_primary: leadDetails.is_primary,
-          bidding_session_count: biddingSessionCount,
-        }
-      })
-    )
-
-    // Update the leads array by matching IDs instead of using indices
-    setLeads((prevLeads) =>
-      prevLeads.map((lead) => {
-        const updated = updatedPageLeads.find((ul) => ul.id === lead.id)
-        if (updated) {
-          return updated
-        }
-        return lead
-      })
-    )
-    setLoadingCarIds(false)
-  }
+  // DEPRECATED: fetchPageData is no longer needed as batch endpoint returns all enriched data
+  // Keeping this commented for reference during migration
+  // async function fetchPageData(pageLeadsToFetch: Lead[]) {
+  //   ... (function body removed)
+  // }
 
   function formatDate(dateString: string | number) {
     const date = new Date(dateString)

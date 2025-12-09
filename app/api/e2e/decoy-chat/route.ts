@@ -43,59 +43,59 @@ export async function POST(req: Request) {
 
     const authUserId = authUserResult.rows[0].id
 
-    // 3. Fetch threads for the auth_user
+    // 3. Fetch threads with messages in a single optimized query (fixes N+1 pattern)
     const threadsResult = await vucarV2Query(
-      `SELECT id, metadata, created_at
-       FROM chat_threads
-       WHERE user_id = $1
-       ORDER BY created_at DESC`,
+      `SELECT
+        ct.id,
+        ct.metadata,
+        ct.created_at,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'content', cm.content,
+              'sender', cm.sender,
+              'displayed_at', cm.displayed_at
+            )
+            ORDER BY cm.displayed_at ASC
+          ) FILTER (WHERE cm.id IS NOT NULL),
+          '[]'
+        ) as messages
+       FROM chat_threads ct
+       LEFT JOIN chat_messages cm ON cm.thread_id = ct.id
+       WHERE ct.user_id = $1
+       GROUP BY ct.id, ct.metadata, ct.created_at
+       ORDER BY ct.created_at DESC`,
       [authUserId]
     )
 
-    const threads = threadsResult.rows
+    // 4. Transform results and extract bot names
+    const threadsWithMessages = threadsResult.rows.map((thread) => {
+      // Extract bot name from metadata
+      // If metadata.bot exists, use it; otherwise it's "default"
+      let botName = "default"
+      let metadata = thread.metadata
 
-    // 4. Fetch messages for each thread
-    const threadsWithMessages = await Promise.all(
-      threads.map(async (thread) => {
-        const messagesResult = await vucarV2Query(
-          `SELECT content, sender, displayed_at
-           FROM chat_messages
-           WHERE thread_id = $1
-           ORDER BY displayed_at ASC`,
-          [thread.id]
-        )
-
-        // Extract bot name from metadata
-        // If metadata.bot exists, use it; otherwise it's "default"
-        let botName = "default"
-        let metadata = thread.metadata
-
-        // Handle if metadata is a JSON string
-        if (typeof metadata === 'string') {
-          try {
-            metadata = JSON.parse(metadata)
-          } catch (e) {
-            // Keep as string if parse fails
-          }
+      // Handle if metadata is a JSON string
+      if (typeof metadata === 'string') {
+        try {
+          metadata = JSON.parse(metadata)
+        } catch (e) {
+          // Keep as string if parse fails
         }
+      }
 
-        // Check for 'bot' key in metadata
-        if (metadata && typeof metadata === 'object' && metadata.bot) {
-          botName = metadata.bot
-        }
+      // Check for 'bot' key in metadata
+      if (metadata && typeof metadata === 'object' && metadata.bot) {
+        botName = metadata.bot
+      }
 
-        return {
-          id: thread.id,
-          bot_name: botName,
-          created_at: thread.created_at,
-          messages: messagesResult.rows.map(msg => ({
-            content: msg.content,
-            sender: msg.sender,
-            displayed_at: msg.displayed_at
-          }))
-        }
-      })
-    )
+      return {
+        id: thread.id,
+        bot_name: botName,
+        created_at: thread.created_at,
+        messages: thread.messages || []
+      }
+    })
 
     return NextResponse.json({ threads: threadsWithMessages })
   } catch (error) {

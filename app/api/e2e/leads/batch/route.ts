@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { vucarV2Query, tempInspectionQuery, query } from "@/lib/db"
+import { getCached } from "@/lib/cache"
 
 export async function POST(request: Request) {
   try {
@@ -11,6 +12,29 @@ export async function POST(request: Request) {
     }
 
     const offset = (page - 1) * per_page
+
+    // Cache key includes uid and pagination params
+    const cacheKey = `leads-batch:${uid}:p${page}:pp${per_page}`
+
+    const result = await getCached(
+      cacheKey,
+      async () => {
+        return await fetchBatchData(uid, page, per_page, offset)
+      },
+      30 // Cache for 30 seconds - lead data changes frequently
+    )
+
+    return NextResponse.json(result)
+  } catch (error) {
+    console.error("[E2E Batch API] Error fetching batch data:", error)
+    return NextResponse.json(
+      { error: "Failed to fetch batch data", details: error instanceof Error ? error.message : "Unknown error" },
+      { status: 500 }
+    )
+  }
+}
+
+async function fetchBatchData(uid: string, page: number, per_page: number, offset: number) {
 
     // Single optimized query to get all leads with related data
     const leadsResult = await vucarV2Query(
@@ -235,7 +259,7 @@ export async function POST(request: Request) {
       }
     })
 
-    return NextResponse.json({
+    return {
       leads: enrichedLeads,
       pagination: {
         current_page: page,
@@ -243,12 +267,5 @@ export async function POST(request: Request) {
         total_pages: totalPages,
         total_leads: totalCount,
       },
-    })
-  } catch (error) {
-    console.error("[E2E Batch API] Error fetching batch data:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch batch data", details: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
-    )
-  }
+    }
 }

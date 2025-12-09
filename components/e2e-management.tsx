@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
+import { useIsMobile } from "@/components/ui/use-mobile"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -79,10 +80,10 @@ interface Lead {
   bidding_session_count?: number
   workflow2_is_active?: boolean | null
   additional_images?: {
-    paper?: Array<{key: string, url: string, name: string, type: string}>
-    inside?: Array<{key: string, url: string, name: string, type: string}>
-    outside?: Array<{key: string, url: string, name: string, type: string}>
-    [key: string]: Array<{key: string, url: string, name: string, type: string}> | undefined
+    paper?: Array<{ key: string, url: string, name: string, type: string }>
+    inside?: Array<{ key: string, url: string, name: string, type: string }>
+    outside?: Array<{ key: string, url: string, name: string, type: string }>
+    [key: string]: Array<{ key: string, url: string, name: string, type: string }> | undefined
   }
   sku?: string | null
   car_created_at?: string | null
@@ -294,6 +295,10 @@ export function E2EManagement() {
   // Filter tab state
   const [activeTab, setActiveTab] = useState<"priority" | "nurture">("priority")
 
+  // Mobile view state
+  const isMobile = useIsMobile()
+  const [mobileView, setMobileView] = useState<"list" | "detail">("list")
+
   // Detail view tab state
   const [activeDetailView, setActiveDetailView] = useState<"workflow" | "decoy-web" | "zalo-chat" | "recent-activity">("workflow")
 
@@ -323,7 +328,7 @@ export function E2EManagement() {
 
   // Send to dealer groups state
   const [sendDealerDialogOpen, setSendDealerDialogOpen] = useState(false)
-  const [dealerGroups, setDealerGroups] = useState<Array<{groupId: string, groupName: string, dealerId: string | null}>>([])
+  const [dealerGroups, setDealerGroups] = useState<Array<{ groupId: string, groupName: string, dealerId: string | null }>>([])
   const [loadingDealerGroups, setLoadingDealerGroups] = useState(false)
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([])
   const [sendingToGroups, setSendingToGroups] = useState(false)
@@ -916,6 +921,11 @@ export function E2EManagement() {
     setActiveWorkflowView("purchase") // Reset to default workflow view
     setLoadingMessages(true)
     setChatMessages([])
+
+    // Switch to detail view on mobile
+    if (isMobile) {
+      setMobileView('detail')
+    }
 
     // Reset Decoy Chat state
     setDecoyThreads([])
@@ -2831,14 +2841,29 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
   return (
     <div className="w-full">
       {/* Top Header - Account Selector */}
-      <div className="bg-white border-b px-8 py-4">
+      <div className={`bg-white border-b ${isMobile ? 'px-4 py-3' : 'px-8 py-4'}`}>
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">Quản lý E2E</h1>
-          <div className="flex items-center gap-3">
-            <Label className="text-sm font-medium text-gray-700">Chọn tài khoản:</Label>
+          <h1 className={`font-bold text-gray-900 ${isMobile ? 'text-lg' : 'text-2xl'}`}>
+            {isMobile && mobileView === 'detail' ? (
+              <button
+                onClick={() => {
+                  setMobileView('list')
+                  setSelectedLead(null)
+                }}
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+              >
+                <ChevronLeft className="h-5 w-5" />
+                <span>Lead OS</span>
+              </button>
+            ) : (
+              isMobile ? 'Lead OS' : 'Quản lý E2E'
+            )}
+          </h1>
+          <div className="flex items-center gap-2">
+            {!isMobile && <Label className="text-sm font-medium text-gray-700">Chọn tài khoản:</Label>}
             <Select value={selectedAccount} onValueChange={setSelectedAccount} disabled={loading || loadingCarIds}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Chọn tài khoản..." />
+              <SelectTrigger className={isMobile ? 'w-32' : 'w-48'}>
+                <SelectValue placeholder={isMobile ? 'Chọn...' : 'Chọn tài khoản...'} />
               </SelectTrigger>
               <SelectContent>
                 {ACCOUNTS.map((account) => (
@@ -2856,975 +2881,982 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
       </div>
 
       {/* Split View Layout */}
-      <div className="flex h-[calc(100vh-180px)] bg-gray-50">
-        {/* Left Sidebar - Leads List */}
-        <div className="w-80 border-r flex flex-col bg-white">
-          <div className="p-4 border-b bg-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold">LeadOS</h2>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => setSummaryDialogOpen(true)}
-                title="Xem báo cáo tổng hợp"
+      <div className={`flex h-[calc(100vh-${isMobile ? '64px' : '100px'})] bg-gray-50`}>
+        {/* Left Sidebar - Leads List - Hidden on mobile when viewing detail */}
+        {(!isMobile || mobileView === 'list') && (
+          <div className={`${isMobile ? 'w-full' : 'w-80'} border-r flex flex-col bg-white`}>
+
+            <div className="p-4 border-b bg-gray-100">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold">LeadOS</h2>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setSummaryDialogOpen(true)}
+                  title="Xem báo cáo tổng hợp"
+                >
+                  <FileText className="h-4 w-4" />
+                </Button>
+              </div>
+              <SearchInput
+                placeholder="Tìm kiếm danh sách..."
+                value={searchPhone}
+                onChange={(e) => setSearchPhone(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !loading && !loadingCarIds && selectedAccount) {
+                    searchLeadByPhone()
+                  }
+                }}
+                disabled={loading || loadingCarIds || !selectedAccount}
+              />
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="px-4 py-3 border-b flex gap-4">
+              <button
+                onClick={() => {
+                  setActiveTab("priority")
+                  setCurrentPage(1)
+                }}
+                className={`flex items-center gap-2 text-sm font-medium pb-2 transition-colors ${activeTab === "priority"
+                  ? "text-purple-600 border-b-2 border-purple-600"
+                  : "text-gray-500 hover:text-gray-700"
+                  }`}
               >
-                <FileText className="h-4 w-4" />
-              </Button>
+                <Zap className="h-4 w-4" />
+                Ưu tiên
+                <Badge className={activeTab === "priority" ? "bg-purple-600 text-white text-xs" : "bg-gray-200 text-gray-700 text-xs"}>
+                  {priorityCount}
+                </Badge>
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab("nurture")
+                  setCurrentPage(1)
+                }}
+                className={`flex items-center gap-2 text-sm font-medium pb-2 transition-colors ${activeTab === "nurture"
+                  ? "text-emerald-600 border-b-2 border-emerald-600"
+                  : "text-gray-500 hover:text-gray-700"
+                  }`}
+              >
+                <MessageCircle className="h-4 w-4" />
+                Nuôi dưỡng
+                <Badge className={activeTab === "nurture" ? "bg-emerald-600 text-white text-xs" : "bg-gray-200 text-gray-700 text-xs"}>
+                  {nurtureCount}
+                </Badge>
+              </button>
             </div>
-            <SearchInput
-              placeholder="Tìm kiếm danh sách..."
-              value={searchPhone}
-              onChange={(e) => setSearchPhone(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !loading && !loadingCarIds && selectedAccount) {
-                  searchLeadByPhone()
-                }
-              }}
-              disabled={loading || loadingCarIds || !selectedAccount}
-            />
-          </div>
 
-          {/* Filter Tabs */}
-          <div className="px-4 py-3 border-b flex gap-4">
-            <button
-              onClick={() => {
-                setActiveTab("priority")
-                setCurrentPage(1)
-              }}
-              className={`flex items-center gap-2 text-sm font-medium pb-2 transition-colors ${activeTab === "priority"
-                ? "text-purple-600 border-b-2 border-purple-600"
-                : "text-gray-500 hover:text-gray-700"
-                }`}
-            >
-              <Zap className="h-4 w-4" />
-              Ưu tiên
-              <Badge className={activeTab === "priority" ? "bg-purple-600 text-white text-xs" : "bg-gray-200 text-gray-700 text-xs"}>
-                {priorityCount}
-              </Badge>
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab("nurture")
-                setCurrentPage(1)
-              }}
-              className={`flex items-center gap-2 text-sm font-medium pb-2 transition-colors ${activeTab === "nurture"
-                ? "text-emerald-600 border-b-2 border-emerald-600"
-                : "text-gray-500 hover:text-gray-700"
-                }`}
-            >
-              <MessageCircle className="h-4 w-4" />
-              Nuôi dưỡng
-              <Badge className={activeTab === "nurture" ? "bg-emerald-600 text-white text-xs" : "bg-gray-200 text-gray-700 text-xs"}>
-                {nurtureCount}
-              </Badge>
-            </button>
-          </div>
-
-          {/* Leads List in Sidebar */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="divide-y divide-gray-100">
-              {!selectedAccount ? (
-                <div className="flex flex-col items-center justify-center py-20 px-6">
-                  <User className="h-16 w-16 text-gray-300 mb-4" />
-                  <p className="text-gray-500 text-center text-sm">
-                    Vui lòng chọn tài khoản ở trên để xem danh sách leads
-                  </p>
-                </div>
-              ) : loading ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-                </div>
-              ) : currentPageLeads.length === 0 ? (
-                <div className="text-center py-12 text-gray-400 text-sm">
-                  <p>Không có leads nào</p>
-                </div>
-              ) : (
-                currentPageLeads.map((lead) => (
-                  <div
-                    key={lead.id}
-                    className={`p-4 transition-colors ${loading || loadingCarIds
-                      ? "cursor-not-allowed opacity-50"
-                      : "hover:bg-blue-50"
-                      } ${selectedLead?.id === lead.id ? "bg-blue-50 border-l-4 border-blue-600" : ""}`}
-                  >
-                    <div className="flex items-center gap-3 mb-2">
-                      <div
-                        onClick={() => {
-                          if (!loading && !loadingCarIds) {
-                            handleLeadClick(lead)
-                          }
-                        }}
-                        className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-bold flex-shrink-0 cursor-pointer"
-                      >
-                        {lead.name?.charAt(0).toUpperCase() || "?"}
-                      </div>
-                      <div
-                        onClick={() => {
-                          if (!loading && !loadingCarIds) {
-                            handleLeadClick(lead)
-                          }
-                        }}
-                        className="flex-1 min-w-0 cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="font-medium text-gray-900 truncate">{lead.name}</p>
-                          {lead.source && (
-                            <Badge variant="outline" className="text-xs shrink-0">
-                              {lead.source === "zalo" ? "Zalo" : lead.source === "facebook" ? "Facebook" : lead.source}
-                            </Badge>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-5 w-5 p-0 ml-auto shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (lead.car_id && !updatingPrimary) {
-                                const newPrimaryStatus = !lead.is_primary
-                                setUpdatingPrimary(true)
-                                fetch("/api/e2e/update-primary", {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({
-                                    car_id: lead.car_id,
-                                    is_primary: newPrimaryStatus
-                                  }),
-                                })
-                                  .then(res => res.json())
-                                  .then(data => {
-                                    if (data.success) {
-                                      setLeads((prevLeads) =>
-                                        prevLeads.map((l) =>
-                                          l.id === lead.id ? { ...l, is_primary: newPrimaryStatus } : l
-                                        )
-                                      )
-                                      if (selectedLead?.id === lead.id) {
-                                        setSelectedLead({ ...lead, is_primary: newPrimaryStatus })
-                                      }
-                                      toast({
-                                        title: "Thành công",
-                                        description: newPrimaryStatus
-                                          ? "Đã đánh dấu xe là Primary"
-                                          : "Đã bỏ đánh dấu Primary",
-                                      })
-                                    }
-                                  })
-                                  .catch(() => {
-                                    toast({
-                                      title: "Lỗi",
-                                      description: "Không thể cập nhật trạng thái Primary",
-                                      variant: "destructive",
-                                    })
-                                  })
-                                  .finally(() => setUpdatingPrimary(false))
-                              }
-                            }}
-                            disabled={!lead.car_id || updatingPrimary}
-                            title={lead.is_primary ? "Bỏ đánh dấu Primary" : "Đánh dấu là Primary"}
-                          >
-                            {updatingPrimary && selectedLead?.id === lead.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
-                            ) : (
-                              <Star
-                                className={`h-4 w-4 ${lead.is_primary
-                                  ? "fill-blue-600 text-blue-600"
-                                  : "text-gray-300 hover:text-gray-500"
-                                  }`}
-                              />
-                            )}
-                          </Button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm text-gray-700 truncate">
-                            {formatCarInfo(lead)}
-                          </p>
-                          {lead.car_created_at && (
-                            <p className="text-xs text-gray-500 shrink-0">
-                              {new Date(lead.car_created_at).toLocaleString("vi-VN", {
-                                year: 'numeric',
-                                month: '2-digit',
-                                day: '2-digit',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </p>
-                          )}
-                        </div>
-                        <p className="text-xs text-emerald-600 font-semibold mt-1">
-                          {lead.price_customer ? formatPrice(lead.price_customer) : "Chưa có giá"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Pagination in Sidebar */}
-          {totalPages > 1 && (
-            <div className="border-t p-3 bg-gray-50">
-              <div className="flex items-center justify-center gap-1 mb-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handlePreviousPage}
-                  disabled={currentPage === 1}
-                  className="h-7 px-2 text-gray-600"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-
-                {/* Page Numbers */}
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                    let pageNum;
-                    if (totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (currentPage <= 3) {
-                      pageNum = i + 1;
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = currentPage - 2 + i;
-                    }
-                    return (
-                      <Button
-                        key={pageNum}
-                        variant={currentPage === pageNum ? "default" : "ghost"}
-                        size="sm"
-                        onClick={() => setCurrentPage(pageNum)}
-                        className={`h-7 w-7 p-0 text-xs ${currentPage === pageNum
-                          ? "bg-blue-600 hover:bg-blue-700 text-white"
-                          : "text-gray-600 hover:bg-gray-100"
-                          }`}
-                      >
-                        {pageNum}
-                      </Button>
-                    );
-                  })}
-                </div>
-
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleNextPage}
-                  disabled={currentPage === totalPages}
-                  className="h-7 px-2 text-gray-600"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="text-center text-xs text-gray-500">
-                Trang {currentPage} / {totalPages}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right Panel - Lead Details */}
-        {!selectedAccount ? (
-          <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
-            <User className="h-24 w-24 text-gray-300 mb-4" />
-            <p className="text-lg font-medium">Chọn tài khoản để bắt đầu</p>
-            <p className="text-sm mt-2">Vui lòng chọn tài khoản từ menu phía trên</p>
-          </div>
-        ) : selectedLead ? (
-          <div className="flex-1 overflow-hidden flex flex-col bg-gray-50">
-            {/* Details content will go here - we'll move the modal content */}
+            {/* Leads List in Sidebar */}
             <div className="flex-1 overflow-y-auto">
-              {/* Header */}
-              <div className="px-8 pt-6 pb-6 bg-gray-100 border-b sticky top-0 z-10">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xl font-bold">
-                      {selectedLead.name?.charAt(0).toUpperCase() || "?"}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-xl font-bold text-gray-900">{selectedLead.name}</h2>
-                        <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-gray-50 border border-gray-200">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-5 w-5 p-0 hover:bg-transparent"
-                            onClick={handleTogglePrimary}
-                            disabled={updatingPrimary || !selectedLead.car_id}
-                            title={selectedLead.is_primary ? "Bỏ đánh dấu Primary" : "Đánh dấu là Primary"}
-                          >
-                            {updatingPrimary ? (
-                              <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
-                            ) : (
-                              <Star
-                                className={`h-4 w-4 ${selectedLead.is_primary
-                                  ? "fill-purple-600 text-purple-600"
-                                  : "text-gray-400 hover:text-gray-500"
-                                  }`}
-                              />
-                            )}
-                          </Button>
-                          <span className={`text-xs font-medium ${selectedLead.is_primary
-                            ? "text-purple-600"
-                            : "text-gray-600"
-                            }`}>
-                            {selectedLead.is_primary ? "Ưu tiên" : "Nuôi dưỡng"}
-                          </span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0 hover:bg-transparent text-gray-400 hover:text-blue-600"
-                          onClick={(e) => selectedLead && handleQuickEdit(selectedLead, e)}
-                          title="Chỉnh sửa nhanh"
+              <div className="divide-y divide-gray-100">
+                {!selectedAccount ? (
+                  <div className="flex flex-col items-center justify-center py-20 px-6">
+                    <User className="h-16 w-16 text-gray-300 mb-4" />
+                    <p className="text-gray-500 text-center text-sm">
+                      Vui lòng chọn tài khoản ở trên để xem danh sách leads
+                    </p>
+                  </div>
+                ) : loading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                  </div>
+                ) : currentPageLeads.length === 0 ? (
+                  <div className="text-center py-12 text-gray-400 text-sm">
+                    <p>Không có leads nào</p>
+                  </div>
+                ) : (
+                  currentPageLeads.map((lead) => (
+                    <div
+                      key={lead.id}
+                      className={`p-4 transition-colors ${loading || loadingCarIds
+                        ? "cursor-not-allowed opacity-50"
+                        : "hover:bg-blue-50"
+                        } ${selectedLead?.id === lead.id ? "bg-blue-50 border-l-4 border-blue-600" : ""}`}
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <div
+                          onClick={() => {
+                            if (!loading && !loadingCarIds) {
+                              handleLeadClick(lead)
+                            }
+                          }}
+                          className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-bold flex-shrink-0 cursor-pointer"
                         >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Clock className="h-4 w-4 text-gray-400" />
-                        <span className="text-sm text-gray-500">
-                          {formatDate(selectedLead.created_at)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <p className="text-base font-medium text-gray-700">
-                          {formatCarInfo(selectedLead)}
-                        </p>
-                        {selectedLead.price_customer && (
-                          <span className="text-emerald-600 font-semibold">
-                            {formatPrice(selectedLead.price_customer)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleSyncCurrentLead}
-                      disabled={syncing}
-                      className="text-gray-600"
-                    >
-                      <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-                      {syncing ? "Đang đồng bộ..." : "Đồng bộ"}
-                    </Button>                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setDetailDialogOpen(true)}
-                      className="text-blue-600 border-blue-600 hover:bg-blue-50"
-                    >
-                      Chi tiết
-                    </Button>
-
-                    <Button
-                      size="sm"
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                      onClick={() => setInspectionSystemOpen(true)}
-                    >
-                      Đặt lịch KD
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Tabs */}
-                <div className="flex items-center gap-6 border-b -mb-6">
-                  <button
-                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "workflow"
-                      ? "text-blue-600 border-blue-600"
-                      : "text-gray-500 border-transparent hover:text-gray-700"
-                      }`}
-                    onClick={() => setActiveDetailView("workflow")}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Zap className="h-4 w-4" />
-                      Workflow Tracker
-                    </div>
-                  </button>
-                  <button
-                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "decoy-web"
-                      ? "text-orange-600 border-orange-600"
-                      : "text-gray-500 border-transparent hover:text-gray-700"
-                      }`}
-                    onClick={() => {
-                      setActiveDetailView("decoy-web")
-                      if (selectedLead) handleViewDecoyWebChat(selectedLead)
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <MessageCircle className="h-4 w-4" />
-                      Decoy Web Chat
-                    </div>
-                  </button>
-                  <button
-                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "zalo-chat"
-                      ? "text-purple-600 border-purple-600"
-                      : "text-gray-500 border-transparent hover:text-gray-700"
-                      }`}
-                    onClick={() => {
-                      setActiveDetailView("zalo-chat")
-                      if (selectedLead) handleViewZaloChat(selectedLead)
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <MessageCircle className="h-4 w-4" />
-                      Zalo Chat
-                      <Badge variant="outline" className="text-xs">Kênh chính</Badge>
-                    </div>
-                  </button>
-                  <button
-                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "recent-activity"
-                      ? "text-emerald-600 border-emerald-600"
-                      : "text-gray-500 border-transparent hover:text-gray-700"
-                      }`}
-                    onClick={() => setActiveDetailView("recent-activity")}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4" />
-                      Hoạt động gần đây
-                    </div>
-                  </button>
-                </div>
-              </div>
-
-              {/* Content sections - same as before */}
-              <div className="px-8 py-6 space-y-6">
-                {activeDetailView === "workflow" && (
-                  <>
-                    {/* Workflow Tracker */}
-                    <div className="bg-white rounded-lg p-8 shadow-sm">
-                      <div className="flex items-center justify-between mb-8">
-                        <div className="flex items-center gap-3">
-                          <h3 className="text-lg font-semibold text-gray-900">Tiến độ quy trình</h3>
-                          {(selectedLead.bidding_session_count || 0) > 0 && (
-                            <div className="flex items-center gap-2 ml-4">
-                              <span className="text-sm text-gray-600">Đang xem:</span>
-                              <button
-                                onClick={() => setActiveWorkflowView("purchase")}
-                                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${activeWorkflowView === "purchase"
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                  }`}
-                              >
-                                Quy trình Thu Mua
-                              </button>
-                              <button
-                                onClick={() => setActiveWorkflowView("seeding")}
-                                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${activeWorkflowView === "seeding"
-                                  ? "bg-purple-100 text-purple-700"
-                                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                  }`}
-                              >
-                                Quy trình Seeding (WF2)
-                              </button>
-                            </div>
-                          )}
+                          {lead.name?.charAt(0).toUpperCase() || "?"}
                         </div>
-                        {selectedLead.session_created && (selectedLead.workflow2_is_active === false) && (
-                          <Button
-                            variant="default"
-                            size="sm"
-                            onClick={() => {
-                              // Populate default values
-                              setWorkflow2Data({
-                                duration: "6",
-                                minPrice: selectedLead?.price_customer?.toString() || "",
-                                maxPrice: selectedLead?.price_highest_bid?.toString() || "",
-                                comment: true,
-                                numberOfComments: "20",
-                                bid: true
-                              })
-                              setWorkflow2Open(true)
-                            }}
-                            className="bg-emerald-600 hover:bg-emerald-700"
-                          >
-                            Kích hoạt WF 2
-                          </Button>
-                        )}
-                      </div>
-
-                      {/* Workflow Steps */}
-                      {activeWorkflowView === "purchase" ? (
-                        <div className="flex items-start justify-around mb-8">
-                          {/* Tin nhắn đầu */}
-                          <div className="flex flex-col items-center gap-3">
-                            <WorkflowStep
-                              icon={<CheckCircle className="w-8 h-8" />}
-                              title="Tin nhắn đầu"
-                              status={selectedLead.has_enough_images ? "Đã có ảnh" : "Chưa có ảnh"}
-                              isCompleted={selectedLead.has_enough_images || false}
-                              onClick={() => {
-                                setActiveDetailView("zalo-chat")
-                                handleViewZaloChat(selectedLead)
-                              }}
-                            />
+                        <div
+                          onClick={() => {
+                            if (!loading && !loadingCarIds) {
+                              handleLeadClick(lead)
+                            }
+                          }}
+                          className="flex-1 min-w-0 cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="font-medium text-gray-900 truncate">{lead.name}</p>
+                            {lead.source && (
+                              <Badge variant="outline" className="text-xs shrink-0">
+                                {lead.source === "zalo" ? "Zalo" : lead.source === "facebook" ? "Facebook" : lead.source}
+                              </Badge>
+                            )}
                             <Button
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
-                              onClick={handleSendFirstMessage}
-                              disabled={sendingMessage || selectedLead.first_message_sent}
-                              className="text-xs"
-                            >
-                              {sendingMessage ? "Đang gửi..." : selectedLead.first_message_sent ? "Đã gửi" : "Gửi tin nhắn đầu"}
-                            </Button>
-                          </div>
-
-                          {/* Chào Dealer */}
-                          <div className="flex flex-col items-center gap-3">
-                            <WorkflowStep
-                              icon={<DollarSign className="w-8 h-8" />}
-                              title="Chào Dealer"
-                              status={selectedLead.dealer_bidding?.status === "got_price" ? "Đã có giá Dealer" : "Chưa có giá"}
-                              isCompleted={selectedLead.dealer_bidding?.status === "got_price"}
-                            />
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => selectedLead.car_id && fetchBiddingHistory(selectedLead.car_id)}
-                              disabled={!selectedLead.car_id}
-                              className="text-xs"
-                            >
-                              Xem lịch sử giá
-                            </Button>
-                          </div>
-
-                          {/* Tạo Phiên */}
-                          <div className="flex flex-col items-center gap-3">
-                            <WorkflowStep
-                              icon={<Play className="w-8 h-8" />}
-                              title="Tạo Phiên"
-                              status={selectedLead.session_created ? "Phiên đã tạo" : "Chưa tạo phiên"}
-                              isCompleted={selectedLead.session_created || false}
-                            />
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setConfirmSessionOpen(true)}
-                              disabled={creatingSession || selectedLead.session_created}
-                              className="text-xs"
-                            >
-                              {creatingSession ? "Đang tạo..." : selectedLead.session_created ? "Đã tạo" : "Tạo Phiên"}
-                            </Button>
-                          </div>
-
-                          {/* E2E Bot */}
-                          <div className="flex flex-col items-center gap-3">
-                            <WorkflowStep
-                              icon={<Zap className="w-8 h-8" />}
-                              title="E2E Bot"
-                              status={selectedLead.bot_active ? "Bot đang chạy" : "Bot chưa chạy"}
-                              isCompleted={selectedLead.bot_active || false}
-                            />
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleBotToggle(selectedLead, !selectedLead.bot_active)}
-                              disabled={togglingBot}
-                              className={`text-xs ${selectedLead.bot_active ? "bg-red-50 text-red-600 hover:bg-red-100" : ""}`}
-                            >
-                              {togglingBot ? "Đang xử lý..." : selectedLead.bot_active ? "Tắt Bot" : "Bật Bot"}
-                            </Button>
-                          </div>
-
-                          {/* Decoy Web */}
-                          <div className="flex flex-col items-center gap-3">
-                            <WorkflowStep
-                              icon={<Search className="w-8 h-8" />}
-                              title="Decoy Web"
-                              status={`${selectedLead.decoy_thread_count || 0} threads`}
-                              isCompleted={(selectedLead.decoy_thread_count || 0) > 0}
-                              onClick={() => {
-                                setActiveDetailView("decoy-web")
-                                handleViewDecoyWebChat(selectedLead)
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-start justify-around mb-8">
-                          {/* Tạo Phiên 2 */}
-                          <div className="flex flex-col items-center gap-3">
-                            <WorkflowStep
-                              icon={<Play className={`w-8 h-8 ${selectedLead.workflow2_is_active ? "" : "text-gray-400"}`} />}
-                              title={`Tạo Phiên 2`}
-                              status={selectedLead.workflow2_is_active ? "Đã kích hoạt" : "Chưa kích hoạt"}
-                              isCompleted={selectedLead.workflow2_is_active === true}
-                            />
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-xs"
-                              disabled
-                            >
-                              Chạy ngay
-                            </Button>
-                          </div>
-
-                          {/* Decoy Zalo */}
-                          <div className="flex flex-col items-center gap-3">
-                            <WorkflowStep
-                              icon={<MessageCircle className="w-8 h-8" />}
-                              title="Decoy Zalo"
-                              status="Tương tác Zalo ảo"
-                              isCompleted={false}
-                            />
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-xs"
-                              onClick={() => setDecoyDialogOpen(true)}
-                            >
-                              Mở Zalo Decoy
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Other Action Buttons - Only for purchase workflow */}
-                      {activeWorkflowView === "purchase" && (
-                        <div className="flex items-center gap-3">
-                          <Button
-                            variant="outline"
-                            onClick={handleRenameLead}
-                            disabled={renamingLead || !selectedLead?.pic_id}
-                            className="text-gray-700"
-                          >
-                            {renamingLead ? "Đang đổi tên..." : "Đổi tên Lead"}
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Additional Info Cards */}
-                    <div className="grid grid-cols-3 gap-4">
-                      {/* Contact Info */}
-                      <div className="bg-white rounded-lg p-6 shadow-sm">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Thông tin liên hệ</h4>
-                        <div className="space-y-2">
-                          <div>
-                            <p className="text-xs text-gray-500">Số điện thoại</p>
-                            <p className="text-sm font-medium text-gray-900">
-                              {selectedLead.phone ? maskPhone(selectedLead.phone) : "N/A"}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500">Biển số xe</p>
-                            <p className="text-sm font-medium text-gray-900">{selectedLead.plate || "N/A"}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500">SKU</p>
-                            <p className="text-sm font-medium text-gray-900">{selectedLead.sku || "N/A"}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500">Số km</p>
-                            <p className="text-sm font-medium text-gray-900">
-                              {selectedLead.mileage ? `${selectedLead.mileage.toLocaleString()} km` : "N/A"}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500">Ngày tạo xe</p>
-                            <p className="text-sm font-medium text-gray-900">
-                              {selectedLead.car_created_at ? new Date(selectedLead.car_created_at).toLocaleDateString("vi-VN") : "N/A"}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Price Info */}
-                      <div className="bg-white rounded-lg p-6 shadow-sm">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Thông tin giá</h4>
-                        <div className="space-y-2">
-                          <div>
-                            <p className="text-xs text-gray-500">Giá khách mong muốn</p>
-                            <p className="text-sm font-semibold text-emerald-600">
-                              {selectedLead.price_customer ? formatPrice(selectedLead.price_customer) : "N/A"}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500">Giá cao nhất (Dealer)</p>
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-semibold text-blue-600">
-                                {selectedLead.dealer_bidding?.maxPrice ? formatPrice(selectedLead.dealer_bidding.maxPrice) : "N/A"}
-                              </p>
-                              {selectedLead.dealer_bidding?.status === "got_price" &&
-                                selectedLead.price_customer &&
-                                selectedLead.dealer_bidding?.maxPrice &&
-                                selectedLead.dealer_bidding.maxPrice > selectedLead.price_customer && (
-                                  <Badge variant="destructive" className="text-xs">Override</Badge>
-                                )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Activity Log */}
-                      <div className="bg-white rounded-lg p-6 shadow-sm">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Hoạt động gần đây</h4>
-                        {loadingActivity ? (
-                          <div className="text-center py-8">
-                            <Loader2 className="h-6 w-6 animate-spin mx-auto text-gray-400" />
-                            <p className="text-sm text-gray-400 mt-2">Đang tải...</p>
-                          </div>
-                        ) : activityLog.length === 0 ? (
-                          <div className="text-center py-8 text-gray-400">
-                            <p className="text-sm">Chưa có hoạt động nào</p>
-                          </div>
-                        ) : (
-                          <div className="max-h-96 overflow-y-auto space-y-3">
-                            {activityLog.map((activity, index) => (
-                              <div
-                                key={index}
-                                className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200"
-                              >
-                                <div className="flex-shrink-0 w-2 h-2 bg-purple-500 rounded-full mt-1.5" />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-gray-900">{activity.event_name}</p>
-                                  <p className="text-xs text-gray-500 mt-1">
-                                    {new Date(activity.time).toLocaleString('vi-VN', {
-                                      year: 'numeric',
-                                      month: '2-digit',
-                                      day: '2-digit',
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                      second: '2-digit'
-                                    })}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {activeDetailView === "decoy-web" && (
-                  <div className="bg-white rounded-lg shadow-sm h-[600px] flex flex-col overflow-hidden">
-                    <div className="flex-1 flex gap-4 overflow-hidden">
-                      {/* Left Panel - Thread List */}
-                      <div className="w-80 border-r overflow-y-auto flex flex-col">
-                        {/* Create Thread Button */}
-                        <div className="p-3 border-b bg-gray-50">
-                          <Button
-                            onClick={() => setCreateThreadOpen(true)}
-                            className="w-full bg-orange-500 hover:bg-orange-600 text-white"
-                            size="sm"
-                          >
-                            <MessageCircle className="h-4 w-4 mr-2" />
-                            Tạo thread mới
-                          </Button>
-                        </div>
-                        <div className="flex-1 p-4 overflow-y-auto">
-                          {loadingDecoyWeb ? (
-                            <div className="flex items-center justify-center h-full">
-                              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                            </div>
-                          ) : decoyWebThreads.length === 0 ? (
-                            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                              Chưa có threads
-                            </div>
-                          ) : (
-                            <div className="space-y-2">
-                              {decoyWebThreads.map((thread) => (
-                                <button
-                                  key={thread.id}
-                                  onClick={() => setSelectedDecoyWebThreadId(thread.id)}
-                                  className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedDecoyWebThreadId === thread.id
-                                    ? "bg-orange-100 text-orange-900 border-orange-300"
-                                    : "bg-muted/30 hover:bg-muted/50"
-                                    }`}
-                                >
-                                  <div className="font-semibold text-sm mb-1">
-                                    Bot: {thread.bot_name || "Unknown"}
-                                  </div>
-                                  <div className="text-xs opacity-70">
-                                    {new Date(thread.created_at).toLocaleString("vi-VN")}
-                                  </div>
-                                  <div className="text-xs opacity-70 mt-1">
-                                    {thread.messages.length} tin nhắn
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Right Panel - Messages */}
-                      <div className="flex-1 flex flex-col overflow-hidden bg-gray-50/30">
-                        {/* CRM Banner */}
-                        {selectedDecoyWebThreadId && (
-                          <div className="bg-blue-50 border-b border-blue-100 p-3 px-4 flex items-center justify-between shrink-0 animate-in fade-in slide-in-from-top-1">
-                            <div className="flex items-center gap-2 text-sm text-blue-700">
-                              <MessageCircle className="h-4 w-4" />
-                              <span>Để chat tiếp hãy vào đường link bên CRM</span>
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="bg-white hover:bg-blue-50 text-blue-600 border-blue-200 h-8 text-xs font-medium shadow-sm transition-all hover:shadow"
-                              onClick={() => {
-                                const phone = selectedLead.phone || selectedLead.additional_phone || ""
-                                if (selectedDecoyWebThreadId && phone) {
-                                  const crmUrl = `https://dashboard.vucar.vn/gui-tin/tin-da-gui?threadId=${selectedDecoyWebThreadId}&phone=${phone}`
-                                  window.open(crmUrl, '_blank')
+                              className="h-5 w-5 p-0 ml-auto shrink-0"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (lead.car_id && !updatingPrimary) {
+                                  const newPrimaryStatus = !lead.is_primary
+                                  setUpdatingPrimary(true)
+                                  fetch("/api/e2e/update-primary", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      car_id: lead.car_id,
+                                      is_primary: newPrimaryStatus
+                                    }),
+                                  })
+                                    .then(res => res.json())
+                                    .then(data => {
+                                      if (data.success) {
+                                        setLeads((prevLeads) =>
+                                          prevLeads.map((l) =>
+                                            l.id === lead.id ? { ...l, is_primary: newPrimaryStatus } : l
+                                          )
+                                        )
+                                        if (selectedLead?.id === lead.id) {
+                                          setSelectedLead({ ...lead, is_primary: newPrimaryStatus })
+                                        }
+                                        toast({
+                                          title: "Thành công",
+                                          description: newPrimaryStatus
+                                            ? "Đã đánh dấu xe là Primary"
+                                            : "Đã bỏ đánh dấu Primary",
+                                        })
+                                      }
+                                    })
+                                    .catch(() => {
+                                      toast({
+                                        title: "Lỗi",
+                                        description: "Không thể cập nhật trạng thái Primary",
+                                        variant: "destructive",
+                                      })
+                                    })
+                                    .finally(() => setUpdatingPrimary(false))
                                 }
                               }}
+                              disabled={!lead.car_id || updatingPrimary}
+                              title={lead.is_primary ? "Bỏ đánh dấu Primary" : "Đánh dấu là Primary"}
                             >
-                              Chat trên CRM (Tab mới)
+                              {updatingPrimary && selectedLead?.id === lead.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                              ) : (
+                                <Star
+                                  className={`h-4 w-4 ${lead.is_primary
+                                    ? "fill-blue-600 text-blue-600"
+                                    : "text-gray-300 hover:text-gray-500"
+                                    }`}
+                                />
+                              )}
                             </Button>
                           </div>
-                        )}
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm text-gray-700 truncate">
+                              {formatCarInfo(lead)}
+                            </p>
+                            {lead.car_created_at && (
+                              <p className="text-xs text-gray-500 shrink-0">
+                                {new Date(lead.car_created_at).toLocaleString("vi-VN", {
+                                  year: 'numeric',
+                                  month: '2-digit',
+                                  day: '2-digit',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </p>
+                            )}
+                          </div>
+                          <p className="text-xs text-emerald-600 font-semibold mt-1">
+                            {lead.price_customer ? formatPrice(lead.price_customer) : "Chưa có giá"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
 
-                        {/* Messages Area */}
-                        <div className="flex-1 overflow-y-auto p-4">
-                          {!selectedDecoyWebThreadId ? (
+            {/* Pagination in Sidebar */}
+            {totalPages > 1 && (
+              <div className="border-t p-3 bg-gray-50">
+                <div className="flex items-center justify-center gap-1 mb-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handlePreviousPage}
+                    disabled={currentPage === 1}
+                    className="h-7 px-2 text-gray-600"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+
+                  {/* Page Numbers */}
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                      let pageNum;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = currentPage - 2 + i;
+                      }
+                      return (
+                        <Button
+                          key={pageNum}
+                          variant={currentPage === pageNum ? "default" : "ghost"}
+                          size="sm"
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`h-7 w-7 p-0 text-xs ${currentPage === pageNum
+                            ? "bg-blue-600 hover:bg-blue-700 text-white"
+                            : "text-gray-600 hover:bg-gray-100"
+                            }`}
+                        >
+                          {pageNum}
+                        </Button>
+                      );
+                    })}
+                  </div>
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleNextPage}
+                    disabled={currentPage === totalPages}
+                    className="h-7 px-2 text-gray-600"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="text-center text-xs text-gray-500">
+                  Trang {currentPage} / {totalPages}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Right Panel - Lead Details - Hidden on mobile when in list view */}
+        {(!isMobile || mobileView === 'detail') && (
+          <>
+            {!selectedAccount ? (
+              <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
+                <User className="h-24 w-24 text-gray-300 mb-4" />
+                <p className="text-lg font-medium">Chọn tài khoản để bắt đầu</p>
+                <p className="text-sm mt-2">Vui lòng chọn tài khoản từ menu phía trên</p>
+              </div>
+            ) : selectedLead ? (
+              <div className="flex-1 overflow-hidden flex flex-col bg-gray-50">
+                {/* Details content will go here - we'll move the modal content */}
+                <div className="flex-1 overflow-y-auto">
+                  {/* Header */}
+                  <div className="px-8 pt-6 pb-6 bg-gray-100 border-b sticky top-0 z-10">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xl font-bold">
+                          {selectedLead.name?.charAt(0).toUpperCase() || "?"}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-xl font-bold text-gray-900">{selectedLead.name}</h2>
+                            <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-gray-50 border border-gray-200">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-5 w-5 p-0 hover:bg-transparent"
+                                onClick={handleTogglePrimary}
+                                disabled={updatingPrimary || !selectedLead.car_id}
+                                title={selectedLead.is_primary ? "Bỏ đánh dấu Primary" : "Đánh dấu là Primary"}
+                              >
+                                {updatingPrimary ? (
+                                  <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                                ) : (
+                                  <Star
+                                    className={`h-4 w-4 ${selectedLead.is_primary
+                                      ? "fill-purple-600 text-purple-600"
+                                      : "text-gray-400 hover:text-gray-500"
+                                      }`}
+                                  />
+                                )}
+                              </Button>
+                              <span className={`text-xs font-medium ${selectedLead.is_primary
+                                ? "text-purple-600"
+                                : "text-gray-600"
+                                }`}>
+                                {selectedLead.is_primary ? "Ưu tiên" : "Nuôi dưỡng"}
+                              </span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 hover:bg-transparent text-gray-400 hover:text-blue-600"
+                              onClick={(e) => selectedLead && handleQuickEdit(selectedLead, e)}
+                              title="Chỉnh sửa nhanh"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Clock className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm text-gray-500">
+                              {formatDate(selectedLead.created_at)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <p className="text-base font-medium text-gray-700">
+                              {formatCarInfo(selectedLead)}
+                            </p>
+                            {selectedLead.price_customer && (
+                              <span className="text-emerald-600 font-semibold">
+                                {formatPrice(selectedLead.price_customer)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleSyncCurrentLead}
+                          disabled={syncing}
+                          className="text-gray-600"
+                        >
+                          <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
+                          {syncing ? "Đang đồng bộ..." : "Đồng bộ"}
+                        </Button>                    <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setDetailDialogOpen(true)}
+                          className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                        >
+                          Chi tiết
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                          onClick={() => setInspectionSystemOpen(true)}
+                        >
+                          Đặt lịch KD
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="flex items-center gap-6 border-b -mb-6">
+                      <button
+                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "workflow"
+                          ? "text-blue-600 border-blue-600"
+                          : "text-gray-500 border-transparent hover:text-gray-700"
+                          }`}
+                        onClick={() => setActiveDetailView("workflow")}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Zap className="h-4 w-4" />
+                          Workflow Tracker
+                        </div>
+                      </button>
+                      <button
+                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "decoy-web"
+                          ? "text-orange-600 border-orange-600"
+                          : "text-gray-500 border-transparent hover:text-gray-700"
+                          }`}
+                        onClick={() => {
+                          setActiveDetailView("decoy-web")
+                          if (selectedLead) handleViewDecoyWebChat(selectedLead)
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <MessageCircle className="h-4 w-4" />
+                          Decoy Web Chat
+                        </div>
+                      </button>
+                      <button
+                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "zalo-chat"
+                          ? "text-purple-600 border-purple-600"
+                          : "text-gray-500 border-transparent hover:text-gray-700"
+                          }`}
+                        onClick={() => {
+                          setActiveDetailView("zalo-chat")
+                          if (selectedLead) handleViewZaloChat(selectedLead)
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <MessageCircle className="h-4 w-4" />
+                          Zalo Chat
+                          <Badge variant="outline" className="text-xs">Kênh chính</Badge>
+                        </div>
+                      </button>
+                      <button
+                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "recent-activity"
+                          ? "text-emerald-600 border-emerald-600"
+                          : "text-gray-500 border-transparent hover:text-gray-700"
+                          }`}
+                        onClick={() => setActiveDetailView("recent-activity")}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4" />
+                          Hoạt động gần đây
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Content sections - same as before */}
+                  <div className="px-8 py-6 space-y-6">
+                    {activeDetailView === "workflow" && (
+                      <>
+                        {/* Workflow Tracker */}
+                        <div className="bg-white rounded-lg p-8 shadow-sm">
+                          <div className="flex items-center justify-between mb-8">
+                            <div className="flex items-center gap-3">
+                              <h3 className="text-lg font-semibold text-gray-900">Tiến độ quy trình</h3>
+                              {(selectedLead.bidding_session_count || 0) > 0 && (
+                                <div className="flex items-center gap-2 ml-4">
+                                  <span className="text-sm text-gray-600">Đang xem:</span>
+                                  <button
+                                    onClick={() => setActiveWorkflowView("purchase")}
+                                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${activeWorkflowView === "purchase"
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                                      }`}
+                                  >
+                                    Quy trình Thu Mua
+                                  </button>
+                                  <button
+                                    onClick={() => setActiveWorkflowView("seeding")}
+                                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${activeWorkflowView === "seeding"
+                                      ? "bg-purple-100 text-purple-700"
+                                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                                      }`}
+                                  >
+                                    Quy trình Seeding (WF2)
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                            {selectedLead.session_created && (selectedLead.workflow2_is_active === false) && (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => {
+                                  // Populate default values
+                                  setWorkflow2Data({
+                                    duration: "6",
+                                    minPrice: selectedLead?.price_customer?.toString() || "",
+                                    maxPrice: selectedLead?.price_highest_bid?.toString() || "",
+                                    comment: true,
+                                    numberOfComments: "20",
+                                    bid: true
+                                  })
+                                  setWorkflow2Open(true)
+                                }}
+                                className="bg-emerald-600 hover:bg-emerald-700"
+                              >
+                                Kích hoạt WF 2
+                              </Button>
+                            )}
+                          </div>
+
+                          {/* Workflow Steps */}
+                          {activeWorkflowView === "purchase" ? (
+                            <div className="flex items-start justify-around mb-8">
+                              {/* Tin nhắn đầu */}
+                              <div className="flex flex-col items-center gap-3">
+                                <WorkflowStep
+                                  icon={<CheckCircle className="w-8 h-8" />}
+                                  title="Tin nhắn đầu"
+                                  status={selectedLead.has_enough_images ? "Đã có ảnh" : "Chưa có ảnh"}
+                                  isCompleted={selectedLead.has_enough_images || false}
+                                  onClick={() => {
+                                    setActiveDetailView("zalo-chat")
+                                    handleViewZaloChat(selectedLead)
+                                  }}
+                                />
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={handleSendFirstMessage}
+                                  disabled={sendingMessage || selectedLead.first_message_sent}
+                                  className="text-xs"
+                                >
+                                  {sendingMessage ? "Đang gửi..." : selectedLead.first_message_sent ? "Đã gửi" : "Gửi tin nhắn đầu"}
+                                </Button>
+                              </div>
+
+                              {/* Chào Dealer */}
+                              <div className="flex flex-col items-center gap-3">
+                                <WorkflowStep
+                                  icon={<DollarSign className="w-8 h-8" />}
+                                  title="Chào Dealer"
+                                  status={selectedLead.dealer_bidding?.status === "got_price" ? "Đã có giá Dealer" : "Chưa có giá"}
+                                  isCompleted={selectedLead.dealer_bidding?.status === "got_price"}
+                                />
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => selectedLead.car_id && fetchBiddingHistory(selectedLead.car_id)}
+                                  disabled={!selectedLead.car_id}
+                                  className="text-xs"
+                                >
+                                  Xem lịch sử giá
+                                </Button>
+                              </div>
+
+                              {/* Tạo Phiên */}
+                              <div className="flex flex-col items-center gap-3">
+                                <WorkflowStep
+                                  icon={<Play className="w-8 h-8" />}
+                                  title="Tạo Phiên"
+                                  status={selectedLead.session_created ? "Phiên đã tạo" : "Chưa tạo phiên"}
+                                  isCompleted={selectedLead.session_created || false}
+                                />
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setConfirmSessionOpen(true)}
+                                  disabled={creatingSession || selectedLead.session_created}
+                                  className="text-xs"
+                                >
+                                  {creatingSession ? "Đang tạo..." : selectedLead.session_created ? "Đã tạo" : "Tạo Phiên"}
+                                </Button>
+                              </div>
+
+                              {/* E2E Bot */}
+                              <div className="flex flex-col items-center gap-3">
+                                <WorkflowStep
+                                  icon={<Zap className="w-8 h-8" />}
+                                  title="E2E Bot"
+                                  status={selectedLead.bot_active ? "Bot đang chạy" : "Bot chưa chạy"}
+                                  isCompleted={selectedLead.bot_active || false}
+                                />
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleBotToggle(selectedLead, !selectedLead.bot_active)}
+                                  disabled={togglingBot}
+                                  className={`text-xs ${selectedLead.bot_active ? "bg-red-50 text-red-600 hover:bg-red-100" : ""}`}
+                                >
+                                  {togglingBot ? "Đang xử lý..." : selectedLead.bot_active ? "Tắt Bot" : "Bật Bot"}
+                                </Button>
+                              </div>
+
+                              {/* Decoy Web */}
+                              <div className="flex flex-col items-center gap-3">
+                                <WorkflowStep
+                                  icon={<Search className="w-8 h-8" />}
+                                  title="Decoy Web"
+                                  status={`${selectedLead.decoy_thread_count || 0} threads`}
+                                  isCompleted={(selectedLead.decoy_thread_count || 0) > 0}
+                                  onClick={() => {
+                                    setActiveDetailView("decoy-web")
+                                    handleViewDecoyWebChat(selectedLead)
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-start justify-around mb-8">
+                              {/* Tạo Phiên 2 */}
+                              <div className="flex flex-col items-center gap-3">
+                                <WorkflowStep
+                                  icon={<Play className={`w-8 h-8 ${selectedLead.workflow2_is_active ? "" : "text-gray-400"}`} />}
+                                  title={`Tạo Phiên 2`}
+                                  status={selectedLead.workflow2_is_active ? "Đã kích hoạt" : "Chưa kích hoạt"}
+                                  isCompleted={selectedLead.workflow2_is_active === true}
+                                />
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs"
+                                  disabled
+                                >
+                                  Chạy ngay
+                                </Button>
+                              </div>
+
+                              {/* Decoy Zalo */}
+                              <div className="flex flex-col items-center gap-3">
+                                <WorkflowStep
+                                  icon={<MessageCircle className="w-8 h-8" />}
+                                  title="Decoy Zalo"
+                                  status="Tương tác Zalo ảo"
+                                  isCompleted={false}
+                                />
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs"
+                                  onClick={() => setDecoyDialogOpen(true)}
+                                >
+                                  Mở Zalo Decoy
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Other Action Buttons - Only for purchase workflow */}
+                          {activeWorkflowView === "purchase" && (
+                            <div className="flex items-center gap-3">
+                              <Button
+                                variant="outline"
+                                onClick={handleRenameLead}
+                                disabled={renamingLead || !selectedLead?.pic_id}
+                                className="text-gray-700"
+                              >
+                                {renamingLead ? "Đang đổi tên..." : "Đổi tên Lead"}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Additional Info Cards */}
+                        <div className="grid grid-cols-3 gap-4">
+                          {/* Contact Info */}
+                          <div className="bg-white rounded-lg p-6 shadow-sm">
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3">Thông tin liên hệ</h4>
+                            <div className="space-y-2">
+                              <div>
+                                <p className="text-xs text-gray-500">Số điện thoại</p>
+                                <p className="text-sm font-medium text-gray-900">
+                                  {selectedLead.phone ? maskPhone(selectedLead.phone) : "N/A"}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-500">Biển số xe</p>
+                                <p className="text-sm font-medium text-gray-900">{selectedLead.plate || "N/A"}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-500">SKU</p>
+                                <p className="text-sm font-medium text-gray-900">{selectedLead.sku || "N/A"}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-500">Số km</p>
+                                <p className="text-sm font-medium text-gray-900">
+                                  {selectedLead.mileage ? `${selectedLead.mileage.toLocaleString()} km` : "N/A"}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-500">Ngày tạo xe</p>
+                                <p className="text-sm font-medium text-gray-900">
+                                  {selectedLead.car_created_at ? new Date(selectedLead.car_created_at).toLocaleDateString("vi-VN") : "N/A"}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Price Info */}
+                          <div className="bg-white rounded-lg p-6 shadow-sm">
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3">Thông tin giá</h4>
+                            <div className="space-y-2">
+                              <div>
+                                <p className="text-xs text-gray-500">Giá khách mong muốn</p>
+                                <p className="text-sm font-semibold text-emerald-600">
+                                  {selectedLead.price_customer ? formatPrice(selectedLead.price_customer) : "N/A"}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-500">Giá cao nhất (Dealer)</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-semibold text-blue-600">
+                                    {selectedLead.dealer_bidding?.maxPrice ? formatPrice(selectedLead.dealer_bidding.maxPrice) : "N/A"}
+                                  </p>
+                                  {selectedLead.dealer_bidding?.status === "got_price" &&
+                                    selectedLead.price_customer &&
+                                    selectedLead.dealer_bidding?.maxPrice &&
+                                    selectedLead.dealer_bidding.maxPrice > selectedLead.price_customer && (
+                                      <Badge variant="destructive" className="text-xs">Override</Badge>
+                                    )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Activity Log */}
+                          <div className="bg-white rounded-lg p-6 shadow-sm">
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3">Hoạt động gần đây</h4>
+                            {loadingActivity ? (
+                              <div className="text-center py-8">
+                                <Loader2 className="h-6 w-6 animate-spin mx-auto text-gray-400" />
+                                <p className="text-sm text-gray-400 mt-2">Đang tải...</p>
+                              </div>
+                            ) : activityLog.length === 0 ? (
+                              <div className="text-center py-8 text-gray-400">
+                                <p className="text-sm">Chưa có hoạt động nào</p>
+                              </div>
+                            ) : (
+                              <div className="max-h-96 overflow-y-auto space-y-3">
+                                {activityLog.map((activity, index) => (
+                                  <div
+                                    key={index}
+                                    className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200"
+                                  >
+                                    <div className="flex-shrink-0 w-2 h-2 bg-purple-500 rounded-full mt-1.5" />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium text-gray-900">{activity.event_name}</p>
+                                      <p className="text-xs text-gray-500 mt-1">
+                                        {new Date(activity.time).toLocaleString('vi-VN', {
+                                          year: 'numeric',
+                                          month: '2-digit',
+                                          day: '2-digit',
+                                          hour: '2-digit',
+                                          minute: '2-digit',
+                                          second: '2-digit'
+                                        })}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {activeDetailView === "decoy-web" && (
+                      <div className="bg-white rounded-lg shadow-sm h-[600px] flex flex-col overflow-hidden">
+                        <div className="flex-1 flex gap-4 overflow-hidden">
+                          {/* Left Panel - Thread List */}
+                          <div className="w-80 border-r overflow-y-auto flex flex-col">
+                            {/* Create Thread Button */}
+                            <div className="p-3 border-b bg-gray-50">
+                              <Button
+                                onClick={() => setCreateThreadOpen(true)}
+                                className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+                                size="sm"
+                              >
+                                <MessageCircle className="h-4 w-4 mr-2" />
+                                Tạo thread mới
+                              </Button>
+                            </div>
+                            <div className="flex-1 p-4 overflow-y-auto">
+                              {loadingDecoyWeb ? (
+                                <div className="flex items-center justify-center h-full">
+                                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                                </div>
+                              ) : decoyWebThreads.length === 0 ? (
+                                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                                  Chưa có threads
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  {decoyWebThreads.map((thread) => (
+                                    <button
+                                      key={thread.id}
+                                      onClick={() => setSelectedDecoyWebThreadId(thread.id)}
+                                      className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedDecoyWebThreadId === thread.id
+                                        ? "bg-orange-100 text-orange-900 border-orange-300"
+                                        : "bg-muted/30 hover:bg-muted/50"
+                                        }`}
+                                    >
+                                      <div className="font-semibold text-sm mb-1">
+                                        Bot: {thread.bot_name || "Unknown"}
+                                      </div>
+                                      <div className="text-xs opacity-70">
+                                        {new Date(thread.created_at).toLocaleString("vi-VN")}
+                                      </div>
+                                      <div className="text-xs opacity-70 mt-1">
+                                        {thread.messages.length} tin nhắn
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Right Panel - Messages */}
+                          <div className="flex-1 flex flex-col overflow-hidden bg-gray-50/30">
+                            {/* CRM Banner */}
+                            {selectedDecoyWebThreadId && (
+                              <div className="bg-blue-50 border-b border-blue-100 p-3 px-4 flex items-center justify-between shrink-0 animate-in fade-in slide-in-from-top-1">
+                                <div className="flex items-center gap-2 text-sm text-blue-700">
+                                  <MessageCircle className="h-4 w-4" />
+                                  <span>Để chat tiếp hãy vào đường link bên CRM</span>
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="bg-white hover:bg-blue-50 text-blue-600 border-blue-200 h-8 text-xs font-medium shadow-sm transition-all hover:shadow"
+                                  onClick={() => {
+                                    const phone = selectedLead.phone || selectedLead.additional_phone || ""
+                                    if (selectedDecoyWebThreadId && phone) {
+                                      const crmUrl = `https://dashboard.vucar.vn/gui-tin/tin-da-gui?threadId=${selectedDecoyWebThreadId}&phone=${phone}`
+                                      window.open(crmUrl, '_blank')
+                                    }
+                                  }}
+                                >
+                                  Chat trên CRM (Tab mới)
+                                </Button>
+                              </div>
+                            )}
+
+                            {/* Messages Area */}
+                            <div className="flex-1 overflow-y-auto p-4">
+                              {!selectedDecoyWebThreadId ? (
+                                <div className="flex items-center justify-center h-full text-muted-foreground">
+                                  Chọn một thread để xem tin nhắn
+                                </div>
+                              ) : (
+                                <div className="space-y-3">
+                                  {decoyWebThreads
+                                    .find((t) => t.id === selectedDecoyWebThreadId)
+                                    ?.messages.map((msg, index) => {
+                                      const isBot = msg.sender === "bot" || msg.sender === "system"
+                                      const timestamp = msg.displayed_at
+                                        ? new Date(msg.displayed_at).toLocaleString("vi-VN")
+                                        : ""
+
+                                      return (
+                                        <div
+                                          key={index}
+                                          className={`flex ${isBot ? "justify-end" : "justify-start"}`}
+                                        >
+                                          <div
+                                            className={`max-w-[70%] rounded-lg p-3 ${isBot
+                                              ? "bg-orange-500 text-white"
+                                              : "bg-gray-200 text-gray-900"
+                                              }`}
+                                          >
+                                            <div className="flex items-center gap-2 mb-1">
+                                              <span className="text-xs font-semibold">
+                                                {isBot ? "Decoy Bot" : "Khách hàng"}
+                                              </span>
+                                              <span className="text-xs opacity-70">{timestamp}</span>
+                                            </div>
+                                            <p className="text-sm whitespace-pre-wrap break-words">
+                                              {msg.content}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      )
+                                    })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {activeDetailView === "zalo-chat" && (
+                      <div className="bg-white rounded-lg shadow-sm h-[600px] flex flex-col overflow-hidden">
+                        {/* E2E Action Button - Fixed at top */}
+                        <div className="border-b p-4 bg-purple-50">
+                          <Button
+                            onClick={handleRunE2E}
+                            disabled={runningE2E}
+                            className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                          >
+                            {runningE2E ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Đang chạy E2E...
+                              </>
+                            ) : (
+                              "Chạy E2E"
+                            )}
+                          </Button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                          {loadingE2eMessages ? (
+                            <div className="flex items-center justify-center h-full">
+                              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                              <span className="ml-2 text-muted-foreground">Đang tải tin nhắn...</span>
+                            </div>
+                          ) : e2eMessages.length === 0 ? (
                             <div className="flex items-center justify-center h-full text-muted-foreground">
-                              Chọn một thread để xem tin nhắn
+                              Chưa có tin nhắn
                             </div>
                           ) : (
                             <div className="space-y-3">
-                              {decoyWebThreads
-                                .find((t) => t.id === selectedDecoyWebThreadId)
-                                ?.messages.map((msg, index) => {
-                                  const isBot = msg.sender === "bot" || msg.sender === "system"
-                                  const timestamp = msg.displayed_at
-                                    ? new Date(msg.displayed_at).toLocaleString("vi-VN")
-                                    : ""
+                              {e2eMessages.map((msg: ChatMessage, index: number) => {
+                                const isVuCar = msg.uidFrom === "0" || msg.uidFrom === "bot" || msg.uidFrom === "system"
+                                const timestamp = msg.timestamp
+                                  ? new Date(msg.timestamp).toLocaleString("vi-VN")
+                                  : msg.dateAction || ""
 
-                                  return (
+                                return (
+                                  <div
+                                    key={msg._id || index}
+                                    className={`flex ${isVuCar ? "justify-end" : "justify-start"}`}
+                                  >
                                     <div
-                                      key={index}
-                                      className={`flex ${isBot ? "justify-end" : "justify-start"}`}
+                                      className={`max-w-[70%] rounded-lg p-3 ${isVuCar
+                                        ? "bg-purple-500 text-white"
+                                        : "bg-gray-200 text-gray-900"
+                                        }`}
                                     >
-                                      <div
-                                        className={`max-w-[70%] rounded-lg p-3 ${isBot
-                                          ? "bg-orange-500 text-white"
-                                          : "bg-gray-200 text-gray-900"
-                                          }`}
-                                      >
-                                        <div className="flex items-center gap-2 mb-1">
-                                          <span className="text-xs font-semibold">
-                                            {isBot ? "Decoy Bot" : "Khách hàng"}
-                                          </span>
-                                          <span className="text-xs opacity-70">{timestamp}</span>
-                                        </div>
-                                        <p className="text-sm whitespace-pre-wrap break-words">
-                                          {msg.content}
-                                        </p>
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-xs font-semibold">
+                                          {isVuCar ? "VuCar" : "Khách hàng"}
+                                        </span>
+                                        <span className="text-xs opacity-70">{timestamp}</span>
                                       </div>
+                                      {msg.img && (
+                                        <img
+                                          src={msg.img}
+                                          alt="Message image"
+                                          className="max-w-[200px] max-h-[200px] object-cover rounded mb-2"
+                                        />
+                                      )}
+                                      <p className="text-sm whitespace-pre-wrap break-words">
+                                        {msg.content}
+                                      </p>
+                                      {msg.type && msg.type !== "text" && (
+                                        <span className="text-xs opacity-70 mt-1 block">
+                                          Type: {msg.type}
+                                        </span>
+                                      )}
                                     </div>
-                                  )
-                                })}
+                                  </div>
+                                )
+                              })}
                             </div>
                           )}
                         </div>
                       </div>
-                    </div>
-                  </div>
-                )}
+                    )}
 
-                {activeDetailView === "zalo-chat" && (
-                  <div className="bg-white rounded-lg shadow-sm h-[600px] flex flex-col overflow-hidden">
-                    {/* E2E Action Button - Fixed at top */}
-                    <div className="border-b p-4 bg-purple-50">
-                      <Button
-                        onClick={handleRunE2E}
-                        disabled={runningE2E}
-                        className="w-full bg-purple-600 hover:bg-purple-700 text-white"
-                      >
-                        {runningE2E ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Đang chạy E2E...
-                          </>
-                        ) : (
-                          "Chạy E2E"
-                        )}
-                      </Button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                      {loadingE2eMessages ? (
-                        <div className="flex items-center justify-center h-full">
-                          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                          <span className="ml-2 text-muted-foreground">Đang tải tin nhắn...</span>
+                    {activeDetailView === "recent-activity" && (
+                      <div className="bg-white rounded-lg shadow-sm p-6">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-6">Hoạt động gần đây</h3>
+                        <div className="text-center py-12 text-gray-400">
+                          <Clock className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+                          <p className="text-sm">Chưa có hoạt động nào</p>
+                          <p className="text-xs mt-2">Các hoạt động của lead sẽ được hiển thị ở đây</p>
                         </div>
-                      ) : e2eMessages.length === 0 ? (
-                        <div className="flex items-center justify-center h-full text-muted-foreground">
-                          Chưa có tin nhắn
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {e2eMessages.map((msg: ChatMessage, index: number) => {
-                            const isVuCar = msg.uidFrom === "0" || msg.uidFrom === "bot" || msg.uidFrom === "system"
-                            const timestamp = msg.timestamp
-                              ? new Date(msg.timestamp).toLocaleString("vi-VN")
-                              : msg.dateAction || ""
-
-                            return (
-                              <div
-                                key={msg._id || index}
-                                className={`flex ${isVuCar ? "justify-end" : "justify-start"}`}
-                              >
-                                <div
-                                  className={`max-w-[70%] rounded-lg p-3 ${isVuCar
-                                    ? "bg-purple-500 text-white"
-                                    : "bg-gray-200 text-gray-900"
-                                    }`}
-                                >
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-xs font-semibold">
-                                      {isVuCar ? "VuCar" : "Khách hàng"}
-                                    </span>
-                                    <span className="text-xs opacity-70">{timestamp}</span>
-                                  </div>
-                                  {msg.img && (
-                                    <img
-                                      src={msg.img}
-                                      alt="Message image"
-                                      className="max-w-[200px] max-h-[200px] object-cover rounded mb-2"
-                                    />
-                                  )}
-                                  <p className="text-sm whitespace-pre-wrap break-words">
-                                    {msg.content}
-                                  </p>
-                                  {msg.type && msg.type !== "text" && (
-                                    <span className="text-xs opacity-70 mt-1 block">
-                                      Type: {msg.type}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
-                )}
-
-                {activeDetailView === "recent-activity" && (
-                  <div className="bg-white rounded-lg shadow-sm p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-6">Hoạt động gần đây</h3>
-                    <div className="text-center py-12 text-gray-400">
-                      <Clock className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-                      <p className="text-sm">Chưa có hoạt động nào</p>
-                      <p className="text-xs mt-2">Các hoạt động của lead sẽ được hiển thị ở đây</p>
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
-            <MessageCircle className="h-24 w-24 text-gray-300 mb-4" />
-            <p className="text-lg font-medium">Chọn một lead để xem chi tiết</p>
-            <p className="text-sm mt-2">Nhấp vào lead bên trái để xem thông tin chi tiết</p>
-          </div>
-        )
-        }
-      </div >
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
+                <MessageCircle className="h-24 w-24 text-gray-300 mb-4" />
+                <p className="text-lg font-medium">Chọn một lead để xem chi tiết</p>
+                <p className="text-sm mt-2">Nhấp vào lead bên trái để xem thông tin chi tiết</p>
+              </div>
+            )
+            }
+          </>
+        )}
+      </div>
 
       {/* Create Bidding Confirmation Dialog */}
       < Dialog open={confirmBiddingOpen} onOpenChange={setConfirmBiddingOpen} >
@@ -4523,45 +4555,45 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
 
               {/* Car Images - Now in 2nd position */}
               {selectedLead.additional_images && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-3">
-                      <svg className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <h3 className="text-sm font-semibold text-gray-900">
-                        Hình ảnh thực tế ({imageCount})
-                      </h3>
-                    </div>
-                    <div className="grid grid-cols-4 gap-3">
-                      {processedImages.length > 0 ? (
-                        processedImages.slice(0, 8).map((imgUrl, idx) => (
-                          <div
-                            key={idx}
-                            className="aspect-square rounded-lg overflow-hidden bg-gray-100 cursor-pointer"
-                            onClick={() => {
-                              setGalleryImages(processedImages);
-                              setSelectedImageIndex(idx);
-                              setGalleryOpen(true);
-                            }}
-                          >
-                            <img
-                              src={imgUrl}
-                              alt={`Car ${idx}`}
-                              className="w-full h-full object-cover hover:scale-110 transition-transform"
-                              onError={(e) => {
-                                e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23f3f4f6" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%239ca3af"%3ENo Image%3C/text%3E%3C/svg%3E';
-                              }}
-                            />
-                          </div>
-                        ))
-                      ) : (
-                        <div className="col-span-4 text-center py-8 text-gray-400">
-                          <p className="text-sm">Chưa có ảnh</p>
-                        </div>
-                      )}
-                    </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <svg className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <h3 className="text-sm font-semibold text-gray-900">
+                      Hình ảnh thực tế ({imageCount})
+                    </h3>
                   </div>
-                )}
+                  <div className="grid grid-cols-4 gap-3">
+                    {processedImages.length > 0 ? (
+                      processedImages.slice(0, 8).map((imgUrl, idx) => (
+                        <div
+                          key={idx}
+                          className="aspect-square rounded-lg overflow-hidden bg-gray-100 cursor-pointer"
+                          onClick={() => {
+                            setGalleryImages(processedImages);
+                            setSelectedImageIndex(idx);
+                            setGalleryOpen(true);
+                          }}
+                        >
+                          <img
+                            src={imgUrl}
+                            alt={`Car ${idx}`}
+                            className="w-full h-full object-cover hover:scale-110 transition-transform"
+                            onError={(e) => {
+                              e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23f3f4f6" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%239ca3af"%3ENo Image%3C/text%3E%3C/svg%3E';
+                            }}
+                          />
+                        </div>
+                      ))
+                    ) : (
+                      <div className="col-span-4 text-center py-8 text-gray-400">
+                        <p className="text-sm">Chưa có ảnh</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Car Details Grid */}
               <div className="grid grid-cols-2 gap-4 py-4 border-y">

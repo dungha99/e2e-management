@@ -13,10 +13,16 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { SearchInput } from "@/components/ui/search-input"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, User, ChevronLeft, ChevronRight, MessageCircle, RefreshCw, Star, CheckCircle, DollarSign, Play, Zap, Search, Clock, Plus, FileText, Pencil, Copy, CalendarIcon } from "lucide-react"
+import { Loader2, User, ChevronLeft, ChevronRight, MessageCircle, RefreshCw, Star, CheckCircle, DollarSign, Play, Zap, Search, Clock, Plus, FileText, Pencil, Copy, CalendarIcon, PhoneCall } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
@@ -214,6 +220,7 @@ export function E2EManagement() {
   const [selectedAccount, setSelectedAccount] = useState<string>("")
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(false)
+  const [callingBot, setCallingBot] = useState(false)
   const [loadingCarIds, setLoadingCarIds] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
@@ -2666,6 +2673,58 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     }
   }
 
+  const handleCallTrigger = async (actionType: 'CHECK_VAR' | 'FIRST_CALL') => {
+    // 1. Validation
+    const phoneNumber = selectedLead?.phone || selectedLead?.additional_phone
+    if (!phoneNumber) {
+      toast({
+        title: "Lỗi",
+        description: "Không tìm thấy số điện thoại của Lead này.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // 2. Define Endpoint based on Action
+    // Currently both use the same endpoint as per requirements, but keeping structure for future scale
+    let endpoint = 'https://n8n.vucar.vn/webhook/checkvar-lead';
+
+    setCallingBot(true);
+
+    try {
+      // 3. Call API
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: phoneNumber })
+      });
+
+      if (response.ok) {
+        // 4. Success Feedback
+        toast({
+          title: "Thành công",
+          description: "Đã kích hoạt action gọi thành công, hãy đợi phản hồi bên slack"
+        });
+      } else {
+        toast({
+          title: "Lỗi",
+          description: "Lỗi: Không thể kích hoạt Bot.",
+          variant: "destructive"
+        });
+      }
+
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Lỗi",
+        description: "Lỗi kết nối hệ thống.",
+        variant: "destructive"
+      });
+    } finally {
+      setCallingBot(false);
+    }
+  };
+
   // Handler functions for edit mode in detail dialog
   function handleEditToggle() {
     if (!selectedLead) return
@@ -3323,6 +3382,34 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
                         >
                           Chi tiết
                         </Button>
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={callingBot}
+                              className="text-orange-600 border-orange-600 hover:bg-orange-50"
+                            >
+                              {callingBot ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <PhoneCall className="h-4 w-4 mr-2" />
+                                  GỌI BOT
+                                </>
+                              )}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent>
+                            <DropdownMenuItem onClick={() => handleCallTrigger('CHECK_VAR')}>
+                              Check Var (Còn bán không?)
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleCallTrigger('FIRST_CALL')}>
+                              First Call (Lấy thông tin)
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
 
                         <Button
                           size="sm"

@@ -22,7 +22,7 @@ import {
 import { SearchInput } from "@/components/ui/search-input"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, User, ChevronLeft, ChevronRight, MessageCircle, RefreshCw, Star, CheckCircle, DollarSign, Play, Zap, Search, Clock, Plus, FileText, Pencil, Copy, CalendarIcon, PhoneCall } from "lucide-react"
+import { Loader2, User, ChevronLeft, ChevronRight, MessageCircle, RefreshCw, Star, CheckCircle, DollarSign, Play, Zap, Search, Clock, Plus, FileText, Pencil, Copy, CalendarIcon, PhoneCall, ExternalLink } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
@@ -2819,29 +2819,40 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
       }
 
       const detailsData = await detailsResponse.json()
-      const saleStatusId = detailsData.sale_status?.id
+      const saleStatusId = detailsData.sale_status?.id || null
+      const carId = detailsData.car_info?.car_id || selectedLead.car_id
 
-      if (!saleStatusId) {
-        throw new Error("Sale status ID not found")
+      if (!carId) {
+        throw new Error("Car ID not found")
       }
 
-      // Build payload with only changed fields
-      const payload: any = { saleStatusId }
+      // Build payload with required carId and optional saleStatusId, plus only changed fields
+      const payload: any = { carId }
+
+      // Only include saleStatusId if it exists (for update, not create)
+      if (saleStatusId) {
+        payload.saleStatusId = saleStatusId
+      }
+
+      let hasChanges = false
 
       if (editedStage && editedStage !== selectedLead.stage) {
         payload.stage = editedStage
+        hasChanges = true
       }
 
       if (priceCustomer !== undefined && priceCustomer !== selectedLead.price_customer) {
         payload.price_customer = priceCustomer
+        hasChanges = true
       }
 
       if (priceHighestBid !== undefined && priceHighestBid !== selectedLead.price_highest_bid) {
         payload.price_highest_bid = priceHighestBid
+        hasChanges = true
       }
 
       // Check if there are any changes
-      if (Object.keys(payload).length === 1) {
+      if (!hasChanges) {
         toast({
           title: "Thông báo",
           description: "Không có thay đổi nào",
@@ -4664,15 +4675,34 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
                 </svg>
                 <DialogTitle className="text-base">Thông tin xe chi tiết</DialogTitle>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleCopyLeadInfo}
-                className="flex items-center gap-2"
-              >
-                <Copy className="h-4 w-4" />
-                Sao chép
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const phone = selectedLead?.phone || selectedLead?.additional_phone || ""
+                    const picId = selectedLead?.pic_id || ""
+                    if (phone && picId) {
+                      const crmUrl = `https://dashboard.vucar.vn/crm-v2?pic=${picId}&search=${phone}`
+                      window.open(crmUrl, '_blank')
+                    }
+                  }}
+                  disabled={!selectedLead?.pic_id || (!selectedLead?.phone && !selectedLead?.additional_phone)}
+                  className="flex items-center gap-2 text-blue-600 border-blue-300 hover:bg-blue-50"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Xem trên CRM
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCopyLeadInfo}
+                  className="flex items-center gap-2"
+                >
+                  <Copy className="h-4 w-4" />
+                  Sao chép
+                </Button>
+              </div>
             </div>
           </DialogHeader>
 

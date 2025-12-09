@@ -25,6 +25,7 @@ import { Check, ChevronsUpDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { maskPhone } from "@/lib/utils"
 import { Calendar } from "@/components/ui/calendar"
+import { Switch } from "@/components/ui/switch"
 
 interface DealerBiddingStatus {
   status: "not_sent" | "sent" | "got_price"
@@ -269,6 +270,7 @@ export function E2EManagement() {
   const [createThreadLoading, setCreateThreadLoading] = useState(false)
   const [fourDigitsInput, setFourDigitsInput] = useState("")
   const [firstMessageInput, setFirstMessageInput] = useState("Hello")
+  const [sendZns, setSendZns] = useState(false)
 
 
 
@@ -1324,6 +1326,77 @@ export function E2EManagement() {
     }
   }
 
+  async function handleSendZns(phone: string) {
+    if (!phone) return
+
+    try {
+      const response = await fetch("https://api.vucar.vn/notifications/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-secret": "vucar-rest-api-secret-2025-f8a3c9d1e4b6"
+        },
+        body: JSON.stringify({
+          code: "499943",
+          phoneNumbers: [phone]
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.success && (!data.failedSends || data.failedSends === 0)) {
+        toast({
+          title: "ZNS Thành công",
+          description: "Gửi thành công toàn bộ",
+          className: "bg-green-50 border-green-200 text-green-900"
+        })
+        return
+      }
+
+      if (data.results && data.results.length > 0) {
+        data.results.forEach((result: any) => {
+          const status = result.value?.status
+          const errorMsg = result.value?.error || result.reason || ""
+
+          if (status === 'success') {
+            toast({
+              title: "ZNS Thành công",
+              description: `Đã gửi đến ${result.phone}`,
+              className: "bg-green-50 border-green-200 text-green-900"
+            })
+          } else {
+            let msg = `Lỗi: ${errorMsg}`
+            if (errorMsg.includes('-118') || errorMsg.includes('not existed')) {
+              msg = "SĐT chưa đăng ký Zalo"
+            } else if (errorMsg.includes('-119') || errorMsg.includes('user blocked')) {
+              msg = "Khách chặn tin từ OA"
+            } else if (errorMsg.includes('Quota') || errorMsg.includes('hết hạn mức')) {
+              msg = "Hết hạn mức trong ngày"
+            }
+            toast({
+              title: "ZNS Thất bại",
+              description: msg,
+              variant: "destructive",
+            })
+          }
+        })
+      } else {
+        toast({
+          title: "ZNS Lỗi hệ thống",
+          description: "Không thể gửi tin nhắn ZNS",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("[E2E] Error sending ZNS:", error)
+      toast({
+        title: "ZNS Lỗi",
+        description: "Lỗi kết nối đến server ZNS",
+        variant: "destructive",
+      })
+    }
+  }
+
   // Create new chat thread
   async function handleCreateThread() {
     if (!selectedLead) return
@@ -1366,14 +1439,19 @@ export function E2EManagement() {
           title: "Thành công",
           description: "Đã tạo thread mới",
         })
+
+        // Send ZNS if toggle is on
+        if (sendZns && selectedLead.phone) {
+          await handleSendZns(selectedLead.phone)
+        }
+
         // Refresh thread list
         await viewDecoyWebThreads(selectedLead.id)
         // Close create modal and reset input
         setCreateThreadOpen(false)
         setFourDigitsInput("")
         setFirstMessageInput("Hello")
-
-
+        setSendZns(false)
       }
     } catch (error) {
       console.error("[E2E] Error creating thread:", error)
@@ -5304,6 +5382,14 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
             <p className="text-xs text-gray-500 text-center">
               Tên hiển thị: ******{fourDigitsInput || "XXXX"}
             </p>
+            <div className="flex items-center space-x-2 pt-2 border-t">
+              <Switch
+                id="send-zns"
+                checked={sendZns}
+                onCheckedChange={setSendZns}
+              />
+              <Label htmlFor="send-zns" className="cursor-pointer">Gửi ZNS thông báo cho user</Label>
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -5312,6 +5398,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
                 setCreateThreadOpen(false)
                 setFourDigitsInput("")
                 setFirstMessageInput("Hello")
+                setSendZns(false)
               }}
             >
               Hủy

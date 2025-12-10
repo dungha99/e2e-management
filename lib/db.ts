@@ -18,8 +18,8 @@ export function getDrmPool(): Pool {
       ssl: {
         rejectUnauthorized: false,
       },
-      max: 2,
-      idleTimeoutMillis: 2000,
+      max: 15,
+      idleTimeoutMillis: 10000,
       connectionTimeoutMillis: 20000,
     })
 
@@ -41,8 +41,8 @@ export function getVucarV2Pool(): Pool {
       password: process.env.VUCAR_V2_DB_PASSWORD,
       // Enable SSL for AWS RDS but don't reject unauthorized certificates
       ssl: { rejectUnauthorized: false },
-      max: 2,
-      idleTimeoutMillis: 2000,
+      max: 15,
+      idleTimeoutMillis: 10000,
       connectionTimeoutMillis: 20000,
     })
 
@@ -65,6 +65,16 @@ export async function query(text: string, params?: any[]) {
   try {
     const res = await pool.query(text, params)
     const duration = Date.now() - start
+
+    // Log slow queries (>500ms)
+    if (duration > 500) {
+      console.warn("Slow DRM query detected:", {
+        duration: `${duration}ms`,
+        query: text.substring(0, 100) + (text.length > 100 ? "..." : ""),
+        rowCount: res.rowCount,
+      })
+    }
+
     return res
   } catch (error) {
     console.error("query error", { text, error })
@@ -78,6 +88,16 @@ export async function vucarV2Query(text: string, params?: any[]) {
   try {
     const res = await pool.query(text, params)
     const duration = Date.now() - start
+
+    // Log slow queries (>500ms)
+    if (duration > 500) {
+      console.warn("Slow VuCar V2 query detected:", {
+        duration: `${duration}ms`,
+        query: text.substring(0, 100) + (text.length > 100 ? "..." : ""),
+        rowCount: res.rowCount,
+      })
+    }
+
     return res
   } catch (error) {
     console.error("vucar-v2 query error", { text, error })
@@ -94,8 +114,8 @@ export function getTempInspectionPool(): Pool {
       user: process.env.TEMP_INSPECTION_DB_USER,
       password: process.env.TEMP_INSPECTION_DB_PASSWORD,
       ssl: { rejectUnauthorized: false },
-      max: 2,
-      idleTimeoutMillis: 2000,
+      max: 15,
+      idleTimeoutMillis: 10000,
       connectionTimeoutMillis: 20000,
     })
 
@@ -113,6 +133,16 @@ export async function tempInspectionQuery(text: string, params?: any[]) {
   try {
     const res = await pool.query(text, params)
     const duration = Date.now() - start
+
+    // Log slow queries (>500ms)
+    if (duration > 500) {
+      console.warn("Slow Temp Inspection query detected:", {
+        duration: `${duration}ms`,
+        query: text.substring(0, 100) + (text.length > 100 ? "..." : ""),
+        rowCount: res.rowCount,
+      })
+    }
+
     return res
   } catch (error) {
     console.error("temp-inspection query error", { text, error })

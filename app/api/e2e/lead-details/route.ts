@@ -10,7 +10,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Phone is required" }, { status: 400 })
     }
 
-    // Query to get lead, user (PIC), sale_status, and car information
+    // Optimized query with subqueries to reduce separate DB calls
     const result = await vucarV2Query(
       `SELECT
         l.id,
@@ -37,7 +37,9 @@ export async function POST(request: Request) {
         c.mileage,
         c.sku,
         c.created_at as car_created_at,
-        c.additional_images
+        c.additional_images,
+        (SELECT COUNT(*) FROM campaigns WHERE car_auction_id = c.id) as campaign_count,
+        (SELECT is_active FROM campaigns WHERE car_auction_id = c.id LIMIT 1) as workflow2_is_active
        FROM leads l
        LEFT JOIN users u ON l.pic_id = u.id
        LEFT JOIN cars c ON c.lead_id = l.id
@@ -74,17 +76,10 @@ export async function POST(request: Request) {
     const messagesZalo = leadData.messages_zalo || []
     const first_message_sent = Array.isArray(messagesZalo) && messagesZalo.length > 3
 
-    // Check if session created (campaigns exist for this car)
-    let session_created = false
-    if (leadData.car_id) {
-      const campaignResult = await vucarV2Query(
-        `SELECT COUNT(*) as count FROM campaigns WHERE car_auction_id = $1`,
-        [leadData.car_id]
-      )
-      session_created = campaignResult.rows[0]?.count > 0
-    }
+    // Session created check - now from main query (no separate DB call)
+    const session_created = leadData.car_id && parseInt(leadData.campaign_count) > 0
 
-    // Check if car is primary
+    // Check if car is primary (still needs separate query - different database)
     let is_primary = false
     if (leadData.car_id) {
       try {
@@ -100,17 +95,8 @@ export async function POST(request: Request) {
       }
     }
 
-    // Check workflow 2 is_active status from campaigns table
-    let workflow2_is_active: boolean | null = null
-    if (leadData.car_id) {
-      const campaignActiveResult = await vucarV2Query(
-        `SELECT is_active FROM campaigns WHERE car_auction_id = $1 LIMIT 1`,
-        [leadData.car_id]
-      )
-      if (campaignActiveResult.rows.length > 0) {
-        workflow2_is_active = campaignActiveResult.rows[0].is_active
-      }
-    }
+    // Workflow2 is_active status - now from main query (no separate DB call)
+    const workflow2_is_active = leadData.workflow2_is_active !== null ? leadData.workflow2_is_active : null
 
     return NextResponse.json({
       lead: {

@@ -1071,7 +1071,7 @@ export function E2EManagement() {
 
     const customer_phone = selectedLead.phone || selectedLead.additional_phone
 
-    if (!picId) {
+    if (!selectedLead.pic_id) {
       toast({
         title: "Lỗi",
         description: "Không có PIC ID",
@@ -1105,7 +1105,7 @@ export function E2EManagement() {
       const response = await fetch("/api/akabiz/send-customer-message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customer_phone, messages, picId }),
+        body: JSON.stringify({ customer_phone, messages, picId: selectedLead.pic_id }),
       })
 
       if (!response.ok) {
@@ -2189,17 +2189,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
           onOpenWorkflowDialog={() => setWorkflow2Open(true)}
 
           // Workflow Handlers
-          onSendFirstMessage={async (msg) => {
-            setSendingMessage(true)
-            try {
-              // TODO: Implement actual message sending if needed or rely on ZaloChatTab
-              // For now we simulate success or trigger existing logic
-              await new Promise(r => setTimeout(r, 1000))
-              toast({ title: "Đã gửi tin nhắn", description: msg })
-            } finally {
-              setSendingMessage(false)
-            }
-          }}
+          onSendFirstMessage={handleSendFirstMessage}
           sendingMessage={sendingMessage}
           onViewBiddingHistory={() => {
             if (selectedLead?.car_id) {
@@ -2361,6 +2351,8 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         onOpenChange={setSendDealerDialogOpen}
         selectedLead={selectedLead}
         onSuccess={searchLeadByPhone}
+        dealerGroups={dealerGroups}
+        loadingDealerGroups={loadingDealerGroups}
       />
 
       {/* Image Gallery Modal */}

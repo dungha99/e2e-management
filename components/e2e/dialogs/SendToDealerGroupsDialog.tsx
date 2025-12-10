@@ -16,44 +16,24 @@ interface SendToDealerGroupsDialogProps {
   onOpenChange: (open: boolean) => void
   selectedLead: Lead | null
   onSuccess?: () => void
+  dealerGroups: DealerGroup[]
+  loadingDealerGroups: boolean
 }
 
 export function SendToDealerGroupsDialog({
   open,
   onOpenChange,
   selectedLead,
-  onSuccess
+  onSuccess,
+  dealerGroups,
+  loadingDealerGroups
 }: SendToDealerGroupsDialogProps) {
   const { toast } = useToast()
-  const [dealerGroups, setDealerGroups] = useState<DealerGroup[]>([])
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([])
-  const [loadingDealerGroups, setLoadingDealerGroups] = useState(false)
   const [sendingToGroups, setSendingToGroups] = useState(false)
   const [dealerGroupSearch, setDealerGroupSearch] = useState("")
 
-  async function fetchDealerGroups() {
-    setLoadingDealerGroups(true)
-    try {
-      const response = await fetch("/api/e2e/dealer-groups")
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch dealer groups")
-      }
-
-      const data = await response.json()
-      setDealerGroups(data.groups || [])
-    } catch (error) {
-      console.error("[E2E] Error fetching dealer groups:", error)
-      toast({
-        title: "Lỗi",
-        description: "Không thể tải danh sách nhóm dealer",
-        variant: "destructive",
-      })
-      setDealerGroups([])
-    } finally {
-      setLoadingDealerGroups(false)
-    }
-  }
+  // Dealer groups data is now passed from parent component
 
   async function handleSendToGroups() {
     if (!selectedLead?.car_id || selectedGroupIds.length === 0) return
@@ -150,13 +130,12 @@ export function SendToDealerGroupsDialog({
     if (newOpen) {
       setSelectedGroupIds([])
       setDealerGroupSearch("")
-      fetchDealerGroups()
     }
     onOpenChange(newOpen)
   }
 
   const filteredGroups = dealerGroups
-    .filter(group => group.dealerId)
+    .filter(group => group.dealerId) // Only show groups that match active dealers
     .filter(group =>
       group.groupName.toLowerCase().includes(dealerGroupSearch.toLowerCase())
     )

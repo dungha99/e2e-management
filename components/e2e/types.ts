@@ -36,6 +36,7 @@ export interface Lead {
   brand?: string | null
   model?: string | null
   variant?: string | null
+  display_name?: string | null
   year?: number | null
   plate?: string | null
   stage?: string | null

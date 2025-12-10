@@ -30,7 +30,6 @@ interface LeadDetailPanelProps {
   onTogglePrimary: (lead: Lead, e: React.MouseEvent) => Promise<void>
   updatingPrimary: boolean
 
-  onQuickEdit: (lead: Lead, e: React.MouseEvent) => void
   onSyncLead: () => Promise<void>
   syncing: boolean
 
@@ -39,6 +38,21 @@ interface LeadDetailPanelProps {
   onCallBot: (action: 'CHECK_VAR' | 'FIRST_CALL') => Promise<void>
   callingBot: boolean
 
+  onQuickEdit: (lead: Lead, e: React.MouseEvent) => void
+  onOpenInspection: () => void
+
+  // Workflow Tab Props
+  workflow2Data: any
+  workflow2Open: boolean
+  setWorkflow2Open: (open: boolean) => void
+  onDecoyDialog: () => void
+  onOpenWorkflowDialog: () => void
+
+  // Workflow Props
+  onSendFirstMessage: (message: string) => Promise<void>
+  sendingMessage: boolean
+
+  onViewBiddingHistory: () => void
 
   onCreateSession: () => void
   creatingSession: boolean
@@ -50,6 +64,14 @@ interface LeadDetailPanelProps {
   renamingLead: boolean
 
   onOpenCreateThread: () => void
+
+  // Workflow View State
+  activeWorkflowView: "purchase" | "seeding"
+  onWorkflowViewChange: (view: "purchase" | "seeding") => void
+
+  // ZaloChatTab Props
+  chatMessages: any[]
+  onUpdateLeadBotStatus: (botActive: boolean) => void
 }
 
 export function LeadDetailPanel({
@@ -86,7 +108,9 @@ export function LeadDetailPanel({
   onRenameLead,
   renamingLead,
   activeWorkflowView,
-  onWorkflowViewChange
+  onWorkflowViewChange,
+  chatMessages,
+  onUpdateLeadBotStatus
 }: LeadDetailPanelProps) {
 
   // If hidden on mobile list view
@@ -240,6 +264,7 @@ export function LeadDetailPanel({
           {/* Tabs */}
           <div className="flex items-center gap-6 border-b -mb-6">
             <button
+              type="button"
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "workflow"
                 ? "text-blue-600 border-blue-600"
                 : "text-gray-500 border-transparent hover:text-gray-700"
@@ -252,6 +277,7 @@ export function LeadDetailPanel({
               </div>
             </button>
             <button
+              type="button"
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "decoy-web"
                 ? "text-orange-600 border-orange-600"
                 : "text-gray-500 border-transparent hover:text-gray-700"
@@ -269,6 +295,7 @@ export function LeadDetailPanel({
               </div>
             </button>
             <button
+              type="button"
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "zalo-chat"
                 ? "text-blue-600 border-blue-600"
                 : "text-gray-500 border-transparent hover:text-gray-700"
@@ -280,12 +307,26 @@ export function LeadDetailPanel({
                 Zalo Chat
               </div>
             </button>
+            <button
+              type="button"
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "recent-activity"
+                ? "text-purple-600 border-purple-600"
+                : "text-gray-500 border-transparent hover:text-gray-700"
+                }`}
+              onClick={() => onActiveDetailViewChange("recent-activity")}
+            >
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                Hoạt động gần đây
+              </div>
+            </button>
           </div>
         </div>
 
         {/* Tab Content */}
         {activeDetailView === "workflow" && (
-          <WorkflowTrackerTab
+          <div className="p-6">
+            <WorkflowTrackerTab
             selectedLead={selectedLead}
             activeWorkflowView={activeWorkflowView}
             onWorkflowViewChange={onWorkflowViewChange}
@@ -305,12 +346,16 @@ export function LeadDetailPanel({
             onOpenWorkflow2={onOpenWorkflowDialog}
             onOpenDecoyDialog={onDecoyDialog}
           />
+          </div>
         )}
 
         {activeDetailView === "zalo-chat" && (
           <div className="flex-1 flex flex-col h-[calc(100vh-250px)]">
             <ZaloChatTab
               selectedLead={selectedLead}
+              chatMessages={chatMessages}
+              selectedAccount={selectedAccount || ""}
+              onUpdateLeadBotStatus={onUpdateLeadBotStatus}
               onOpenCreateThread={onOpenCreateThread}
             />
           </div>

@@ -5,11 +5,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, Pencil, Save, Plus } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Loader2, Plus, Check, ChevronsUpDown, CheckCircle } from "lucide-react"
 import { BiddingHistory, Dealer, Lead } from "../types"
 import { formatPrice, formatDate, formatCarInfo } from "../utils"
+import { cn } from "@/lib/utils"
 
 interface BiddingHistoryDialogProps {
   open: boolean
@@ -37,7 +38,8 @@ interface BiddingHistoryDialogProps {
   editingPrice?: string
   setEditingPrice?: (price: string) => void
 
-  // Optional: internal state management can be moved here if not passed
+  // Send to dealer handler
+  onOpenSendDealerDialog?: () => void
 }
 
 export function BiddingHistoryDialog({
@@ -61,12 +63,14 @@ export function BiddingHistoryDialog({
   setNewBidPrice: externalSetNewBidPrice,
   newBidComment: externalNewBidComment,
   setNewBidComment: externalSetNewBidComment,
+  onOpenSendDealerDialog,
 }: BiddingHistoryDialogProps) {
-  // Local state if not provided by parent (for simpler integration if preferred, 
-  // though parent control is better for strict state lifting)
+  // Local state if not provided by parent
   const [localNewBidDealerId, setLocalNewBidDealerId] = useState("")
   const [localNewBidPrice, setLocalNewBidPrice] = useState("")
   const [localNewBidComment, setLocalNewBidComment] = useState("")
+  const [showAddBiddingForm, setShowAddBiddingForm] = useState(false)
+  const [openCombobox, setOpenCombobox] = useState(false)
 
   const newBidDealerId = externalNewBidDealerId ?? localNewBidDealerId
   const setNewBidDealerId = externalSetNewBidDealerId ?? setLocalNewBidDealerId
@@ -76,171 +80,215 @@ export function BiddingHistoryDialog({
   const setNewBidComment = externalSetNewBidComment ?? setLocalNewBidComment
 
   const handleAddBid = () => {
-    // If using local state, we might need to wrap the handler to pass data, 
-    // but the parent handler in e2e-management.tsx reads from parent state.
-    // Assuming parent manages state for now based on previous refactor context.
     onAddBid()
+  }
+
+  const handleOpenSendDealerDialog = () => {
+    if (onOpenSendDealerDialog) {
+      onOpenSendDealerDialog()
+    }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] h-[85vh] flex flex-col sm:max-w-[95vw] md:max-w-[90vw] lg:max-w-[95rem]">
         <DialogHeader>
-          <DialogTitle>Lịch sử trả giá</DialogTitle>
+          <DialogTitle>Lịch sử trả giá - {selectedLead?.name}</DialogTitle>
           <DialogDescription>
-            {selectedLead ? formatCarInfo(selectedLead) : ""}
+            Danh sách các dealer đã trả giá cho xe {formatCarInfo(selectedLead || {} as Lead)}
           </DialogDescription>
+          <div className="mt-2 flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowAddBiddingForm(!showAddBiddingForm)}
+            >
+              {showAddBiddingForm ? "Ẩn thêm giá" : "Thêm thông tin"}
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleOpenSendDealerDialog}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              Gửi thêm dealer
+            </Button>
+          </div>
         </DialogHeader>
 
-        <div className="py-4 space-y-6">
-          {/* Add New Bid Section */}
-          <div className="bg-gray-50 p-4 rounded-lg space-y-4">
-            <h4 className="font-medium text-sm">Thêm giá thủ công</h4>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="space-y-2">
-                <Label>Dealer</Label>
-                <Select value={newBidDealerId} onValueChange={setNewBidDealerId}>
-                  <SelectTrigger className="bg-white">
-                    <SelectValue placeholder="Chọn dealer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {dealers.map((dealer) => (
-                      <SelectItem key={dealer.id} value={dealer.id}>
-                        {dealer.name} {dealer.group_zalo_name ? `(${dealer.group_zalo_name})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Giá (k)</Label>
-                <Input
-                  type="number"
-                  placeholder="VD: 500000"
-                  value={newBidPrice}
-                  onChange={(e) => setNewBidPrice(e.target.value)}
-                  className="bg-white"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Ghi chú</Label>
-                <Input
-                  placeholder="Ghi chú..."
-                  value={newBidComment}
-                  onChange={(e) => setNewBidComment(e.target.value)}
-                  className="bg-white"
-                />
-              </div>
-              <div className="flex items-end">
-                <Button
-                  onClick={handleAddBid}
-                  disabled={!newBidDealerId || !newBidPrice || creatingBiddingManual}
-                  className="w-full bg-orange-500 hover:bg-orange-600 text-white"
-                >
-                  {creatingBiddingManual ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Thêm
-                    </>
-                  )}
-                </Button>
-              </div>
+        {showAddBiddingForm && (
+          <div className="flex items-end gap-2 p-4 bg-muted/20 rounded-lg border mb-4 mt-4">
+            <div className="grid gap-2 flex-1">
+              <Label>Chọn Dealer</Label>
+              <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={openCombobox}
+                    className="w-full justify-between"
+                  >
+                    {newBidDealerId
+                      ? dealers.find((dealer) => dealer.id === newBidDealerId)?.name
+                      : "Chọn dealer..."}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[300px] p-0">
+                  <Command>
+                    <CommandInput placeholder="Tìm kiếm dealer..." />
+                    <CommandList>
+                      <CommandEmpty>Không tìm thấy dealer.</CommandEmpty>
+                      <CommandGroup>
+                        {dealers.map((dealer) => (
+                          <CommandItem
+                            key={dealer.id}
+                            value={dealer.name}
+                            onSelect={() => {
+                              setNewBidDealerId(dealer.id === newBidDealerId ? "" : dealer.id)
+                              setOpenCombobox(false)
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                newBidDealerId === dealer.id ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            {dealer.name} {dealer.group_zalo_name ? `(${dealer.group_zalo_name})` : ""}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
+            <div className="grid gap-2 w-32">
+              <Label>Giá (VNĐ)</Label>
+              <Input
+                type="number"
+                placeholder="Nhập giá"
+                value={newBidPrice}
+                onChange={(e) => setNewBidPrice(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2 flex-1">
+              <Label>Ghi chú</Label>
+              <Input
+                placeholder="Nhập ghi chú (tùy chọn)"
+                value={newBidComment}
+                onChange={(e) => setNewBidComment(e.target.value)}
+              />
+            </div>
+            <Button
+              onClick={handleAddBid}
+              disabled={creatingBiddingManual || !newBidDealerId || !newBidPrice}
+            >
+              {creatingBiddingManual ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+              Thêm giá
+            </Button>
           </div>
+        )}
 
-          {/* History Table */}
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Dealer</TableHead>
-                  <TableHead>Giá</TableHead>
-                  <TableHead>Thời gian</TableHead>
-                  <TableHead>Ghi chú</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loadingBiddingHistory ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8">
-                      <Loader2 className="h-6 w-6 animate-spin mx-auto text-gray-400" />
-                    </TableCell>
-                  </TableRow>
-                ) : biddingHistory.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-gray-500">
-                      Chưa có lịch sử trả giá
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  biddingHistory.map((bid) => (
-                    <TableRow key={bid.id}>
-                      <TableCell className="font-medium">
-                        <div>{bid.dealer_name}</div>
-                        <div className="text-xs text-gray-500">
-                          {dealers.find((d) => d.id === bid.dealer_id)?.group_zalo_name}
-                        </div>
-                      </TableCell>
-                      <TableCell>
+        <div className="flex-1 overflow-y-auto">
+          {loadingBiddingHistory ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <span className="ml-3 text-muted-foreground">Đang tải lịch sử...</span>
+            </div>
+          ) : biddingHistory.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <p>Chưa có dealer nào trả giá</p>
+            </div>
+          ) : (
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium">STT</th>
+                    <th className="px-4 py-3 text-left font-medium">Tên Dealer</th>
+                    <th className="px-4 py-3 text-left font-medium">Giá trả</th>
+                    <th className="px-4 py-3 text-left font-medium">Thời gian</th>
+                    <th className="px-4 py-3 text-left font-medium">Ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {biddingHistory.map((bid, index) => (
+                    <tr key={bid.id} className="hover:bg-muted/30 transition-colors">
+                      <td className="px-4 py-3 text-muted-foreground">{index + 1}</td>
+                      <td className="px-4 py-3 font-medium">{bid.dealer_name}</td>
+                      <td className="px-4 py-3">
                         {editingBiddingId === bid.id ? (
                           <div className="flex items-center gap-2">
                             <Input
                               type="number"
                               value={editingPrice}
                               onChange={(e) => setEditingPrice?.(e.target.value)}
-                              className="w-32 h-8"
+                              className="h-8 w-32"
+                              autoFocus
                             />
                             <Button
                               size="sm"
+                              variant="ghost"
+                              className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
                               onClick={() => onUpdateBid?.(bid.id)}
                               disabled={updatingBidding}
                             >
-                              <Save className="h-4 w-4" />
+                              {updatingBidding ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => setEditingBiddingId?.(null)}
+                              disabled={updatingBidding}
+                            >
+                              <div className="h-4 w-4 flex items-center justify-center font-bold">✕</div>
                             </Button>
                           </div>
                         ) : (
-                          <span className="font-semibold text-orange-600">
-                            {formatPrice(bid.price)}
-                          </span>
+                          <div className="flex items-center gap-2 group">
+                            <div className={`font-semibold ${bid.price < 2 ? "text-muted-foreground italic" : "text-primary"}`}>
+                              {bid.price < 2 ? "Chưa có giá" : formatPrice(bid.price)}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => {
+                                setEditingBiddingId?.(bid.id)
+                                setEditingPrice?.(bid.price.toString())
+                              }}
+                            >
+                              <div className="h-3 w-3">✎</div>
+                            </Button>
+                          </div>
                         )}
-                      </TableCell>
-                      <TableCell>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
                         {formatDate(bid.created_at)}
-                      </TableCell>
-                      <TableCell>
-                        {bid.comment || "-"}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            if (editingBiddingId === bid.id) {
-                              setEditingBiddingId?.(null)
-                            } else {
-                              setEditingBiddingId?.(bid.id)
-                              setEditingPrice?.(bid.price.toString())
-                            }
-                          }}
-                        >
-                          <Pencil className="h-4 w-4 text-gray-400 hover:text-gray-600" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {bid.price < 2 ? "Đã gửi thông tin xe" : (bid.comment || "-")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Đóng
-          </Button>
+        <DialogFooter className="border-t pt-4">
+          <div className="flex items-center justify-between w-full">
+            <div className="text-sm text-muted-foreground">
+              Tổng số: <span className="font-semibold">{biddingHistory.length}</span> dealer trả giá
+            </div>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Đóng
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

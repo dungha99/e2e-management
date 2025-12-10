@@ -11,6 +11,7 @@ interface ZaloChatTabProps {
   chatMessages: ChatMessage[]
   selectedAccount: string
   onUpdateLeadBotStatus: (botActive: boolean) => void
+  onOpenCreateThread?: () => void
 }
 
 export function ZaloChatTab({
@@ -95,7 +96,7 @@ export function ZaloChatTab({
         }
 
         // Update bot status
-        ondateLeadBotStatus(true)
+        onUpdateLeadBotStatus(true)
       }
 
       // Step 2: Call E2E webhook
@@ -215,8 +216,8 @@ export function ZaloChatTab({
                 >
                   <div
                     className={`max-w-[70%] rounded-lg p-3 ${isVuCar
-                        ? "bg-purple-500 text-white"
-                        : "bg-gray-200 text-gray-900"
+                      ? "bg-purple-500 text-white"
+                      : "bg-gray-200 text-gray-900"
                       }`}
                   >
                     <div className="flex items-center gap-2 mb-1">

@@ -30,7 +30,6 @@ import { DecoyTriggerDialog } from "./e2e/dialogs/DecoyTriggerDialog"
 import { ImageGalleryModal } from "./e2e/dialogs/ImageGalleryModal"
 import { BiddingHistoryDialog } from "./e2e/dialogs/BiddingHistoryDialog"
 import { CreateThreadDialog } from "./e2e/dialogs/CreateThreadDialog"
-import { SummaryReportDialog } from "./e2e/dialogs/SummaryReportDialog"
 import { EditLeadDialog } from "./e2e/dialogs/EditLeadDialog"
 import { LeadDetailPanel } from "./e2e/layout/LeadDetailPanel"
 
@@ -99,8 +98,6 @@ export function E2EManagement() {
   const [newBidDealerId, setNewBidDealerId] = useState<string>("")
   const [newBidPrice, setNewBidPrice] = useState<string>("")
   const [newBidComment, setNewBidComment] = useState<string>("")
-  const [showAddBiddingForm, setShowAddBiddingForm] = useState(false)
-  const [openCombobox, setOpenCombobox] = useState(false)
 
   // Selected lead state
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
@@ -754,7 +751,7 @@ export function E2EManagement() {
     }
   }
 
-  async function fetchBiddingSessionCount(car_id: string): Promise<number> {
+  async function fetchBiddingSessionCount(car_id: string): Promise<{ count: number; hasActiveCampaigns: boolean }> {
     try {
       const response = await fetch("/api/e2e/bidding-session-count", {
         method: "POST",
@@ -763,14 +760,17 @@ export function E2EManagement() {
       })
 
       if (!response.ok) {
-        return 0
+        return { count: 0, hasActiveCampaigns: false }
       }
 
       const data = await response.json()
-      return data.bidding_session_count || 0
+      return {
+        count: data.bidding_session_count || 0,
+        hasActiveCampaigns: data.has_active_campaigns || false
+      }
     } catch (error) {
       console.error("[E2E] Error fetching bidding session count:", error)
-      return 0
+      return { count: 0, hasActiveCampaigns: false }
     }
   }
 
@@ -943,15 +943,16 @@ export function E2EManagement() {
       // Fetch decoy thread count
       const decoyThreadCount = await fetchDecoyThreadCount(selectedLead.id)
 
-      // Fetch bidding session count
-      const biddingSessionCount = leadDetails.car_id
+      // Fetch bidding session count and active campaigns
+      const { count: biddingSessionCount, hasActiveCampaigns } = leadDetails.car_id
         ? await fetchBiddingSessionCount(leadDetails.car_id)
-        : 0
+        : { count: 0, hasActiveCampaigns: false }
 
       // Update selected lead with all new data
       const updatedLead: Lead = {
         ...selectedLead,
         car_id: leadDetails.car_id,
+        car_auction_id: leadDetails.car_id,
         price_customer: leadDetails.price_customer,
         brand: leadDetails.brand,
         model: leadDetails.model,
@@ -973,6 +974,7 @@ export function E2EManagement() {
         dealer_bidding: dealerBiddingStatus,
         decoy_thread_count: decoyThreadCount,
         bidding_session_count: biddingSessionCount,
+        has_active_campaigns: hasActiveCampaigns,
         workflow2_is_active: leadDetails.workflow2_is_active,
       }
 
@@ -1492,14 +1494,15 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
           // Fetch decoy thread count
           const decoyThreadCount = await fetchDecoyThreadCount(lead.id)
 
-          // Fetch bidding session count
-          const biddingSessionCount = leadDetails.car_id
+          // Fetch bidding session count and active campaigns
+          const { count: biddingSessionCount, hasActiveCampaigns } = leadDetails.car_id
             ? await fetchBiddingSessionCount(leadDetails.car_id)
-            : 0
+            : { count: 0, hasActiveCampaigns: false }
 
           return {
             ...lead,
             car_id: leadDetails.car_id,
+            car_auction_id: leadDetails.car_id,
             dealer_bidding,
             bot_active: leadDetails.bot_status,
             price_customer: leadDetails.price_customer,
@@ -1518,6 +1521,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
             mileage: leadDetails.mileage,
             is_primary: leadDetails.is_primary,
             bidding_session_count: biddingSessionCount,
+            has_active_campaigns: hasActiveCampaigns,
           }
         })
       )
@@ -2117,7 +2121,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
       />
 
       {/* Split View Layout */}
-      <div className={`flex h-[calc(100vh-${isMobile ? '64px' : '100px'})] bg-gray-50`}>
+      <div className={`flex gap-4 h-[calc(100vh-${isMobile ? '64px' : '100px'})] bg-gray-50`}>
         {/* Lead List Sidebar */}
         {(!isMobile || mobileView === 'list') && (
           <LeadListSidebar
@@ -2211,6 +2215,11 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
           togglingBot={false}
           onRenameLead={() => { }} // Implement if needed
           renamingLead={false}
+
+          chatMessages={[]}
+          onUpdateLeadBotStatus={(active) => {
+            if (selectedLead) handleBotToggle(selectedLead, active)
+          }}
         />
       </div>
 
@@ -2261,20 +2270,12 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         onUpdateBid={handleUpdateBiddingPrice}
         updatingBidding={updatingBidding}
         onOpenSendDealerDialog={handleOpenSendDealerDialog}
-
-        // Manual Bid Form State
-        showAddBiddingForm={showAddBiddingForm}
-        setShowAddBiddingForm={setShowAddBiddingForm}
         newBidDealerId={newBidDealerId}
         setNewBidDealerId={setNewBidDealerId}
         newBidPrice={newBidPrice}
         setNewBidPrice={setNewBidPrice}
         newBidComment={newBidComment}
         setNewBidComment={setNewBidComment}
-        openCombobox={openCombobox}
-        setOpenCombobox={setOpenCombobox}
-
-        // Edit Bid State
         editingBiddingId={editingBiddingId}
         setEditingBiddingId={setEditingBiddingId}
         editingPrice={editingPrice}
@@ -2298,7 +2299,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
       <EditLeadDialog
         open={detailDialogOpen}
         onOpenChange={setDetailDialogOpen}
-        selectedLead={selectedLead}
+        lead={selectedLead}
 
         // Edit Mode State
         editMode={editMode}
@@ -2495,7 +2496,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
 
 
       {/* Summary Report Dialog */}
-      <SummaryReportDialog
+      {/* <SummaryReportDialog
         open={summaryDialogOpen}
         onOpenChange={setSummaryDialogOpen}
         selectedAccount={selectedAccount}
@@ -2505,7 +2506,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         loadingSummary={loadingSummary}
         summaryReport={summaryReport}
         summaryError={summaryError}
-      />
+      /> */}
 
       {/* Create Thread Dialog */}
       <CreateThreadDialog

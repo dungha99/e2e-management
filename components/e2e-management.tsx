@@ -1780,8 +1780,9 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     }
 
     // 2. Define Endpoint based on Action
-    // Currently both use the same endpoint as per requirements, but keeping structure for future scale
-    let endpoint = 'https://n8n.vucar.vn/webhook/checkvar-lead';
+    let endpoint = actionType === 'FIRST_CALL'
+      ? 'https://n8n.vucar.vn/webhook/firstcall-chotot'
+      : 'https://n8n.vucar.vn/webhook/checkvar-lead';
 
     setCallingBot(true);
 

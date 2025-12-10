@@ -46,7 +46,7 @@ export function SendToDealerGroupsDialog({
       const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`
 
       const carInfo = `Thời gian nhận thông tin: ${timeString}\n` +
-        `Thông tin chi tiết xe: ${selectedLead.brand || ''} ${selectedLead.model || ''} ${selectedLead.year || ''}\n` +
+        `Thông tin chi tiết xe: ${selectedLead.brand || ''} ${selectedLead.model || ''} ${selectedLead.variant || ''} ${selectedLead.year || ''}\n` +
         `Số km đã đi (Odo): ${selectedLead.mileage ? selectedLead.mileage.toLocaleString() : 'N/A'} km\n` +
         `Khu vực: ${selectedLead.location || 'N/A'}\n` +
         `Giá mong muốn: ${selectedLead.price_customer || 'N/A'}\n` +

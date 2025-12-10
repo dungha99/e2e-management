@@ -2204,8 +2204,8 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
             return Promise.resolve()
           }}
           togglingBot={false}
-          onRenameLead={() => { }} // Implement if needed
-          renamingLead={false}
+          onRenameLead={handleRenameLead}
+          renamingLead={renamingLead}
 
           chatMessages={[]}
           onUpdateLeadBotStatus={(active) => {

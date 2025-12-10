@@ -51,6 +51,8 @@ export interface Lead {
   is_primary?: boolean
   bidding_session_count?: number
   workflow2_is_active?: boolean | null
+  car_auction_id?: string | null
+  has_active_campaigns?: boolean
   additional_images?: {
     paper?: Array<{ key: string, url: string, name: string, type: string }>
     inside?: Array<{ key: string, url: string, name: string, type: string }>

@@ -126,9 +126,9 @@ export function WorkflowTrackerTab({
 
         {/* Workflow Steps */}
         {activeWorkflowView === "purchase" ? (
-          <div className="flex items-start justify-around mb-8">
+          <div className="flex items-center justify-between gap-2 mb-8 px-4">
             {/* Tin nhắn đầu */}
-            <div className="flex flex-col items-center gap-3">
+            <div className="flex flex-col items-center gap-3 flex-1">
               <WorkflowStep
                 icon={<CheckCircle className="w-8 h-8" />}
                 title="Tin nhắn đầu"
@@ -148,7 +148,7 @@ export function WorkflowTrackerTab({
             </div>
 
             {/* Chào Dealer */}
-            <div className="flex flex-col items-center gap-3">
+            <div className="flex flex-col items-center gap-3 flex-1">
               <WorkflowStep
                 icon={<DollarSign className="w-8 h-8" />}
                 title="Chào Dealer"
@@ -167,7 +167,7 @@ export function WorkflowTrackerTab({
             </div>
 
             {/* Tạo Phiên */}
-            <div className="flex flex-col items-center gap-3">
+            <div className="flex flex-col items-center gap-3 flex-1">
               <WorkflowStep
                 icon={<Play className="w-8 h-8" />}
                 title="Tạo Phiên"
@@ -186,7 +186,7 @@ export function WorkflowTrackerTab({
             </div>
 
             {/* E2E Bot */}
-            <div className="flex flex-col items-center gap-3">
+            <div className="flex flex-col items-center gap-3 flex-1">
               <WorkflowStep
                 icon={<Zap className="w-8 h-8" />}
                 title="E2E Bot"
@@ -216,14 +216,14 @@ export function WorkflowTrackerTab({
             </div>
           </div>
         ) : (
-          <div className="flex items-start justify-around mb-8">
+          <div className="flex items-start justify-between gap-8 mb-8 px-4">
             {/* Tạo Phiên 2 */}
             <div className="flex flex-col items-center gap-3">
               <WorkflowStep
-                icon={<Play className={`w-8 h-8 ${selectedLead.workflow2_is_active ? "text-green-600" : "text-gray-400"}`} />}
+                icon={<Play className={`w-8 h-8 ${selectedLead.has_active_campaigns ? "text-green-600" : selectedLead.workflow2_is_active ? "text-green-600" : "text-gray-400"}`} />}
                 title="Tạo Phiên 2"
-                status={selectedLead.workflow2_is_active ? "Đã kích hoạt" : "Chưa kích hoạt"}
-                isCompleted={selectedLead.workflow2_is_active === true}
+                status={selectedLead.has_active_campaigns ? "Có campaign đang chạy" : selectedLead.workflow2_is_active ? "Đã kích hoạt" : "Chưa kích hoạt"}
+                isCompleted={selectedLead.has_active_campaigns || selectedLead.workflow2_is_active === true}
               />
               <Button
                 variant="outline"
@@ -271,7 +271,7 @@ export function WorkflowTrackerTab({
       </div>
 
       {/* Additional Info Cards */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-6 mt-6">
         {/* Contact Info */}
         <div className="bg-white rounded-lg p-6 shadow-sm">
           <h4 className="text-sm font-semibold text-gray-700 mb-3">Thông tin liên hệ</h4>

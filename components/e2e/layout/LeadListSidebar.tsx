@@ -1,12 +1,19 @@
 "use client"
 
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SearchInput } from "@/components/ui/search-input"
-import { Loader2, User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star } from "lucide-react"
+import { Loader2, User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star, Filter, X, SlidersHorizontal } from "lucide-react"
 import { Lead } from "../types"
 import { formatCarInfo, formatPrice } from "../utils"
 import { useToast } from "@/hooks/use-toast"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { Checkbox } from "@/components/ui/checkbox"
 
 interface LeadListSidebarProps {
   // Display props
@@ -22,6 +29,11 @@ interface LeadListSidebarProps {
   searchPhone: string
   onSearchChange: (value: string) => void
   onSearch: () => void
+
+  // Source filter
+  sourceFilter: string[]
+  onSourceFilterChange: (sources: string[]) => void
+  availableSources: string[]
 
   // Tabs & counts
   activeTab: "priority" | "nurture"
@@ -56,6 +68,9 @@ export function LeadListSidebar({
   searchPhone,
   onSearchChange,
   onSearch,
+  sourceFilter,
+  onSourceFilterChange,
+  availableSources,
   activeTab,
   onTabChange,
   priorityCount,
@@ -71,6 +86,7 @@ export function LeadListSidebar({
   updatingPrimary = false
 }: LeadListSidebarProps) {
   const { toast } = useToast()
+  const [filterOpen, setFilterOpen] = useState(false)
 
   const handlePreviousPage = () => {
     if (currentPage > 1) {
@@ -126,17 +142,103 @@ export function LeadListSidebar({
             </Button>
           )}
         </div>
-        <SearchInput
-          placeholder="Tìm kiếm danh sách..."
-          value={searchPhone}
-          onChange={(e) => onSearchChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !loading && !loadingCarIds && selectedAccount) {
-              onSearch()
-            }
-          }}
-          disabled={loading || loadingCarIds || !selectedAccount}
-        />
+
+        {/* Search and Filter Row */}
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <SearchInput
+              placeholder="Tìm kiếm danh sách..."
+              value={searchPhone}
+              onChange={(e) => onSearchChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !loading && !loadingCarIds && selectedAccount) {
+                  onSearch()
+                }
+              }}
+              disabled={loading || loadingCarIds || !selectedAccount}
+            />
+          </div>
+
+          {/* Source Filter Dropdown */}
+          <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className={`h-9 w-9 shrink-0 ${sourceFilter.length > 0 ? 'bg-blue-50 border-blue-300' : ''}`}
+                disabled={loading || loadingCarIds || !selectedAccount || availableSources.length === 0}
+                title="Lọc theo nguồn"
+              >
+                <SlidersHorizontal className={`h-4 w-4 ${sourceFilter.length > 0 ? 'text-blue-600' : ''}`} />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-2" align="end">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-gray-700 px-2 py-1">Nguồn Lead</p>
+                {availableSources.map((source) => {
+                  const displayName = source === "zalo" ? "Zalo" : source === "facebook" ? "Facebook" : source
+                  const isChecked = sourceFilter.includes(source)
+                  return (
+                    <div
+                      key={source}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-100 cursor-pointer"
+                      onClick={() => {
+                        if (isChecked) {
+                          onSourceFilterChange(sourceFilter.filter(s => s !== source))
+                        } else {
+                          onSourceFilterChange([...sourceFilter, source])
+                        }
+                      }}
+                    >
+                      <Checkbox
+                        checked={isChecked}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            onSourceFilterChange([...sourceFilter, source])
+                          } else {
+                            onSourceFilterChange(sourceFilter.filter(s => s !== source))
+                          }
+                        }}
+                      />
+                      <span className="text-sm">{displayName}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {/* Active Filter Pills */}
+        {sourceFilter.length > 0 && (
+          <div className="flex items-center gap-2 mt-3 flex-wrap">
+            <button
+              onClick={() => onSourceFilterChange([])}
+              className="flex items-center gap-1 text-xs text-red-600 hover:text-red-700 font-medium"
+            >
+              <X className="h-3 w-3" />
+              Bỏ lọc tất cả
+            </button>
+            {sourceFilter.map((source) => {
+              const displayName = source === "zalo" ? "Zalo" : source === "facebook" ? "Facebook" : source
+              return (
+                <div
+                  key={source}
+                  className="flex items-center gap-1 bg-white border border-gray-200 rounded-full px-2.5 py-1 text-xs"
+                >
+                  <span className="text-gray-600">source:</span>
+                  <span className="font-medium text-gray-900">{displayName}</span>
+                  <button
+                    onClick={() => onSourceFilterChange(sourceFilter.filter(s => s !== source))}
+                    className="ml-0.5 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Filter Tabs */}
@@ -146,11 +248,10 @@ export function LeadListSidebar({
             onTabChange("priority")
             onPageChange(1)
           }}
-          className={`flex items-center gap-2 text-sm font-medium pb-2 transition-colors ${
-            activeTab === "priority"
-              ? "text-purple-600 border-b-2 border-purple-600"
-              : "text-gray-500 hover:text-gray-700"
-          }`}
+          className={`flex items-center gap-2 text-sm font-medium pb-2 transition-colors ${activeTab === "priority"
+            ? "text-purple-600 border-b-2 border-purple-600"
+            : "text-gray-500 hover:text-gray-700"
+            }`}
         >
           <Zap className="h-4 w-4" />
           Ưu tiên
@@ -163,11 +264,10 @@ export function LeadListSidebar({
             onTabChange("nurture")
             onPageChange(1)
           }}
-          className={`flex items-center gap-2 text-sm font-medium pb-2 transition-colors ${
-            activeTab === "nurture"
-              ? "text-emerald-600 border-b-2 border-emerald-600"
-              : "text-gray-500 hover:text-gray-700"
-          }`}
+          className={`flex items-center gap-2 text-sm font-medium pb-2 transition-colors ${activeTab === "nurture"
+            ? "text-emerald-600 border-b-2 border-emerald-600"
+            : "text-gray-500 hover:text-gray-700"
+            }`}
         >
           <MessageCircle className="h-4 w-4" />
           Nuôi dưỡng
@@ -199,11 +299,10 @@ export function LeadListSidebar({
             currentPageLeads.map((lead) => (
               <div
                 key={lead.id}
-                className={`p-4 transition-colors ${
-                  loading || loadingCarIds
-                    ? "cursor-not-allowed opacity-50"
-                    : "hover:bg-blue-50"
-                } ${selectedLead?.id === lead.id ? "bg-blue-50 border-l-4 border-blue-600" : ""}`}
+                className={`p-4 transition-colors ${loading || loadingCarIds
+                  ? "cursor-not-allowed opacity-50"
+                  : "hover:bg-blue-50"
+                  } ${selectedLead?.id === lead.id ? "bg-blue-50 border-l-4 border-blue-600" : ""}`}
               >
                 <div className="flex items-center gap-3 mb-2">
                   <div
@@ -243,11 +342,10 @@ export function LeadListSidebar({
                           <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
                         ) : (
                           <Star
-                            className={`h-4 w-4 ${
-                              lead.is_primary
-                                ? "fill-blue-600 text-blue-600"
-                                : "text-gray-300 hover:text-gray-500"
-                            }`}
+                            className={`h-4 w-4 ${lead.is_primary
+                              ? "fill-blue-600 text-blue-600"
+                              : "text-gray-300 hover:text-gray-500"
+                              }`}
                           />
                         )}
                       </Button>
@@ -312,11 +410,10 @@ export function LeadListSidebar({
                     variant={currentPage === pageNum ? "default" : "ghost"}
                     size="sm"
                     onClick={() => onPageChange(pageNum)}
-                    className={`h-7 w-7 p-0 text-xs ${
-                      currentPage === pageNum
-                        ? "bg-blue-600 hover:bg-blue-700 text-white"
-                        : "text-gray-600 hover:bg-gray-100"
-                    }`}
+                    className={`h-7 w-7 p-0 text-xs ${currentPage === pageNum
+                      ? "bg-blue-600 hover:bg-blue-700 text-white"
+                      : "text-gray-600 hover:bg-gray-100"
+                      }`}
                   >
                     {pageNum}
                   </Button>

@@ -63,6 +63,9 @@ export interface Lead {
   sku?: string | null
   car_created_at?: string | null
   image?: string | null
+  qualified?: string | null
+  intentionLead?: string | null
+  negotiationAbility?: string | null
 }
 
 export interface DecoyMessage {

@@ -18,24 +18,30 @@ const VALID_STAGES = [
 type SaleStage = typeof VALID_STAGES[number]
 
 interface UpdateSaleStatusRequest {
-    saleStatusId: string
+    carId: string
+    saleStatusId?: string | null
     stage?: SaleStage
     price_customer?: number
     price_highest_bid?: number
+    qualified?: string
+    intentionLead?: string
+    negotiationAbility?: string
 }
 
 export async function POST(request: NextRequest) {
     try {
         const body: UpdateSaleStatusRequest = await request.json()
-        const { saleStatusId, stage, price_customer, price_highest_bid } = body
+        const { carId, saleStatusId, stage, price_customer, price_highest_bid, qualified, intentionLead, negotiationAbility } = body
 
-        // Validate required field
-        if (!saleStatusId) {
+        // Validate required fields
+        if (!carId) {
             return NextResponse.json(
-                { success: false, error: "saleStatusId is required" },
+                { success: false, error: "carId is required" },
                 { status: 400 }
             )
         }
+
+        // saleStatusId is optional - if not provided, API will create new record
 
         // Validate stage if provided
         if (stage && !VALID_STAGES.includes(stage)) {
@@ -63,24 +69,56 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // Build payload with only provided fields
+        // Build payload with only provided fields + required carId and optional id
         // Note: External API expects camelCase field names
-        const payload: Record<string, any> = {}
-        if (stage !== undefined) payload.stage = stage
-        if (price_customer !== undefined) payload.priceCustomer = price_customer
-        if (price_highest_bid !== undefined) payload.priceHighestBid = price_highest_bid
+        const payload: Record<string, any> = {
+            carId: carId,
+        }
 
-        // If no fields to update, return error
-        if (Object.keys(payload).length === 0) {
+        // Only include id if saleStatusId is provided (for update, not create)
+        if (saleStatusId) {
+            payload.id = saleStatusId
+        }
+
+        let hasChanges = false
+        if (stage !== undefined) {
+            payload.stage = stage
+            hasChanges = true
+        }
+        if (price_customer !== undefined) {
+            payload.priceCustomer = price_customer
+            hasChanges = true
+        }
+        if (price_highest_bid !== undefined) {
+            payload.priceHighestBid = price_highest_bid
+            hasChanges = true
+        }
+        if (qualified !== undefined) {
+            payload.qualified = qualified
+            hasChanges = true
+        }
+        if (intentionLead !== undefined) {
+            payload.intentionLead = intentionLead
+            hasChanges = true
+        }
+        if (negotiationAbility !== undefined) {
+            payload.negotiationAbility = negotiationAbility
+            hasChanges = true
+        }
+
+        // Check if there are any fields to update
+        if (!hasChanges) {
             return NextResponse.json(
                 { success: false, error: "No fields to update" },
                 { status: 400 }
             )
         }
 
-        // Call external API
-        const response = await fetch(`${VUCAR_API_BASE_URL}/sale-status/${saleStatusId}`, {
-            method: "PATCH",
+        console.log("[UPDATE_SALE_STATUS] Calling upsert API with payload:", JSON.stringify(payload))
+
+        // Call external API - using POST /sale-status/upsert
+        const response = await fetch(`${VUCAR_API_BASE_URL}/sale-status/upsert`, {
+            method: "POST",
             headers: {
                 "x-api-secret": VUCAR_API_SECRET,
                 "Content-Type": "application/json",

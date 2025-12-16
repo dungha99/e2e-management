@@ -156,12 +156,15 @@ export function E2EManagement() {
   // Filter tab state
   const [activeTab, setActiveTab] = useState<"priority" | "nurture">("priority")
 
+  // Source filter state
+  const [sourceFilter, setSourceFilter] = useState<string[]>([])
+
   // Mobile view state
   const isMobile = useIsMobile()
   const [mobileView, setMobileView] = useState<"list" | "detail">("list")
 
   // Detail view tab state
-  const [activeDetailView, setActiveDetailView] = useState<"workflow" | "decoy-web" | "zalo-chat" | "recent-activity">("workflow")
+  const [activeDetailView, setActiveDetailView] = useState<"workflow" | "decoy-web" | "zalo-chat" | "recent-activity" | "decoy-history">("workflow")
 
   // Workflow 2 activation state
   const [workflow2Open, setWorkflow2Open] = useState(false)
@@ -199,6 +202,9 @@ export function E2EManagement() {
   const [editedStage, setEditedStage] = useState<string>("")
   const [editedPriceCustomer, setEditedPriceCustomer] = useState<string>("")
   const [editedPriceHighestBid, setEditedPriceHighestBid] = useState<string>("")
+  const [editedQualified, setEditedQualified] = useState<string>("")
+  const [editedIntentionLead, setEditedIntentionLead] = useState<string>("")
+  const [editedNegotiationAbility, setEditedNegotiationAbility] = useState<string>("")
   const [updatingSaleStatus, setUpdatingSaleStatus] = useState(false)
 
   // Image gallery state
@@ -231,6 +237,15 @@ export function E2EManagement() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [galleryOpen, selectedImageIndex, galleryImages.length]);
+
+  // Fetch bidding history when a lead is selected (without opening dialog)
+  useEffect(() => {
+    if (selectedLead?.car_id) {
+      fetchBiddingHistory(selectedLead.car_id, false) // false = don't open dialog
+    } else {
+      setBiddingHistory([])
+    }
+  }, [selectedLead?.car_id])
 
   // Memoize processed images to avoid re-processing on every render
   const processedImages = useMemo(() => {
@@ -350,6 +365,9 @@ export function E2EManagement() {
     sku: string | null
     car_created_at: string | null
     image: string | null
+    qualified: string | null
+    intentionLead: string | null
+    negotiationAbility: string | null
   }> {
     try {
       const response = await fetch("/api/e2e/lead-details", {
@@ -384,6 +402,9 @@ export function E2EManagement() {
           car_created_at: null,
           image: null,
           additional_images: null,
+          qualified: null,
+          intentionLead: null,
+          negotiationAbility: null,
         }
       }
 
@@ -414,6 +435,9 @@ export function E2EManagement() {
         sku: data.car_info?.sku || null,
         car_created_at: data.car_info?.created_at || null,
         image: data.car_info?.image || null,
+        qualified: data.sale_status?.qualified || null,
+        intentionLead: data.sale_status?.intentionLead || null,
+        negotiationAbility: data.sale_status?.negotiationAbility || null,
       }
     } catch (error) {
       console.error("[E2E] Error fetching lead details for phone:", phone, error)
@@ -442,6 +466,9 @@ export function E2EManagement() {
         car_created_at: null,
         image: null,
         additional_images: null,
+        qualified: null,
+        intentionLead: null,
+        negotiationAbility: null,
       }
     }
   }
@@ -651,10 +678,15 @@ export function E2EManagement() {
     if (phone) {
       const leadDetails = await fetchLeadDetails(phone)
 
-      // Update selected lead with fresh data
+      // Update selected lead with fresh data, only merging non-null values
+      // This prevents overwriting good data when the API call fails
+      const nonNullDetails = Object.fromEntries(
+        Object.entries(leadDetails).filter(([, value]) => value !== null && value !== undefined)
+      )
+
       const updatedLead = {
         ...lead,
-        ...leadDetails
+        ...nonNullDetails
       }
       setSelectedLead(updatedLead)
     }
@@ -1301,11 +1333,13 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     }
   }
 
-  async function fetchBiddingHistory(car_id: string) {
+  async function fetchBiddingHistory(car_id: string, openDialog: boolean = true) {
     setLoadingBiddingHistory(true)
-    setBiddingHistoryOpen(true)
-    setEditingBiddingId(null) // Reset editing state
-    fetchDealers() // Fetch dealers when opening history
+    if (openDialog) {
+      setBiddingHistoryOpen(true)
+      setEditingBiddingId(null) // Reset editing state
+      fetchDealers() // Fetch dealers when opening history
+    }
 
     try {
       const response = await fetch("/api/e2e/bidding-history", {
@@ -1374,7 +1408,41 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     }
   }
 
+  // Handler for inline bid price update (from WorkflowTrackerTab)
+  async function handleUpdateBidPriceInline(bidId: string, newPrice: number): Promise<void> {
+    try {
+      const response = await fetch("/api/e2e/bidding-history/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: bidId,
+          price: newPrice
+        }),
+      })
 
+      if (!response.ok) {
+        throw new Error("Failed to update price")
+      }
+
+      toast({
+        title: "Thành công",
+        description: "Đã cập nhật giá thành công",
+      })
+
+      // Refresh bidding history
+      if (selectedLead?.car_id) {
+        await fetchBiddingHistory(selectedLead.car_id)
+      }
+    } catch (error) {
+      console.error("[E2E] Error updating bidding price:", error)
+      toast({
+        title: "Lỗi",
+        description: "Không thể cập nhật giá",
+        variant: "destructive",
+      })
+      throw error
+    }
+  }
 
 
 
@@ -1474,6 +1542,9 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
               car_created_at: merged.car_created_at || current.car_created_at,
               image: merged.image || current.image,
               additional_images: merged.additional_images || current.additional_images,
+              qualified: merged.qualified || current.qualified,
+              intentionLead: merged.intentionLead || current.intentionLead,
+              negotiationAbility: merged.negotiationAbility || current.negotiationAbility,
             }
           }, allLeadDetails[0])
 
@@ -1729,12 +1800,22 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     return "bg-white-100 text-white-800"
   }
 
-  // Filter leads by phone search and tab (client-side filtering)
+  // Get unique sources from leads for filter dropdown
+  const availableSources = Array.from(
+    new Set(leads.map(lead => lead.source).filter((s): s is string => !!s))
+  ).sort()
+
+  // Filter leads by phone search, source filter, and tab (client-side filtering)
   const filteredLeads = leads.filter((lead) => {
     // Filter by phone search
     if (appliedSearchPhone) {
       const phone = lead.phone || lead.additional_phone || ""
       if (!phone.includes(appliedSearchPhone)) return false
+    }
+
+    // Filter by source
+    if (sourceFilter.length > 0) {
+      if (!lead.source || !sourceFilter.includes(lead.source)) return false
     }
 
     // Filter by tab (priority vs nurture)
@@ -1746,8 +1827,15 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
   })
 
   // Count for tabs - undefined is_primary is treated as "Nuôi dưỡng"
-  const priorityCount = leads.filter(lead => lead.is_primary === true).length
-  const nurtureCount = leads.filter(lead => lead.is_primary !== true).length
+  // Note: counts are based on leads BEFORE source filter to show total availability
+  const priorityCount = leads.filter(lead => {
+    if (sourceFilter.length > 0 && (!lead.source || !sourceFilter.includes(lead.source))) return false
+    return lead.is_primary === true
+  }).length
+  const nurtureCount = leads.filter(lead => {
+    if (sourceFilter.length > 0 && (!lead.source || !sourceFilter.includes(lead.source))) return false
+    return lead.is_primary !== true
+  }).length
 
   // Pagination calculations
   const totalPages = Math.ceil(filteredLeads.length / ITEMS_PER_PAGE)
@@ -1828,6 +1916,9 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     setEditedStage(selectedLead.stage || "")
     setEditedPriceCustomer(selectedLead.price_customer?.toLocaleString("vi-VN") || "")
     setEditedPriceHighestBid(selectedLead.price_highest_bid?.toLocaleString("vi-VN") || "")
+    setEditedQualified(selectedLead.qualified || "")
+    setEditedIntentionLead(selectedLead.intentionLead || "")
+    setEditedNegotiationAbility(selectedLead.negotiationAbility || "")
   }
 
   function handleCancelEdit() {
@@ -1835,6 +1926,9 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     setEditedStage("")
     setEditedPriceCustomer("")
     setEditedPriceHighestBid("")
+    setEditedQualified("")
+    setEditedIntentionLead("")
+    setEditedNegotiationAbility("")
   }
 
   function handleQuickEdit(lead: Lead, e: React.MouseEvent) {
@@ -1846,22 +1940,14 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     setEditedStage(lead.stage || "")
     setEditedPriceCustomer(lead.price_customer?.toLocaleString("vi-VN") || "")
     setEditedPriceHighestBid(lead.price_highest_bid?.toLocaleString("vi-VN") || "")
+    setEditedQualified(lead.qualified || "")
+    setEditedIntentionLead(lead.intentionLead || "")
+    setEditedNegotiationAbility(lead.negotiationAbility || "")
     setDetailDialogOpen(true)
   }
 
   async function handleSaveChanges() {
     if (!selectedLead) return
-
-    // Get sale_status_id from the lead details
-    const phone = selectedLead.phone || selectedLead.additional_phone
-    if (!phone) {
-      toast({
-        title: "Lỗi",
-        description: "Không có số điện thoại",
-        variant: "destructive",
-      })
-      return
-    }
 
     // Validate prices
     // Remove dots (thousands separators) before parsing
@@ -1902,32 +1988,21 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     setUpdatingSaleStatus(true)
 
     try {
-      // First, fetch the sale_status_id
-      const detailsResponse = await fetch("/api/e2e/lead-details", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
-      })
-
-      if (!detailsResponse.ok) {
-        throw new Error("Failed to fetch lead details")
-      }
-
-      const detailsData = await detailsResponse.json()
-      const saleStatusId = detailsData.sale_status?.id || null
-      const carId = detailsData.car_info?.car_id || selectedLead.car_id
+      // Use existing car_id from selectedLead - no need to fetch again
+      const carId = selectedLead.car_id
 
       if (!carId) {
-        throw new Error("Car ID not found")
+        toast({
+          title: "Lỗi",
+          description: "Không tìm thấy Car ID",
+          variant: "destructive",
+        })
+        setUpdatingSaleStatus(false)
+        return
       }
 
-      // Build payload with required carId and optional saleStatusId, plus only changed fields
+      // Build payload with required carId - upsert API will create or update based on carId
       const payload: any = { carId }
-
-      // Only include saleStatusId if it exists (for update, not create)
-      if (saleStatusId) {
-        payload.saleStatusId = saleStatusId
-      }
 
       let hasChanges = false
 
@@ -1943,6 +2018,21 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
 
       if (priceHighestBid !== undefined && priceHighestBid !== selectedLead.price_highest_bid) {
         payload.price_highest_bid = priceHighestBid
+        hasChanges = true
+      }
+
+      if (editedQualified && editedQualified !== selectedLead.qualified) {
+        payload.qualified = editedQualified
+        hasChanges = true
+      }
+
+      if (editedIntentionLead && editedIntentionLead !== selectedLead.intentionLead) {
+        payload.intentionLead = editedIntentionLead
+        hasChanges = true
+      }
+
+      if (editedNegotiationAbility && editedNegotiationAbility !== selectedLead.negotiationAbility) {
+        payload.negotiationAbility = editedNegotiationAbility
         hasChanges = true
       }
 
@@ -1975,6 +2065,9 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         stage: editedStage || selectedLead.stage,
         price_customer: priceCustomer !== undefined ? priceCustomer : selectedLead.price_customer,
         price_highest_bid: priceHighestBid !== undefined ? priceHighestBid : selectedLead.price_highest_bid,
+        qualified: editedQualified || selectedLead.qualified,
+        intentionLead: editedIntentionLead || selectedLead.intentionLead,
+        negotiationAbility: editedNegotiationAbility || selectedLead.negotiationAbility,
       }
 
       setSelectedLead(updatedLead)
@@ -1992,6 +2085,9 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
       setEditedStage("")
       setEditedPriceCustomer("")
       setEditedPriceHighestBid("")
+      setEditedQualified("")
+      setEditedIntentionLead("")
+      setEditedNegotiationAbility("")
     } catch (error) {
       console.error("[E2E] Error updating sale status:", error)
       toast({
@@ -2147,6 +2243,9 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
             onSummaryOpen={() => setSummaryDialogOpen(true)}
             onUpdatePrimary={handleUpdatePrimary}
             updatingPrimary={updatingPrimary}
+            sourceFilter={sourceFilter}
+            onSourceFilterChange={setSourceFilter}
+            availableSources={availableSources}
           />
         )}
 
@@ -2211,6 +2310,11 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
           onUpdateLeadBotStatus={(active) => {
             if (selectedLead) handleBotToggle(selectedLead, active)
           }}
+
+          // Dealer Bidding Props
+          biddingHistory={biddingHistory}
+          onUpdateBid={handleUpdateBidPriceInline}
+          loadingBiddingHistory={loadingBiddingHistory}
         />
       </div>
 
@@ -2303,6 +2407,12 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         setEditedPriceHighestBid={setEditedPriceHighestBid}
         editedStage={editedStage}
         setEditedStage={setEditedStage}
+        editedQualified={editedQualified}
+        setEditedQualified={setEditedQualified}
+        editedIntentionLead={editedIntentionLead}
+        setEditedIntentionLead={setEditedIntentionLead}
+        editedNegotiationAbility={editedNegotiationAbility}
+        setEditedNegotiationAbility={setEditedNegotiationAbility}
 
         // Gallery State
         processedImages={processedImages}

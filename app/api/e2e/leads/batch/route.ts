@@ -36,9 +36,9 @@ export async function POST(request: Request) {
 
 async function fetchBatchData(uid: string, page: number, per_page: number, offset: number) {
 
-    // Single optimized query to get all leads with related data
-    const leadsResult = await vucarV2Query(
-      `WITH lead_cars AS (
+  // Single optimized query to get all leads with related data
+  const leadsResult = await vucarV2Query(
+    `WITH lead_cars AS (
         SELECT DISTINCT ON (l.phone)
           l.id as lead_id,
           l.name,
@@ -68,7 +68,7 @@ async function fetchBatchData(uid: string, page: number, per_page: number, offse
         FROM leads l
         LEFT JOIN cars c ON c.lead_id = l.id
         WHERE l.pic_id = $1::uuid
-          AND (c.created_at IS NULL OR c.created_at > NOW() - INTERVAL '2 months')
+          AND (c.updated_at IS NULL OR c.updated_at > NOW() - INTERVAL '2 months')
         ORDER BY l.phone, l.created_at DESC, c.created_at DESC NULLS LAST
       ),
       total_count AS (
@@ -94,34 +94,34 @@ async function fetchBatchData(uid: string, page: number, per_page: number, offse
       LEFT JOIN users u ON pl.pic_id = u.id
       LEFT JOIN sale_status ss ON ss.car_id = pl.car_id
       ORDER BY pl.created_at DESC`,
-      [uid, per_page, offset]
+    [uid, per_page, offset]
+  )
+
+  const leads = leadsResult.rows
+  const totalCount = leads.length > 0 ? parseInt(leads[0].total_count) : 0
+  const totalPages = Math.ceil(totalCount / per_page)
+
+  // Extract car IDs and lead IDs for batch queries
+  const carIds = leads.filter((l) => l.car_id).map((l) => l.car_id)
+  const leadIds = leads.map((l) => l.lead_id)
+
+  // Batch query for primary status (different database)
+  let primaryStatuses: Record<string, boolean> = {}
+  if (carIds.length > 0) {
+    const primaryResult = await tempInspectionQuery(
+      `SELECT car_id, is_primary FROM "primary" WHERE car_id = ANY($1::uuid[])`,
+      [carIds]
     )
+    primaryStatuses = Object.fromEntries(
+      primaryResult.rows.map((row) => [row.car_id, row.is_primary])
+    )
+  }
 
-    const leads = leadsResult.rows
-    const totalCount = leads.length > 0 ? parseInt(leads[0].total_count) : 0
-    const totalPages = Math.ceil(totalCount / per_page)
-
-    // Extract car IDs and lead IDs for batch queries
-    const carIds = leads.filter((l) => l.car_id).map((l) => l.car_id)
-    const leadIds = leads.map((l) => l.lead_id)
-
-    // Batch query for primary status (different database)
-    let primaryStatuses: Record<string, boolean> = {}
-    if (carIds.length > 0) {
-      const primaryResult = await tempInspectionQuery(
-        `SELECT car_id, is_primary FROM "primary" WHERE car_id = ANY($1::uuid[])`,
-        [carIds]
-      )
-      primaryStatuses = Object.fromEntries(
-        primaryResult.rows.map((row) => [row.car_id, row.is_primary])
-      )
-    }
-
-    // Batch query for dealer biddings
-    let dealerBiddings: Record<string, any[]> = {}
-    if (carIds.length > 0) {
-      const biddingsResult = await query(
-        `SELECT
+  // Batch query for dealer biddings
+  let dealerBiddings: Record<string, any[]> = {}
+  if (carIds.length > 0) {
+    const biddingsResult = await query(
+      `SELECT
           db.car_id,
           json_agg(
             json_build_object(
@@ -135,20 +135,20 @@ async function fetchBatchData(uid: string, page: number, per_page: number, offse
         FROM dealer_biddings db
         WHERE db.car_id = ANY($1::uuid[])
         GROUP BY db.car_id`,
-        [carIds]
-      )
-      dealerBiddings = Object.fromEntries(
-        biddingsResult.rows.map((row) => [row.car_id, row.biddings || []])
-      )
-    }
+      [carIds]
+    )
+    dealerBiddings = Object.fromEntries(
+      biddingsResult.rows.map((row) => [row.car_id, row.biddings || []])
+    )
+  }
 
-    // Batch query for decoy thread counts
-    let decoyThreadCounts: Record<string, number> = {}
-    if (leadIds.length > 0) {
-      const phones = leads.map((l) => l.phone).filter(Boolean)
-      if (phones.length > 0) {
-        const threadsResult = await vucarV2Query(
-          `SELECT
+  // Batch query for decoy thread counts
+  let decoyThreadCounts: Record<string, number> = {}
+  if (leadIds.length > 0) {
+    const phones = leads.map((l) => l.phone).filter(Boolean)
+    if (phones.length > 0) {
+      const threadsResult = await vucarV2Query(
+        `SELECT
             l.id as lead_id,
             COUNT(DISTINCT ct.id) as thread_count
           FROM leads l
@@ -156,116 +156,116 @@ async function fetchBatchData(uid: string, page: number, per_page: number, offse
           LEFT JOIN chat_threads ct ON ct.user_id = au.id
           WHERE l.id = ANY($1::uuid[])
           GROUP BY l.id`,
-          [leadIds]
-        )
-        decoyThreadCounts = Object.fromEntries(
-          threadsResult.rows.map((row) => [row.lead_id, parseInt(row.thread_count) || 0])
-        )
-      }
+        [leadIds]
+      )
+      decoyThreadCounts = Object.fromEntries(
+        threadsResult.rows.map((row) => [row.lead_id, parseInt(row.thread_count) || 0])
+      )
     }
+  }
 
-    // Batch query for bidding session counts and workflow2 status
-    let biddingSessionCounts: Record<string, number> = {}
-    let workflow2Status: Record<string, boolean | null> = {}
-    if (carIds.length > 0) {
-      const sessionsResult = await vucarV2Query(
-        `SELECT
+  // Batch query for bidding session counts and workflow2 status
+  let biddingSessionCounts: Record<string, number> = {}
+  let workflow2Status: Record<string, boolean | null> = {}
+  if (carIds.length > 0) {
+    const sessionsResult = await vucarV2Query(
+      `SELECT
           car_auction_id as car_id,
           COUNT(*) as session_count,
           MAX(is_active::int) as is_active
         FROM campaigns
         WHERE car_auction_id = ANY($1::uuid[])
         GROUP BY car_auction_id`,
-        [carIds]
-      )
-      biddingSessionCounts = Object.fromEntries(
-        sessionsResult.rows.map((row) => [row.car_id, parseInt(row.session_count) || 0])
-      )
-      workflow2Status = Object.fromEntries(
-        sessionsResult.rows.map((row) => [row.car_id, row.is_active === 1 ? true : false])
-      )
+      [carIds]
+    )
+    biddingSessionCounts = Object.fromEntries(
+      sessionsResult.rows.map((row) => [row.car_id, parseInt(row.session_count) || 0])
+    )
+    workflow2Status = Object.fromEntries(
+      sessionsResult.rows.map((row) => [row.car_id, row.is_active === 1 ? true : false])
+    )
+  }
+
+  // Transform and enrich leads data
+  const enrichedLeads = leads.map((lead) => {
+    // Parse additional_images and compute has_enough_images
+    let additionalImages = lead.additional_images || {}
+    if (typeof additionalImages === 'string') {
+      try {
+        additionalImages = JSON.parse(additionalImages)
+      } catch (e) {
+        console.error("[E2E Batch API] Error parsing additional_images:", e)
+        additionalImages = {}
+      }
     }
 
-    // Transform and enrich leads data
-    const enrichedLeads = leads.map((lead) => {
-      // Parse additional_images and compute has_enough_images
-      let additionalImages = lead.additional_images || {}
-      if (typeof additionalImages === 'string') {
-        try {
-          additionalImages = JSON.parse(additionalImages)
-        } catch (e) {
-          console.error("[E2E Batch API] Error parsing additional_images:", e)
-          additionalImages = {}
-        }
-      }
+    // Check if has enough images (1 outside + 1 paper)
+    const hasOutside = Array.isArray(additionalImages.outside) && additionalImages.outside.length > 0
+    const hasPaper = Array.isArray(additionalImages.paper) && additionalImages.paper.length > 0
+    const has_enough_images = hasOutside && hasPaper
 
-      // Check if has enough images (1 outside + 1 paper)
-      const hasOutside = Array.isArray(additionalImages.outside) && additionalImages.outside.length > 0
-      const hasPaper = Array.isArray(additionalImages.paper) && additionalImages.paper.length > 0
-      const has_enough_images = hasOutside && hasPaper
+    // Compute first_message_sent from messages_zalo (chat length > 3)
+    const messagesZalo = lead.messages_zalo || []
+    const first_message_sent = Array.isArray(messagesZalo) && messagesZalo.length > 3
 
-      // Compute first_message_sent from messages_zalo (chat length > 3)
-      const messagesZalo = lead.messages_zalo || []
-      const first_message_sent = Array.isArray(messagesZalo) && messagesZalo.length > 3
-
-      // Compute session_created from bidding session count
-      const session_created = lead.car_id && (biddingSessionCounts[lead.car_id] || 0) > 0
-
-      return {
-        id: lead.lead_id,
-        name: lead.name,
-        phone: lead.phone,
-        additional_phone: lead.additional_phone,
-        identify_number: lead.identify_number,
-        bank_account_number: lead.bank_account_number,
-        otp_verified: lead.otp_verified,
-        created_at: lead.created_at,
-        pic_id: lead.pic_id,
-        pic_og: lead.pic_og,
-        pic_name: lead.pic_name,
-        source: lead.source,
-        url: lead.url,
-        qx_qc_scoring: lead.qx_qc_scoring,
-        customer_feedback: lead.customer_feedback,
-        is_referral: lead.is_referral,
-        car_id: lead.car_id,
-        plate: lead.plate,
-        brand: lead.brand,
-        model: lead.model,
-        variant: lead.variant,
-        year: lead.year,
-        mileage: lead.mileage,
-        sku: lead.sku,
-        location: lead.location,
-        has_enough_images: has_enough_images,
-        workflow2_is_active: lead.car_id ? (workflow2Status[lead.car_id] ?? null) : null,
-        additional_images: additionalImages,
-        is_primary: lead.car_id ? primaryStatuses[lead.car_id] || false : false,
-        sale_status: lead.sale_status_id
-          ? {
-              id: lead.sale_status_id,
-              price_customer: lead.price_customer,
-              bot_status: lead.bot_status,
-              price_highest_bid: lead.price_highest_bid,
-              stage: lead.stage,
-              notes: lead.notes,
-              first_message_sent: first_message_sent,
-              session_created: session_created,
-            }
-          : null,
-        dealer_bidding: lead.car_id ? dealerBiddings[lead.car_id] || [] : [],
-        decoy_thread_count: decoyThreadCounts[lead.lead_id] || 0,
-        bidding_session_count: lead.car_id ? biddingSessionCounts[lead.car_id] || 0 : 0,
-      }
-    })
+    // Compute session_created from bidding session count
+    const session_created = lead.car_id && (biddingSessionCounts[lead.car_id] || 0) > 0
 
     return {
-      leads: enrichedLeads,
-      pagination: {
-        current_page: page,
-        per_page: per_page,
-        total_pages: totalPages,
-        total_leads: totalCount,
-      },
+      id: lead.lead_id,
+      name: lead.name,
+      phone: lead.phone,
+      additional_phone: lead.additional_phone,
+      identify_number: lead.identify_number,
+      bank_account_number: lead.bank_account_number,
+      otp_verified: lead.otp_verified,
+      created_at: lead.created_at,
+      pic_id: lead.pic_id,
+      pic_og: lead.pic_og,
+      pic_name: lead.pic_name,
+      source: lead.source,
+      url: lead.url,
+      qx_qc_scoring: lead.qx_qc_scoring,
+      customer_feedback: lead.customer_feedback,
+      is_referral: lead.is_referral,
+      car_id: lead.car_id,
+      plate: lead.plate,
+      brand: lead.brand,
+      model: lead.model,
+      variant: lead.variant,
+      year: lead.year,
+      mileage: lead.mileage,
+      sku: lead.sku,
+      location: lead.location,
+      has_enough_images: has_enough_images,
+      workflow2_is_active: lead.car_id ? (workflow2Status[lead.car_id] ?? null) : null,
+      additional_images: additionalImages,
+      is_primary: lead.car_id ? primaryStatuses[lead.car_id] || false : false,
+      sale_status: lead.sale_status_id
+        ? {
+          id: lead.sale_status_id,
+          price_customer: lead.price_customer,
+          bot_status: lead.bot_status,
+          price_highest_bid: lead.price_highest_bid,
+          stage: lead.stage,
+          notes: lead.notes,
+          first_message_sent: first_message_sent,
+          session_created: session_created,
+        }
+        : null,
+      dealer_bidding: lead.car_id ? dealerBiddings[lead.car_id] || [] : [],
+      decoy_thread_count: decoyThreadCounts[lead.lead_id] || 0,
+      bidding_session_count: lead.car_id ? biddingSessionCounts[lead.car_id] || 0 : 0,
     }
+  })
+
+  return {
+    leads: enrichedLeads,
+    pagination: {
+      current_page: page,
+      per_page: per_page,
+      total_pages: totalPages,
+      total_leads: totalCount,
+    },
+  }
 }

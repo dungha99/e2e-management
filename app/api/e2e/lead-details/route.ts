@@ -2,13 +2,15 @@ import { NextResponse } from "next/server"
 import { vucarV2Query, tempInspectionQuery } from "@/lib/db"
 
 export async function POST(request: Request) {
+  let phone: string | undefined
   try {
     const body = await request.json()
-    const { phone } = body
+    phone = body.phone
 
     if (!phone) {
       return NextResponse.json({ error: "Phone is required" }, { status: 400 })
     }
+
 
     // Optimized query with subqueries to reduce separate DB calls
     const result = await vucarV2Query(
@@ -29,6 +31,9 @@ export async function POST(request: Request) {
         ss.stage,
         ss.messages_zalo,
         ss.notes,
+        ss.qualified,
+        ss.intention_lead,
+        ss.negotiation_ability,
         c.brand,
         c.model,
         c.variant,
@@ -118,6 +123,9 @@ export async function POST(request: Request) {
         first_message_sent,
         session_created,
         notes: leadData.notes || null,
+        qualified: leadData.qualified || null,
+        intentionLead: leadData.intention_lead || null,
+        negotiationAbility: leadData.negotiation_ability || null,
       },
       car_info: {
         brand: leadData.brand,
@@ -137,6 +145,11 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error("[E2E Lead Details DB] Error fetching lead details:", error)
-    return NextResponse.json({ error: "Failed to fetch lead details" }, { status: 500 })
+    console.error("[E2E Lead Details DB] Phone requested:", phone || "unknown")
+    const errorMessage = error instanceof Error ? error.message : "Unknown error"
+    return NextResponse.json({
+      error: "Failed to fetch lead details",
+      details: errorMessage
+    }, { status: 500 })
   }
 }

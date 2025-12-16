@@ -1,9 +1,11 @@
 "use client"
 
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle } from "lucide-react"
-import { Lead } from "../types"
+import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, ChevronRight, Check, X } from "lucide-react"
+import { Lead, BiddingHistory } from "../types"
 import { formatPrice } from "../utils"
 import { maskPhone } from "@/lib/utils"
 
@@ -61,6 +63,11 @@ interface WorkflowTrackerTabProps {
   workflow2Data?: any
   onOpenWorkflow2: () => void
   onOpenDecoyDialog: () => void
+
+  // Dealer Bidding Props
+  biddingHistory?: BiddingHistory[]
+  onUpdateBid?: (bidId: string, newPrice: number) => Promise<void>
+  loadingBiddingHistory?: boolean
 }
 
 export function WorkflowTrackerTab({
@@ -79,8 +86,48 @@ export function WorkflowTrackerTab({
   onRenameLead,
   renamingLead,
   onOpenWorkflow2,
-  onOpenDecoyDialog
+  onOpenDecoyDialog,
+  biddingHistory = [],
+  onUpdateBid,
+  loadingBiddingHistory = false
 }: WorkflowTrackerTabProps) {
+  // Local state for inline editing
+  const [editingBidId, setEditingBidId] = useState<string | null>(null)
+  const [editingPrice, setEditingPrice] = useState("")
+  const [savingBid, setSavingBid] = useState(false)
+
+  // Get top 5 bids sorted by price (descending)
+  const topBids = [...biddingHistory]
+    .filter(bid => bid.price > 1) // Filter out "sent but no price" entries
+    .sort((a, b) => b.price - a.price)
+    .slice(0, 5)
+
+  const handleStartEdit = (bid: BiddingHistory) => {
+    setEditingBidId(bid.id)
+    setEditingPrice(bid.price.toString())
+  }
+
+  const handleCancelEdit = () => {
+    setEditingBidId(null)
+    setEditingPrice("")
+  }
+
+  const handleSaveEdit = async (bidId: string) => {
+    if (!onUpdateBid || !editingPrice) return
+
+    const newPrice = parseInt(editingPrice.replace(/\D/g, ""), 10)
+    if (isNaN(newPrice) || newPrice < 1) return
+
+    setSavingBid(true)
+    try {
+      await onUpdateBid(bidId, newPrice)
+      setEditingBidId(null)
+      setEditingPrice("")
+    } finally {
+      setSavingBid(false)
+    }
+  }
+
   return (
     <>
       {/* Workflow Tracker */}
@@ -305,20 +352,25 @@ export function WorkflowTrackerTab({
           </div>
         </div>
 
-        {/* Price Info */}
+        {/* Price Info - Enhanced */}
         <div className="bg-white rounded-lg p-6 shadow-sm">
-          <h4 className="text-sm font-semibold text-gray-700 mb-3">Thông tin giá</h4>
-          <div className="space-y-2">
-            <div>
-              <p className="text-xs text-gray-500">Giá khách mong muốn</p>
-              <p className="text-sm font-semibold text-emerald-600">
+          <h4 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+            <DollarSign className="h-4 w-4 text-emerald-600" />
+            Thông tin giá
+          </h4>
+
+          {/* Main Price Info Grid */}
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="bg-emerald-50 rounded-lg p-3">
+              <p className="text-xs text-gray-500 mb-1">Giá khách mong muốn</p>
+              <p className="text-lg font-bold text-emerald-600">
                 {selectedLead.price_customer ? formatPrice(selectedLead.price_customer) : "N/A"}
               </p>
             </div>
-            <div>
-              <p className="text-xs text-gray-500">Giá cao nhất (Dealer)</p>
+            <div className="bg-blue-50 rounded-lg p-3">
+              <p className="text-xs text-gray-500 mb-1">Giá cao nhất (Dealer)</p>
               <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-blue-600">
+                <p className="text-lg font-bold text-blue-600">
                   {selectedLead.dealer_bidding?.maxPrice ? formatPrice(selectedLead.dealer_bidding.maxPrice) : "N/A"}
                 </p>
                 {selectedLead.dealer_bidding?.status === "got_price" &&
@@ -329,6 +381,111 @@ export function WorkflowTrackerTab({
                   )}
               </div>
             </div>
+          </div>
+
+          {/* Dealer Bidding Details */}
+          <div className="border-t pt-4">
+            <div className="flex items-center justify-between mb-3">
+              <h5 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                Chi tiết giá Dealer
+              </h5>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onViewBiddingHistory}
+                disabled={!selectedLead.car_id}
+                className="text-xs text-blue-600 hover:text-blue-700 h-6 px-2"
+              >
+                Xem tất cả
+                <ChevronRight className="h-3 w-3 ml-1" />
+              </Button>
+            </div>
+
+            {loadingBiddingHistory ? (
+              <div className="flex items-center justify-center py-4 text-gray-400">
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                <span className="text-xs">Đang tải...</span>
+              </div>
+            ) : topBids.length === 0 ? (
+              <div className="text-center py-4 text-gray-400">
+                <p className="text-xs">Chưa có dealer nào trả giá</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onViewBiddingHistory}
+                  disabled={!selectedLead.car_id}
+                  className="mt-2 text-xs"
+                >
+                  Xem lịch sử giá
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {topBids.map((bid, index) => (
+                  <div
+                    key={bid.id}
+                    className={`flex items-center justify-between py-2 px-3 rounded-lg ${index === 0 ? "bg-blue-50 border border-blue-100" : "bg-gray-50"
+                      }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {index === 0 && (
+                        <span className="text-xs font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">
+                          TOP
+                        </span>
+                      )}
+                      <span className="text-sm font-medium text-gray-900">{bid.dealer_name}</span>
+                    </div>
+
+                    {editingBidId === bid.id ? (
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="text"
+                          value={editingPrice}
+                          onChange={(e) => setEditingPrice(e.target.value)}
+                          className="h-7 w-28 text-sm text-right"
+                          placeholder="Nhập giá"
+                          autoFocus
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                          onClick={() => handleSaveEdit(bid.id)}
+                          disabled={savingBid}
+                        >
+                          {savingBid ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={handleCancelEdit}
+                          disabled={savingBid}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 group">
+                        <span className={`text-sm font-semibold ${index === 0 ? "text-blue-600" : "text-gray-700"}`}>
+                          {formatPrice(bid.price)}
+                        </span>
+                        {onUpdateBid && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => handleStartEdit(bid)}
+                          >
+                            <span className="text-xs">✏️</span>
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

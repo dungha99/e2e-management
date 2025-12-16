@@ -7,13 +7,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare } from "lucide-react"
+import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car } from "lucide-react"
 import { Lead } from "../types"
 import { formatCarInfo, formatPrice, formatDate } from "../utils"
 import { WorkflowTrackerTab } from "../tabs/WorkflowTrackerTab"
 import { ZaloChatTab } from "../tabs/ZaloChatTab"
 import { DecoyWebTab } from "../tabs/DecoyWebTab"
 import { RecentActivityTab } from "../tabs/RecentActivityTab"
+import { DecoyHistoryTab } from "../tabs/DecoyHistoryTab"
 import { Workflow2Dialog } from "../dialogs/Workflow2Dialog"
 
 interface LeadDetailPanelProps {
@@ -23,8 +24,8 @@ interface LeadDetailPanelProps {
   mobileView: "list" | "detail"
 
   // Tab State
-  activeDetailView: "workflow" | "decoy-web" | "zalo-chat" | "recent-activity"
-  onActiveDetailViewChange: (view: "workflow" | "decoy-web" | "zalo-chat" | "recent-activity") => void
+  activeDetailView: "workflow" | "decoy-web" | "zalo-chat" | "recent-activity" | "decoy-history"
+  onActiveDetailViewChange: (view: "workflow" | "decoy-web" | "zalo-chat" | "recent-activity" | "decoy-history") => void
 
   // Actions
   onTogglePrimary: (lead: Lead, e: React.MouseEvent) => Promise<void>
@@ -72,6 +73,11 @@ interface LeadDetailPanelProps {
   // ZaloChatTab Props
   chatMessages: any[]
   onUpdateLeadBotStatus: (botActive: boolean) => void
+
+  // Dealer Bidding Props
+  biddingHistory?: any[]
+  onUpdateBid?: (bidId: string, newPrice: number) => Promise<void>
+  loadingBiddingHistory?: boolean
 }
 
 export function LeadDetailPanel({
@@ -110,7 +116,11 @@ export function LeadDetailPanel({
   activeWorkflowView,
   onWorkflowViewChange,
   chatMessages,
-  onUpdateLeadBotStatus
+  onUpdateLeadBotStatus,
+  // Dealer Bidding
+  biddingHistory,
+  onUpdateBid,
+  loadingBiddingHistory
 }: LeadDetailPanelProps) {
 
   // If hidden on mobile list view
@@ -146,6 +156,55 @@ export function LeadDetailPanel({
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xl font-bold">
                 {selectedLead.name?.charAt(0).toUpperCase() || "?"}
+              </div>
+              {/* Car Image Thumbnail */}
+              <div className="w-40 aspect-video rounded-lg border-2 border-gray-200 bg-gray-100 overflow-hidden flex items-center justify-center shadow-sm">
+                {(() => {
+                  // Try to get the first available car image
+                  let carImageUrl: string | null = null;
+
+                  // First priority: direct image field
+                  if (selectedLead.image) {
+                    carImageUrl = selectedLead.image;
+                  }
+                  // Second priority: first image from additional_images
+                  else if (selectedLead.additional_images) {
+                    const images = selectedLead.additional_images;
+                    // Try outside images first (usually exterior shots)
+                    if (images.outside && images.outside.length > 0) {
+                      carImageUrl = images.outside[0].url;
+                    }
+                    // Then try other categories
+                    else {
+                      for (const category of ['inside', 'paper'] as const) {
+                        if (images[category] && images[category]!.length > 0) {
+                          carImageUrl = images[category]![0].url;
+                          break;
+                        }
+                      }
+                    }
+                  }
+
+                  if (carImageUrl) {
+                    return (
+                      <img
+                        src={carImageUrl}
+                        alt={`${selectedLead.brand || ''} ${selectedLead.model || ''}`}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          // Replace with placeholder on error
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                    );
+                  }
+                  return null;
+                })()}
+                <div className={`flex flex-col items-center justify-center ${selectedLead.image || selectedLead.additional_images ? 'hidden' : ''}`}>
+                  <Car className="h-8 w-8 text-gray-400" />
+                  <span className="text-[10px] text-gray-400 mt-1">No image</span>
+                </div>
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -320,6 +379,19 @@ export function LeadDetailPanel({
                 Hoạt động gần đây
               </div>
             </button>
+            <button
+              type="button"
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "decoy-history"
+                ? "text-orange-600 border-orange-600"
+                : "text-gray-500 border-transparent hover:text-gray-700"
+                }`}
+              onClick={() => onActiveDetailViewChange("decoy-history")}
+            >
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4" />
+                Lịch sử Quây khách
+              </div>
+            </button>
           </div>
         </div>
 
@@ -327,25 +399,30 @@ export function LeadDetailPanel({
         {activeDetailView === "workflow" && (
           <div className="p-6">
             <WorkflowTrackerTab
-            selectedLead={selectedLead}
-            activeWorkflowView={activeWorkflowView}
-            onWorkflowViewChange={onWorkflowViewChange}
-            onSendFirstMessage={() => onSendFirstMessage("Hello")}
-            sendingMessage={sendingMessage}
-            onViewZaloChat={() => onActiveDetailViewChange("zalo-chat")}
-            onViewBiddingHistory={onViewBiddingHistory}
-            onCreateSession={onCreateSession}
-            creatingSession={creatingSession}
-            onBotToggle={onBotToggle}
-            togglingBot={togglingBot}
-            onViewDecoyWeb={() => onActiveDetailViewChange("decoy-web")}
-            onRenameLead={onRenameLead}
-            renamingLead={renamingLead}
+              selectedLead={selectedLead}
+              activeWorkflowView={activeWorkflowView}
+              onWorkflowViewChange={onWorkflowViewChange}
+              onSendFirstMessage={() => onSendFirstMessage("Hello")}
+              sendingMessage={sendingMessage}
+              onViewZaloChat={() => onActiveDetailViewChange("zalo-chat")}
+              onViewBiddingHistory={onViewBiddingHistory}
+              onCreateSession={onCreateSession}
+              creatingSession={creatingSession}
+              onBotToggle={onBotToggle}
+              togglingBot={togglingBot}
+              onViewDecoyWeb={() => onActiveDetailViewChange("decoy-web")}
+              onRenameLead={onRenameLead}
+              renamingLead={renamingLead}
 
-            workflow2Data={workflow2Data}
-            onOpenWorkflow2={onOpenWorkflowDialog}
-            onOpenDecoyDialog={onDecoyDialog}
-          />
+              workflow2Data={workflow2Data}
+              onOpenWorkflow2={onOpenWorkflowDialog}
+              onOpenDecoyDialog={onDecoyDialog}
+
+              // Dealer Bidding Props
+              biddingHistory={biddingHistory}
+              onUpdateBid={onUpdateBid}
+              loadingBiddingHistory={loadingBiddingHistory}
+            />
           </div>
         )}
 
@@ -373,6 +450,12 @@ export function LeadDetailPanel({
         {activeDetailView === "recent-activity" && (
           <div className="h-[calc(100vh-250px)] bg-gray-50/50 p-4 overflow-y-auto">
             <RecentActivityTab phone={selectedLead?.phone || selectedLead?.additional_phone || null} />
+          </div>
+        )}
+
+        {activeDetailView === "decoy-history" && (
+          <div className="h-[calc(100vh-250px)] bg-gray-50/50 overflow-y-auto">
+            <DecoyHistoryTab phone={selectedLead?.phone || selectedLead?.additional_phone || null} />
           </div>
         )}
 

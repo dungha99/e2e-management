@@ -80,7 +80,13 @@ function WorkflowStep({ icon, title, status, isCompleted, onClick }: {
 
 export function E2EManagement() {
   const { toast } = useToast()
-  const [selectedAccount, setSelectedAccount] = useState<string>("")
+  // Initialize selectedAccount from localStorage to persist across page reloads
+  const [selectedAccount, setSelectedAccount] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('e2e-selectedAccount') || ""
+    }
+    return ""
+  })
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(false)
   const [callingBot, setCallingBot] = useState(false)
@@ -219,6 +225,12 @@ export function E2EManagement() {
   const [loadingSummary, setLoadingSummary] = useState(false)
   const [summaryError, setSummaryError] = useState<string | null>(null)
 
+  // Persist selectedAccount to localStorage whenever it changes
+  useEffect(() => {
+    if (selectedAccount) {
+      localStorage.setItem('e2e-selectedAccount', selectedAccount)
+    }
+  }, [selectedAccount])
 
   // Keyboard navigation for gallery
   useEffect(() => {

@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -7,7 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car } from "lucide-react"
+import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car, Images } from "lucide-react"
 import { Lead } from "../types"
 import { formatCarInfo, formatPrice, formatDate } from "../utils"
 import { WorkflowTrackerTab } from "../tabs/WorkflowTrackerTab"
@@ -16,6 +17,7 @@ import { DecoyWebTab } from "../tabs/DecoyWebTab"
 import { RecentActivityTab } from "../tabs/RecentActivityTab"
 import { DecoyHistoryTab } from "../tabs/DecoyHistoryTab"
 import { Workflow2Dialog } from "../dialogs/Workflow2Dialog"
+import { ImageGalleryModal } from "../dialogs/ImageGalleryModal"
 
 interface LeadDetailPanelProps {
   selectedAccount: string | null
@@ -122,6 +124,59 @@ export function LeadDetailPanel({
   onUpdateBid,
   loadingBiddingHistory
 }: LeadDetailPanelProps) {
+  // Gallery state
+  const [galleryOpen, setGalleryOpen] = useState(false)
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+
+  // Collect all car images for gallery
+  const galleryImages = useMemo(() => {
+    const images: string[] = []
+    if (!selectedLead) return images
+
+    // Add direct image first
+    if (selectedLead.image) {
+      images.push(selectedLead.image)
+    }
+
+    // Add additional_images from all categories
+    if (selectedLead.additional_images) {
+      const imgCategories = selectedLead.additional_images
+      // Order: outside, inside, paper, then any other categories
+      const categoryOrder = ['outside', 'inside', 'paper']
+
+      for (const category of categoryOrder) {
+        const categoryImages = imgCategories[category]
+        if (categoryImages) {
+          for (const img of categoryImages) {
+            if (img.url && !images.includes(img.url)) {
+              images.push(img.url)
+            }
+          }
+        }
+      }
+
+      // Add any other categories not in the order
+      for (const [category, categoryImages] of Object.entries(imgCategories)) {
+        if (!categoryOrder.includes(category) && categoryImages) {
+          for (const img of categoryImages) {
+            if (img.url && !images.includes(img.url)) {
+              images.push(img.url)
+            }
+          }
+        }
+      }
+    }
+
+    return images
+  }, [selectedLead])
+
+  // Handle thumbnail click to open gallery
+  const handleThumbnailClick = () => {
+    if (galleryImages.length > 0) {
+      setSelectedImageIndex(0)
+      setGalleryOpen(true)
+    }
+  }
 
   // If hidden on mobile list view
   if (!(!isMobile || mobileView === 'detail')) {
@@ -155,7 +210,11 @@ export function LeadDetailPanel({
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-4">
               {/* Car Image Thumbnail */}
-              <div className="w-40 aspect-[3/2] rounded-lg border-2 border-gray-200 bg-gray-100 overflow-hidden flex items-center justify-center shadow-sm">
+              <div
+                className={`w-40 aspect-[3/2] rounded-lg border-2 border-gray-200 bg-gray-100 overflow-hidden flex items-center justify-center shadow-sm relative group ${galleryImages.length > 0 ? 'cursor-pointer hover:border-blue-400 transition-colors' : ''}`}
+                onClick={handleThumbnailClick}
+                title={galleryImages.length > 0 ? "Nhấn để xem tất cả ảnh" : undefined}
+              >
                 {(() => {
                   // Try to get the first available car image
                   let carImageUrl: string | null = null;
@@ -184,16 +243,27 @@ export function LeadDetailPanel({
 
                   if (carImageUrl) {
                     return (
-                      <img
-                        src={carImageUrl}
-                        alt={`${selectedLead.brand || ''} ${selectedLead.model || ''}`}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          // Replace with placeholder on error
-                          e.currentTarget.style.display = 'none';
-                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                        }}
-                      />
+                      <>
+                        <img
+                          src={carImageUrl}
+                          alt={`${selectedLead.brand || ''} ${selectedLead.model || ''}`}
+                          className="w-full h-full object-cover"
+                          onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                            // Replace with placeholder on error
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                          }}
+                        />
+                        {/* Hover overlay */}
+                        {galleryImages.length > 0 && (
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <div className="flex flex-col items-center text-white">
+                              <Images className="h-6 w-6 mb-1" />
+                              <span className="text-xs font-medium">Xem ảnh</span>
+                            </div>
+                          </div>
+                        )}
+                      </>
                     );
                   }
                   return null;
@@ -202,6 +272,12 @@ export function LeadDetailPanel({
                   <Car className="h-8 w-8 text-gray-400" />
                   <span className="text-[10px] text-gray-400 mt-1">No image</span>
                 </div>
+                {/* Image count badge */}
+                {galleryImages.length > 1 && (
+                  <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/60 rounded text-white text-[10px] font-medium">
+                    {galleryImages.length} ảnh
+                  </div>
+                )}
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -464,6 +540,15 @@ export function LeadDetailPanel({
           defaultData={workflow2Data}
           onSuccess={() => { }}
           onOpenDecoyDialog={onDecoyDialog}
+        />
+
+        {/* Image Gallery Modal */}
+        <ImageGalleryModal
+          open={galleryOpen}
+          onOpenChange={setGalleryOpen}
+          images={galleryImages}
+          initialIndex={selectedImageIndex}
+          onIndexChange={setSelectedImageIndex}
         />
       </div>
     </div>

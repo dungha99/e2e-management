@@ -212,12 +212,12 @@ Giá mong muốn: ${lead.price_customer ? formatPrice(lead.price_customer) : "N/
                 <h3 className="text-sm font-bold text-gray-700 uppercase">Thông tin xe (Car)</h3>
               </div>
 
-              {/* Car Title */}
+              {/* Car Title with all details in one line */}
               <div className="mb-4">
                 <h2 className="text-xl font-bold text-gray-900">
                   {[lead.brand, lead.model, lead.variant].filter(Boolean).join(" ") || "N/A"}
                 </h2>
-                <div className="flex items-center gap-2 mt-2">
+                <div className="flex flex-wrap items-center gap-2 mt-2">
                   {lead.year && (
                     <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded">
                       {lead.year}
@@ -225,7 +225,27 @@ Giá mong muốn: ${lead.price_customer ? formatPrice(lead.price_customer) : "N/
                   )}
                   {lead.location && (
                     <span className="px-2 py-0.5 bg-gray-200 text-gray-700 text-xs rounded">
-                      {lead.location}
+                      📍 {lead.location}
+                    </span>
+                  )}
+                  {lead.mileage && (
+                    <span className="px-2 py-0.5 bg-gray-200 text-gray-700 text-xs rounded">
+                      🛣️ {lead.mileage.toLocaleString()} km
+                    </span>
+                  )}
+                  {lead.plate && (
+                    <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs font-medium rounded">
+                      🚗 {lead.plate}
+                    </span>
+                  )}
+                  {lead.sku && (
+                    <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded">
+                      SKU: {lead.sku}
+                    </span>
+                  )}
+                  {lead.car_id && (
+                    <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs font-mono rounded truncate max-w-[120px]" title={lead.car_id}>
+                      ID: {lead.car_id.slice(0, 8)}...
                     </span>
                   )}
                 </div>
@@ -233,7 +253,7 @@ Giá mong muốn: ${lead.price_customer ? formatPrice(lead.price_customer) : "N/
 
               {/* Car Images - First in view, with pagination */}
               {lead.additional_images && (
-                <div className="mb-4">
+                <div>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <svg className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -304,42 +324,6 @@ Giá mong muốn: ${lead.price_customer ? formatPrice(lead.price_customer) : "N/
                   </div>
                 </div>
               )}
-
-              {/* Car Details Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">ODO (km)</p>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {lead.mileage ? lead.mileage.toLocaleString() : "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Phiên bản</p>
-                  <p className="text-sm font-semibold text-gray-900">{lead.variant || "N/A"}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Biển số</p>
-                  <p className="text-sm font-semibold text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded inline-block">
-                    {lead.plate || "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">SKU</p>
-                  <p className="text-sm font-semibold text-gray-900">{lead.sku || "N/A"}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Ngày tạo xe</p>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {lead.car_created_at ? new Date(lead.car_created_at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" }) : "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Car ID</p>
-                  <p className="text-xs font-mono text-gray-500 truncate" title={lead.car_id || "N/A"}>
-                    {lead.car_id || "N/A"}
-                  </p>
-                </div>
-              </div>
             </div>
 
             {/* Section 3: Sale Status Information */}

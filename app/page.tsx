@@ -51,20 +51,16 @@ export default function DecoyCampaignManager() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className="border-b border-border bg-card shadow-sm">
-        <div className="container mx-auto px-8 py-6">
-          <h1 className="text-3xl font-bold text-foreground">Decoy Campaign Manager</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage Zalo messaging campaigns</p>
-        </div>
-      </header>
-
       <main className="container mx-auto px-8 py-8 flex-1">
         <Tabs defaultValue="e2e" className="w-full">
-          <TabsList className="mb-6">
-            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-            <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>
-            <TabsTrigger value="e2e">Quản lý E2E</TabsTrigger>
-          </TabsList>
+          <div className="flex items-center justify-between mb-6">
+            <TabsList>
+              <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+              <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>
+              <TabsTrigger value="e2e">Quản lý E2E</TabsTrigger>
+            </TabsList>
+            <div id="header-account-selector"></div>
+          </div>
 
           <TabsContent value="dashboard">
             <Dashboard />

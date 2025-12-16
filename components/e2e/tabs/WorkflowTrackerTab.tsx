@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, ChevronRight, Check, X } from "lucide-react"
+import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, ChevronRight, Check, X, Car, User, Phone } from "lucide-react"
 import { Lead, BiddingHistory } from "../types"
 import { formatPrice } from "../utils"
 import { maskPhone } from "@/lib/utils"
@@ -130,6 +130,13 @@ export function WorkflowTrackerTab({
 
   return (
     <>
+      {/* Lead + Car Summary Section */}
+      <div className="p-2 mb-6">
+        <p className="text-sm text-gray-500 italic">
+          Tóm tắt về Lead này sẽ hiển thị ở đây, chờ tí...
+        </p>
+      </div>
+
       {/* Workflow Tracker */}
       <div className="bg-white rounded-lg p-8 shadow-sm">
         <div className="flex items-center justify-between mb-8">

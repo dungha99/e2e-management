@@ -3,9 +3,12 @@
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { User, ChevronLeft } from "lucide-react"
-import { ACCOUNTS } from "../types"
+import { Button } from "@/components/ui/button"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { User, ChevronLeft, Check, ChevronsUpDown } from "lucide-react"
+import { useAccounts } from "@/contexts/AccountsContext"
+import { cn } from "@/lib/utils"
 
 interface AccountSelectorProps {
   selectedAccount: string
@@ -26,7 +29,9 @@ export function AccountSelector({
   mobileView = "list",
   onBackToList
 }: AccountSelectorProps) {
+  const { accounts: ACCOUNTS } = useAccounts()
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null)
+  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     // Only use portal for desktop view
@@ -36,25 +41,58 @@ export function AccountSelector({
     }
   }, [isMobile])
 
+  const selectedAccountName = ACCOUNTS.find((acc) => acc.uid === selectedAccount)?.name || "Chọn tài khoản..."
+
   // Account selector dropdown component
   const accountSelectorDropdown = (
     <div className="flex items-center gap-2">
       <Label className="text-sm font-medium text-gray-700">Chọn tài khoản:</Label>
-      <Select value={selectedAccount} onValueChange={onAccountChange} disabled={loading || loadingCarIds}>
-        <SelectTrigger className="w-48">
-          <SelectValue placeholder="Chọn tài khoản..." />
-        </SelectTrigger>
-        <SelectContent>
-          {ACCOUNTS.map((account) => (
-            <SelectItem key={account.uid} value={account.uid}>
-              <div className="flex items-center gap-2">
-                <User className="h-4 w-4" />
-                {account.name}
-              </div>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-48 justify-between"
+            disabled={loading || loadingCarIds}
+          >
+            <div className="flex items-center gap-2 truncate">
+              <User className="h-4 w-4 shrink-0" />
+              <span className="truncate">{selectedAccountName}</span>
+            </div>
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-48 p-0">
+          <Command>
+            <CommandInput placeholder="Tìm tài khoản..." />
+            <CommandList>
+              <CommandEmpty>Không tìm thấy tài khoản.</CommandEmpty>
+              <CommandGroup>
+                {ACCOUNTS.map((account) => (
+                  <CommandItem
+                    key={account.uid}
+                    value={account.name}
+                    onSelect={() => {
+                      onAccountChange(account.uid)
+                      setOpen(false)
+                    }}
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        selectedAccount === account.uid ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                    <User className="mr-2 h-4 w-4" />
+                    {account.name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
     </div>
   )
 
@@ -82,21 +120,52 @@ export function AccountSelector({
             )}
           </h1>
           <div className="flex items-center gap-2">
-            <Select value={selectedAccount} onValueChange={onAccountChange} disabled={loading || loadingCarIds}>
-              <SelectTrigger className="w-32">
-                <SelectValue placeholder="Chọn..." />
-              </SelectTrigger>
-              <SelectContent>
-                {ACCOUNTS.map((account) => (
-                  <SelectItem key={account.uid} value={account.uid}>
-                    <div className="flex items-center gap-2">
-                      <User className="h-4 w-4" />
-                      {account.name}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={open} onOpenChange={setOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={open}
+                  className="w-32 justify-between"
+                  disabled={loading || loadingCarIds}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <User className="h-4 w-4 shrink-0" />
+                    <span className="truncate text-xs">{selectedAccountName}</span>
+                  </div>
+                  <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-48 p-0">
+                <Command>
+                  <CommandInput placeholder="Tìm tài khoản..." />
+                  <CommandList>
+                    <CommandEmpty>Không tìm thấy tài khoản.</CommandEmpty>
+                    <CommandGroup>
+                      {ACCOUNTS.map((account) => (
+                        <CommandItem
+                          key={account.uid}
+                          value={account.name}
+                          onSelect={() => {
+                            onAccountChange(account.uid)
+                            setOpen(false)
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              selectedAccount === account.uid ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <User className="mr-2 h-4 w-4" />
+                          {account.name}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
       </div>

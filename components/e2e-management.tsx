@@ -19,7 +19,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar"
 
 // Extracted component imports
-import { Lead, BiddingHistory, Dealer, ACCOUNTS, ITEMS_PER_PAGE, DealerBiddingStatus } from "./e2e/types"
+import { Lead, BiddingHistory, Dealer, ITEMS_PER_PAGE, DealerBiddingStatus } from "./e2e/types"
+import { useAccounts } from "@/contexts/AccountsContext"
 
 // Dialog components
 import { SendToDealerGroupsDialog } from "./e2e/dialogs/SendToDealerGroupsDialog"
@@ -80,6 +81,7 @@ function WorkflowStep({ icon, title, status, isCompleted, onClick }: {
 
 export function E2EManagement() {
   const { toast } = useToast()
+  const { accounts: ACCOUNTS } = useAccounts()
   // Initialize selectedAccount from localStorage to persist across page reloads
   const [selectedAccount, setSelectedAccount] = useState<string>(() => {
     if (typeof window !== 'undefined') {

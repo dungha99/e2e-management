@@ -32,7 +32,7 @@ export async function POST(request: Request) {
         ss.messages_zalo,
         ss.notes,
         ss.qualified,
-        ss.intention_lead,
+        ss.intention,
         ss.negotiation_ability,
         c.brand,
         c.model,

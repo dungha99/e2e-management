@@ -115,19 +115,8 @@ export interface DecoyAccount {
   default_message: string
 }
 
-export const ACCOUNTS: Account[] = [
-  { name: "Dũng", uid: "9ee91b08-448b-4cf4-8b3d-79c6f1c71fef" },
-  { name: "Trường", uid: "286af2a8-a866-496a-8ed0-da30df3120ec" },
-  { name: "Thư", uid: "2ffa8389-2641-4d8b-98a6-5dc2dd2d20a4" },
-  { name: "PTr", uid: "3c9c5780-5e95-44b5-8b9a-ae5b9f8c9053" },
-  { name: "Huân Đạt", uid: "0ae61721-214f-49f7-8514-f64ee8438c4f" },
-  { name: "Minh Châu", uid: "456cf5f7-2b77-4be4-87bb-43038216dacb" },
-  { name: "Bảo Ngân", uid: "d4a2fc3a-2212-4299-b8bb-7ebded7e77c0" },
-  { name: "Thanh Hòa", uid: "00d0d47e-2041-4857-a828-83e0c28cb615" },
-  { name: "Phát", uid: "4cb28319-9dd0-4951-b9c9-e35e1e8dd578" },
-  { name: "Thành Đạt", uid: "66d484b5-91ae-4f27-bf5d-93a8993ab6d7" },
-  { name: "Xuân Mai", uid: "b8dec215-1fd3-41e8-8ff0-6d5c103849a8" },
-]
+// ACCOUNTS is now loaded dynamically from the database via /api/accounts
+// Use the useAccounts hook from @/contexts/AccountsContext to access accounts
 
 export const DECOY_ACCOUNTS: DecoyAccount[] = [
   {

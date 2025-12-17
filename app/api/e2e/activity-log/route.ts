@@ -17,7 +17,7 @@ export async function GET(request: Request) {
       async () => {
         // Fetch from n8n webhook
         const response = await fetch(
-          `https://n8n.vucar.vn/webhook/824be9f2-9b69-4ca7-ac29-ffb91fe41cf4/824be9f2-9b69-4ca7-ac29-ffb91fe41cf4/${phone}`
+          `https://n8n.vucar.vn/webhook/522dfc6a-8e9d-44f0-917c-ba9ff9fe2c3f/${phone}`
         )
 
         if (!response.ok) {

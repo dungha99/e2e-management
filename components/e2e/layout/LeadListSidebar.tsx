@@ -296,9 +296,9 @@ export function LeadListSidebar({
               <p>Không có leads nào</p>
             </div>
           ) : (
-            currentPageLeads.map((lead) => (
+            currentPageLeads.map((lead, index) => (
               <div
-                key={lead.id}
+                key={`${lead.id}-${index}`}
                 className={`p-4 transition-colors ${loading || loadingCarIds
                   ? "cursor-not-allowed opacity-50"
                   : "hover:bg-blue-50"

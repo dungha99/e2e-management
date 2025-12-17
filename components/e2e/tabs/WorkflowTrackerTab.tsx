@@ -3,8 +3,9 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, ChevronRight, Check, X, Car, User, Phone } from "lucide-react"
+import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, ChevronRight, Check, X, Car, User, Phone, FileText, Pencil } from "lucide-react"
 import { Lead, BiddingHistory } from "../types"
 import { formatPrice } from "../utils"
 import { maskPhone } from "@/lib/utils"
@@ -68,6 +69,9 @@ interface WorkflowTrackerTabProps {
   biddingHistory?: BiddingHistory[]
   onUpdateBid?: (bidId: string, newPrice: number) => Promise<void>
   loadingBiddingHistory?: boolean
+
+  // Notes editing
+  onUpdateNotes?: (notes: string) => Promise<void>
 }
 
 export function WorkflowTrackerTab({
@@ -89,12 +93,18 @@ export function WorkflowTrackerTab({
   onOpenDecoyDialog,
   biddingHistory = [],
   onUpdateBid,
-  loadingBiddingHistory = false
+  loadingBiddingHistory = false,
+  onUpdateNotes
 }: WorkflowTrackerTabProps) {
   // Local state for inline editing
   const [editingBidId, setEditingBidId] = useState<string | null>(null)
   const [editingPrice, setEditingPrice] = useState("")
   const [savingBid, setSavingBid] = useState(false)
+
+  // Notes editing state
+  const [isEditingNotes, setIsEditingNotes] = useState(false)
+  const [editedNotes, setEditedNotes] = useState("")
+  const [savingNotes, setSavingNotes] = useState(false)
 
   // Get top 5 bids sorted by price (descending)
   const topBids = [...biddingHistory]
@@ -128,15 +138,32 @@ export function WorkflowTrackerTab({
     }
   }
 
+  // Notes editing handlers
+  const handleStartEditNotes = () => {
+    setEditedNotes(selectedLead.notes || "")
+    setIsEditingNotes(true)
+  }
+
+  const handleCancelEditNotes = () => {
+    setIsEditingNotes(false)
+    setEditedNotes("")
+  }
+
+  const handleSaveNotes = async () => {
+    if (!onUpdateNotes) return
+
+    setSavingNotes(true)
+    try {
+      await onUpdateNotes(editedNotes)
+      setIsEditingNotes(false)
+      setEditedNotes("")
+    } finally {
+      setSavingNotes(false)
+    }
+  }
+
   return (
     <>
-      {/* Lead + Car Summary Section */}
-      <div className="p-2 mb-6">
-        <p className="text-sm text-gray-500 italic">
-          Tóm tắt về Lead này sẽ hiển thị ở đây, chờ tí...
-        </p>
-      </div>
-
       {/* Workflow Tracker */}
       <div className="bg-white rounded-lg p-8 shadow-sm">
         <div className="flex items-center justify-between mb-8">
@@ -239,25 +266,6 @@ export function WorkflowTrackerTab({
               </Button>
             </div>
 
-            {/* E2E Bot */}
-            <div className="flex flex-col items-center gap-3 flex-1">
-              <WorkflowStep
-                icon={<Zap className="w-8 h-8" />}
-                title="E2E Bot"
-                status={selectedLead.bot_active ? "Bot đang chạy" : "Bot chưa chạy"}
-                isCompleted={selectedLead.bot_active || false}
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onBotToggle(!selectedLead.bot_active)}
-                disabled={togglingBot}
-                className={`text-xs ${selectedLead.bot_active ? "bg-red-50 text-red-600 hover:bg-red-100" : ""}`}
-              >
-                {togglingBot ? "Đang xử lý..." : selectedLead.bot_active ? "Tắt Bot" : "Bật Bot"}
-              </Button>
-            </div>
-
             {/* Decoy Web */}
             <div className="flex flex-col items-center gap-3">
               <WorkflowStep
@@ -326,37 +334,75 @@ export function WorkflowTrackerTab({
 
       {/* Additional Info Cards */}
       <div className="grid grid-cols-2 gap-6 mt-6">
-        {/* Contact Info */}
+        {/* Notes Section */}
         <div className="bg-white rounded-lg p-6 shadow-sm">
-          <h4 className="text-sm font-semibold text-gray-700 mb-3">Thông tin liên hệ</h4>
-          <div className="space-y-2">
-            <div>
-              <p className="text-xs text-gray-500">Số điện thoại</p>
-              <p className="text-sm font-medium text-gray-900">
-                {selectedLead.phone ? maskPhone(selectedLead.phone) : "N/A"}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Biển số xe</p>
-              <p className="text-sm font-medium text-gray-900">{selectedLead.plate || "N/A"}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">SKU</p>
-              <p className="text-sm font-medium text-gray-900">{selectedLead.sku || "N/A"}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Số km</p>
-              <p className="text-sm font-medium text-gray-900">
-                {selectedLead.mileage ? `${selectedLead.mileage.toLocaleString()} km` : "N/A"}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Ngày tạo xe</p>
-              <p className="text-sm font-medium text-gray-900">
-                {selectedLead.car_created_at ? new Date(selectedLead.car_created_at).toLocaleDateString("vi-VN") : "N/A"}
-              </p>
-            </div>
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <FileText className="h-4 w-4 text-blue-600" />
+              Ghi chú
+            </h4>
+            {!isEditingNotes && onUpdateNotes && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-gray-500 hover:text-blue-600"
+                onClick={handleStartEditNotes}
+              >
+                <Pencil className="h-3.5 w-3.5 mr-1" />
+                Sửa
+              </Button>
+            )}
           </div>
+
+          {isEditingNotes ? (
+            <div className="space-y-3">
+              <Textarea
+                value={editedNotes}
+                onChange={(e) => setEditedNotes(e.target.value)}
+                placeholder="Nhập ghi chú..."
+                className="min-h-[120px] text-sm resize-none"
+                autoFocus
+              />
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCancelEditNotes}
+                  disabled={savingNotes}
+                  className="h-8"
+                >
+                  <X className="h-3.5 w-3.5 mr-1" />
+                  Hủy
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSaveNotes}
+                  disabled={savingNotes}
+                  className="h-8 bg-blue-600 hover:bg-blue-700"
+                >
+                  {savingNotes ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                      Đang lưu...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-3.5 w-3.5 mr-1" />
+                      Lưu
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="min-h-[80px]">
+              {selectedLead.notes ? (
+                <p className="text-sm text-gray-900 whitespace-pre-wrap">{selectedLead.notes}</p>
+              ) : (
+                <p className="text-sm text-gray-400 italic">Chưa có ghi chú</p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Price Info - Enhanced */}

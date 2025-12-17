@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, ExternalLink, Copy, ChevronLeft, ChevronRight } from "lucide-react"
@@ -34,6 +35,8 @@ interface EditLeadDialogProps {
   setEditedIntentionLead: (value: string) => void
   editedNegotiationAbility: string
   setEditedNegotiationAbility: (value: string) => void
+  editedNotes: string
+  setEditedNotes: (value: string) => void
 
   // Gallery/Image Props
   processedImages: string[]
@@ -65,6 +68,8 @@ export function EditLeadDialog({
   setEditedIntentionLead,
   editedNegotiationAbility,
   setEditedNegotiationAbility,
+  editedNotes,
+  setEditedNotes,
   processedImages,
   onImageClick,
   onSave,
@@ -115,6 +120,14 @@ Giá mong muốn: ${lead.price_customer ? formatPrice(lead.price_customer) : "N/
 
   const handleEditToggle = () => {
     setEditMode(true)
+    // Initialize form fields with current lead values
+    setEditedStage(lead.stage || "")
+    setEditedPriceCustomer(lead.price_customer?.toLocaleString("vi-VN") || "")
+    setEditedPriceHighestBid(lead.price_highest_bid?.toLocaleString("vi-VN") || "")
+    setEditedQualified(lead.qualified || "")
+    setEditedIntentionLead(lead.intentionLead || "")
+    setEditedNegotiationAbility(lead.negotiationAbility || "")
+    setEditedNotes(lead.notes || "")
   }
 
   const handlePriceFormat = (value: string, setter: (value: string) => void) => {
@@ -491,6 +504,25 @@ Giá mong muốn: ${lead.price_customer ? formatPrice(lead.price_customer) : "N/
                     >
                       {lead.negotiationAbility || "N/A"}
                     </Badge>
+                  )}
+                </div>
+
+                {/* Notes - Full width row */}
+                <div className="col-span-2 md:col-span-4">
+                  <p className="text-xs text-gray-500 mb-1">Ghi chú (Notes)</p>
+                  {editMode ? (
+                    <Textarea
+                      value={editedNotes}
+                      onChange={(e) => setEditedNotes(e.target.value)}
+                      className="w-full text-sm min-h-[80px] resize-y"
+                      placeholder="Nhập ghi chú..."
+                    />
+                  ) : (
+                    <div className="p-2 bg-white rounded border border-gray-200 min-h-[60px]">
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                        {lead.notes || <span className="text-gray-400 italic">Chưa có ghi chú</span>}
+                      </p>
+                    </div>
                   )}
                 </div>
               </div>

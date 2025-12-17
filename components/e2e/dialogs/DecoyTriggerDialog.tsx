@@ -14,12 +14,14 @@ interface DecoyTriggerDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   selectedLead: Lead | null
+  onSuccess?: () => void  // Callback after successful decoy send
 }
 
 export function DecoyTriggerDialog({
   open,
   onOpenChange,
-  selectedLead
+  selectedLead,
+  onSuccess
 }: DecoyTriggerDialogProps) {
   const { toast } = useToast()
   const [decoySegment, setDecoySegment] = useState("")
@@ -100,6 +102,46 @@ export function DecoyTriggerDialog({
           reason: reasonText,
         }),
       })
+
+      // Log sale activity for decoy zalo creation
+      console.log("[DECOY_ZALO] Attempting to log activity for lead:", selectedLead.id)
+      if (selectedLead.id) {
+        try {
+          const activityPayload = {
+            leadId: selectedLead.id,
+            activityType: "DECOY_SUMMARY",
+            metadata: {
+              field_name: "decoy_zalo",
+              previous_value: null,
+              new_value: `Gửi bằng tài khoản ${selectedAccount.name}`,
+              channel: "ZALO",
+              segment: decoySegment,
+              account: selectedAccount.name
+            },
+            actorType: "USER",
+            field: "decoy_zalo",
+          }
+          console.log("[DECOY_ZALO] Sending activity payload:", JSON.stringify(activityPayload))
+
+          const activityResponse = await fetch("/api/e2e/log-activity", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(activityPayload),
+          })
+
+          const responseData = await activityResponse.json()
+          console.log("[DECOY_ZALO] Activity API response:", activityResponse.status, responseData)
+
+          // Trigger Sale Activities panel refresh
+          onSuccess?.()
+        } catch (err) {
+          console.error("[E2E] Error logging decoy zalo activity:", err)
+        }
+      } else {
+        console.warn("[DECOY_ZALO] No lead ID available, skipping activity logging")
+      }
 
       toast({
         title: "✓ Đã nhận được yêu cầu",

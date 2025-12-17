@@ -33,6 +33,7 @@ import { BiddingHistoryDialog } from "./e2e/dialogs/BiddingHistoryDialog"
 import { CreateThreadDialog } from "./e2e/dialogs/CreateThreadDialog"
 import { EditLeadDialog } from "./e2e/dialogs/EditLeadDialog"
 import { LeadDetailPanel } from "./e2e/layout/LeadDetailPanel"
+import { SaleActivitiesPanel } from "./e2e/layout/SaleActivitiesPanel"
 
 // Tab components
 
@@ -116,6 +117,9 @@ export function E2EManagement() {
   // Create bidding state
 
   const [confirmBiddingOpen, setConfirmBiddingOpen] = useState(false)
+
+  // Sale Activities refresh key - increment to trigger refresh
+  const [activitiesRefreshKey, setActivitiesRefreshKey] = useState(0)
 
 
   // Bidding history state
@@ -213,6 +217,7 @@ export function E2EManagement() {
   const [editedQualified, setEditedQualified] = useState<string>("")
   const [editedIntentionLead, setEditedIntentionLead] = useState<string>("")
   const [editedNegotiationAbility, setEditedNegotiationAbility] = useState<string>("")
+  const [editedNotes, setEditedNotes] = useState<string>("")
   const [updatingSaleStatus, setUpdatingSaleStatus] = useState(false)
 
   // Image gallery state
@@ -936,6 +941,40 @@ export function E2EManagement() {
           description: "Đã tạo thread mới",
         })
 
+        // Log sale activity for decoy web chat creation
+        console.log("[DECOY_WEB_CHAT] Logging activity for lead:", selectedLead.id)
+        try {
+          const activityPayload = {
+            leadId: selectedLead.id,
+            activityType: "DECOY_SUMMARY",
+            metadata: {
+              field_name: "decoy_web_chat",
+              previous_value: null,
+              new_value: "Đã tạo thread mới",
+              channel: "WEB"
+            },
+            actorType: "USER",
+            field: "decoy_web_chat",
+          }
+          console.log("[DECOY_WEB_CHAT] Sending activity payload:", JSON.stringify(activityPayload))
+
+          const activityResponse = await fetch("/api/e2e/log-activity", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(activityPayload),
+          })
+
+          const responseData = await activityResponse.json()
+          console.log("[DECOY_WEB_CHAT] Activity API response:", activityResponse.status, responseData)
+
+          // Trigger Sale Activities panel refresh
+          setActivitiesRefreshKey(prev => prev + 1)
+        } catch (err) {
+          console.error("[E2E] Error logging decoy web chat activity:", err)
+        }
+
         // Send ZNS if toggle is on
         if (sendZns && selectedLead.phone) {
           await handleSendZns(selectedLead.phone)
@@ -1458,6 +1497,65 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     }
   }
 
+  // Handler for inline notes update (from WorkflowTrackerTab)
+  async function handleUpdateNotesInline(notes: string): Promise<void> {
+    if (!selectedLead?.car_id) {
+      toast({
+        title: "Lỗi",
+        description: "Không tìm thấy Car ID",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const response = await fetch("/api/e2e/update-sale-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          carId: selectedLead.car_id,
+          leadId: selectedLead.id,
+          notes: notes,
+          previousValues: {
+            notes: selectedLead.notes,
+          }
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Failed to update notes")
+      }
+
+      // Update local state
+      const updatedLead = {
+        ...selectedLead,
+        notes: notes,
+      }
+
+      setSelectedLead(updatedLead)
+      setLeads((prevLeads) =>
+        prevLeads.map((l) => (l.id === selectedLead.id ? updatedLead : l))
+      )
+
+      toast({
+        title: "Thành công",
+        description: "Đã cập nhật ghi chú",
+      })
+
+      // Trigger Sale Activities panel refresh
+      setActivitiesRefreshKey(prev => prev + 1)
+    } catch (error) {
+      console.error("[E2E] Error updating notes:", error)
+      toast({
+        title: "Lỗi",
+        description: error instanceof Error ? error.message : "Không thể cập nhật ghi chú",
+        variant: "destructive",
+      })
+      throw error
+    }
+  }
 
 
   async function searchLeadByPhone() {
@@ -1933,6 +2031,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     setEditedQualified(selectedLead.qualified || "")
     setEditedIntentionLead(selectedLead.intentionLead || "")
     setEditedNegotiationAbility(selectedLead.negotiationAbility || "")
+    setEditedNotes(selectedLead.notes || "")
   }
 
   function handleCancelEdit() {
@@ -1943,6 +2042,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     setEditedQualified("")
     setEditedIntentionLead("")
     setEditedNegotiationAbility("")
+    setEditedNotes("")
   }
 
   function handleQuickEdit(lead: Lead, e: React.MouseEvent) {
@@ -1957,6 +2057,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     setEditedQualified(lead.qualified || "")
     setEditedIntentionLead(lead.intentionLead || "")
     setEditedNegotiationAbility(lead.negotiationAbility || "")
+    setEditedNotes(lead.notes || "")
     setDetailDialogOpen(true)
   }
 
@@ -2016,7 +2117,19 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
       }
 
       // Build payload with required carId - upsert API will create or update based on carId
-      const payload: any = { carId }
+      const payload: any = {
+        carId,
+        leadId: selectedLead.id,
+        previousValues: {
+          stage: selectedLead.stage,
+          price_customer: selectedLead.price_customer,
+          price_highest_bid: selectedLead.price_highest_bid,
+          qualified: selectedLead.qualified,
+          intentionLead: selectedLead.intentionLead,
+          negotiationAbility: selectedLead.negotiationAbility,
+          notes: selectedLead.notes,
+        }
+      }
 
       let hasChanges = false
 
@@ -2047,6 +2160,11 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
 
       if (editedNegotiationAbility && editedNegotiationAbility !== selectedLead.negotiationAbility) {
         payload.negotiationAbility = editedNegotiationAbility
+        hasChanges = true
+      }
+
+      if (editedNotes !== undefined && editedNotes !== (selectedLead.notes || "")) {
+        payload.notes = editedNotes
         hasChanges = true
       }
 
@@ -2082,6 +2200,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         qualified: editedQualified || selectedLead.qualified,
         intentionLead: editedIntentionLead || selectedLead.intentionLead,
         negotiationAbility: editedNegotiationAbility || selectedLead.negotiationAbility,
+        notes: editedNotes !== undefined ? editedNotes : selectedLead.notes,
       }
 
       setSelectedLead(updatedLead)
@@ -2094,6 +2213,9 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         description: "Đã cập nhật thông tin",
       })
 
+      // Trigger Sale Activities panel refresh
+      setActivitiesRefreshKey(prev => prev + 1)
+
       // Exit edit mode
       setEditMode(false)
       setEditedStage("")
@@ -2102,6 +2224,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
       setEditedQualified("")
       setEditedIntentionLead("")
       setEditedNegotiationAbility("")
+      setEditedNotes("")
     } catch (error) {
       console.error("[E2E] Error updating sale status:", error)
       toast({
@@ -2329,6 +2452,20 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
           biddingHistory={biddingHistory}
           onUpdateBid={handleUpdateBidPriceInline}
           loadingBiddingHistory={loadingBiddingHistory}
+
+          // Notes editing
+          onUpdateNotes={handleUpdateNotesInline}
+
+          // Activities refresh
+          onActivitiesRefresh={() => setActivitiesRefreshKey(prev => prev + 1)}
+        />
+
+        {/* Sale Activities Panel - Right Side */}
+        <SaleActivitiesPanel
+          selectedLead={selectedLead}
+          isMobile={isMobile}
+          mobileView={mobileView}
+          refreshKey={activitiesRefreshKey}
         />
       </div>
 
@@ -2401,6 +2538,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         open={decoyDialogOpen}
         onOpenChange={setDecoyDialogOpen}
         selectedLead={selectedLead}
+        onSuccess={() => setActivitiesRefreshKey(prev => prev + 1)}
       />
 
 
@@ -2427,6 +2565,8 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         setEditedIntentionLead={setEditedIntentionLead}
         editedNegotiationAbility={editedNegotiationAbility}
         setEditedNegotiationAbility={setEditedNegotiationAbility}
+        editedNotes={editedNotes}
+        setEditedNotes={setEditedNotes}
 
         // Gallery State
         processedImages={processedImages}

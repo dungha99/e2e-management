@@ -30,6 +30,8 @@ interface Job {
 
 interface DecoyHistoryTabProps {
     phone: string | null
+    leadId?: string  // For activity logging
+    onSuccess?: () => void  // Callback after successful send
 }
 
 const DECOY_ACCOUNTS = [
@@ -55,7 +57,7 @@ const DECOY_ACCOUNTS = [
     },
 ]
 
-export function DecoyHistoryTab({ phone }: DecoyHistoryTabProps) {
+export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabProps) {
     const [jobs, setJobs] = useState<Job[]>([])
     const [loading, setLoading] = useState(true)
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
@@ -166,6 +168,39 @@ export function DecoyHistoryTab({ phone }: DecoyHistoryTabProps) {
                 description: `Đã gửi tin nhắn từ ${accountConfig.name} đến ${maskPhone(phone)}`,
                 className: "bg-green-50 border-green-200",
             })
+
+            // Log sale activity for decoy zalo creation
+            if (leadId) {
+                console.log("[DecoyHistoryTab] Logging activity for lead:", leadId)
+                try {
+                    const activityResponse = await fetch("/api/e2e/log-activity", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                            leadId: leadId,
+                            activityType: "DECOY_SUMMARY",
+                            metadata: {
+                                field_name: "decoy_zalo",
+                                previous_value: null,
+                                new_value: `Gửi bằng tài khoản ${accountConfig.name}`,
+                                channel: "ZALO",
+                                account: accountConfig.name
+                            },
+                            actorType: "USER",
+                            field: "decoy_zalo",
+                        }),
+                    })
+                    const responseData = await activityResponse.json()
+                    console.log("[DecoyHistoryTab] Activity API response:", activityResponse.status, responseData)
+
+                    // Trigger Sale Activities panel refresh
+                    onSuccess?.()
+                } catch (err) {
+                    console.error("[DecoyHistoryTab] Error logging activity:", err)
+                }
+            }
 
             setSendOtherBotModalOpen(false)
             fetchJobs() // Refresh the table

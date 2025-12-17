@@ -80,6 +80,9 @@ interface LeadDetailPanelProps {
   biddingHistory?: any[]
   onUpdateBid?: (bidId: string, newPrice: number) => Promise<void>
   loadingBiddingHistory?: boolean
+
+  // Notes editing
+  onUpdateNotes?: (notes: string) => Promise<void>
 }
 
 export function LeadDetailPanel({
@@ -122,7 +125,9 @@ export function LeadDetailPanel({
   // Dealer Bidding
   biddingHistory,
   onUpdateBid,
-  loadingBiddingHistory
+  loadingBiddingHistory,
+  // Notes editing
+  onUpdateNotes
 }: LeadDetailPanelProps) {
   // Gallery state
   const [galleryOpen, setGalleryOpen] = useState(false)
@@ -207,7 +212,7 @@ export function LeadDetailPanel({
       <div className="flex-1 overflow-y-auto">
         {/* Header */}
         <div className="px-8 pt-6 pb-6 border-b sticky top-0 z-10">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-wrap items-start gap-4 mb-4">
             <div className="flex items-center gap-4">
               {/* Car Image Thumbnail */}
               <div
@@ -333,9 +338,52 @@ export function LeadDetailPanel({
                     </span>
                   )}
                 </div>
+                {/* Sale Status Badges */}
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  {selectedLead.stage && (
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded ${selectedLead.stage === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                      selectedLead.stage === 'DEPOSIT_PAID' ? 'bg-emerald-100 text-emerald-800' :
+                        selectedLead.stage === 'CAR_VIEW' ? 'bg-blue-100 text-blue-800' :
+                          selectedLead.stage === 'NEGOTIATION' ? 'bg-yellow-100 text-yellow-800' :
+                            selectedLead.stage === 'CONTACTED' ? 'bg-purple-100 text-purple-800' :
+                              selectedLead.stage === 'CANNOT_CONTACT' ? 'bg-orange-100 text-orange-800' :
+                                selectedLead.stage === 'FAILED' ? 'bg-red-100 text-red-800' :
+                                  'bg-gray-100 text-gray-700'
+                      }`}>
+                      {selectedLead.stage}
+                    </span>
+                  )}
+                  {selectedLead.qualified && (
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded ${selectedLead.qualified === 'STRONG_QUALIFIED' ? 'bg-green-100 text-green-800' :
+                      selectedLead.qualified === 'WEAK_QUALIFIED' ? 'bg-red-100 text-red-800' :
+                        selectedLead.qualified === 'NON_QUALIFIED' ? 'bg-orange-100 text-orange-800' :
+                          'bg-gray-100 text-gray-700'
+                      }`}>
+                      {selectedLead.qualified}
+                    </span>
+                  )}
+                  {selectedLead.intentionLead && (
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded ${selectedLead.intentionLead === 'FAST' ? 'bg-green-100 text-green-800' :
+                      selectedLead.intentionLead === 'SLOW' ? 'bg-yellow-100 text-yellow-800' :
+                        selectedLead.intentionLead === 'DELAY' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-700'
+                      }`}>
+                      {selectedLead.intentionLead}
+                    </span>
+                  )}
+                  {selectedLead.negotiationAbility && (
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded ${selectedLead.negotiationAbility === 'HARD' ? 'bg-green-100 text-green-800' :
+                      selectedLead.negotiationAbility === 'MAYBE' ? 'bg-yellow-100 text-yellow-800' :
+                        selectedLead.negotiationAbility === 'EASY' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-700'
+                      }`}>
+                      {selectedLead.negotiationAbility}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -495,6 +543,9 @@ export function LeadDetailPanel({
               biddingHistory={biddingHistory}
               onUpdateBid={onUpdateBid}
               loadingBiddingHistory={loadingBiddingHistory}
+
+              // Notes editing
+              onUpdateNotes={onUpdateNotes}
             />
           </div>
         )}

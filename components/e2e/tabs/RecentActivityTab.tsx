@@ -56,7 +56,7 @@ export function RecentActivityTab({ phone }: RecentActivityTabProps) {
   return (
     <div className="bg-white rounded-lg shadow-sm p-6">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold text-gray-900">Hoạt động gần đây</h3>
+        <h3 className="text-lg font-semibold text-gray-900">Hoạt động trên website</h3>
         {activityLog.length > 0 && (
           <p className="text-sm text-gray-500">
             Tổng cộng: <span className="font-semibold">{activityLog.length}</span> hoạt động

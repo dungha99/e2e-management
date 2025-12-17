@@ -19,6 +19,7 @@ type SaleStage = typeof VALID_STAGES[number]
 
 interface UpdateSaleStatusRequest {
     carId: string
+    leadId?: string  // For activity logging
     saleStatusId?: string | null
     stage?: SaleStage
     price_customer?: number
@@ -26,12 +27,75 @@ interface UpdateSaleStatusRequest {
     qualified?: string
     intentionLead?: string
     negotiationAbility?: string
+    notes?: string
+    // Previous values for activity logging
+    previousValues?: {
+        stage?: string | null
+        price_customer?: number | null
+        price_highest_bid?: number | null
+        qualified?: string | null
+        intentionLead?: string | null
+        negotiationAbility?: string | null
+        notes?: string | null
+    }
+}
+
+// Helper to get activity type for a field
+// Valid values: STATUS_UPDATED, NOTE_ADDED, TASK_CREATED, TASK_COMPLETED, CALL_LOGGED, 
+// AUCTION_CREATED, INSPECTION_COMPLETED, CAR_VIEWED, PRICE_REPORT_USED, BOT_FOLLOW_UP_SENT, DECOY_SUMMARY
+function getActivityType(field: string): string {
+    if (field === 'notes') return 'NOTE_ADDED'
+    // All other field updates use STATUS_UPDATED
+    return 'STATUS_UPDATED'
+}
+
+// Helper to log a sale activity
+async function logSaleActivity(
+    leadId: string,
+    field: string,
+    previousValue: any,
+    newValue: any
+) {
+    const payload = {
+        leadId,
+        activityType: getActivityType(field),
+        metadata: {
+            field_name: field,
+            previous_value: previousValue ?? null,
+            new_value: newValue,
+        },
+        actorType: "USER",
+        field,
+    }
+
+    console.log(`[SALE_ACTIVITY] Sending activity for field: ${field}`, JSON.stringify(payload))
+
+    try {
+        const response = await fetch(`${VUCAR_API_BASE_URL}/sale-activities`, {
+            method: "POST",
+            headers: {
+                "x-api-secret": VUCAR_API_SECRET,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+        })
+
+        const responseText = await response.text()
+        console.log(`[SALE_ACTIVITY] Response for ${field}: status=${response.status}, body=${responseText}`)
+
+        if (!response.ok) {
+            console.error(`[SALE_ACTIVITY] API error for ${field}: ${response.status} - ${responseText}`)
+        }
+    } catch (error) {
+        // Log error but don't fail the main request
+        console.error(`[SALE_ACTIVITY] Failed to log activity for ${field}:`, error)
+    }
 }
 
 export async function POST(request: NextRequest) {
     try {
         const body: UpdateSaleStatusRequest = await request.json()
-        const { carId, saleStatusId, stage, price_customer, price_highest_bid, qualified, intentionLead, negotiationAbility } = body
+        const { carId, leadId, saleStatusId, stage, price_customer, price_highest_bid, qualified, intentionLead, negotiationAbility, notes, previousValues } = body
 
         // Validate required fields
         if (!carId) {
@@ -105,6 +169,10 @@ export async function POST(request: NextRequest) {
             payload.negotiationAbility = negotiationAbility
             hasChanges = true
         }
+        if (notes !== undefined) {
+            payload.notes = notes
+            hasChanges = true
+        }
 
         // Check if there are any fields to update
         if (!hasChanges) {
@@ -140,6 +208,39 @@ export async function POST(request: NextRequest) {
         }
 
         const data = await response.json()
+
+        // Log sale activities for each changed field (non-blocking)
+        if (leadId) {
+            const prev = previousValues || {}
+            const activityPromises: Promise<void>[] = []
+
+            if (stage !== undefined) {
+                activityPromises.push(logSaleActivity(leadId, 'stage', prev.stage, stage))
+            }
+            if (price_customer !== undefined) {
+                activityPromises.push(logSaleActivity(leadId, 'priceCustomer', prev.price_customer, price_customer))
+            }
+            if (price_highest_bid !== undefined) {
+                activityPromises.push(logSaleActivity(leadId, 'priceHighestBid', prev.price_highest_bid, price_highest_bid))
+            }
+            if (qualified !== undefined) {
+                activityPromises.push(logSaleActivity(leadId, 'qualified', prev.qualified, qualified))
+            }
+            if (intentionLead !== undefined) {
+                activityPromises.push(logSaleActivity(leadId, 'intentionLead', prev.intentionLead, intentionLead))
+            }
+            if (negotiationAbility !== undefined) {
+                activityPromises.push(logSaleActivity(leadId, 'negotiationAbility', prev.negotiationAbility, negotiationAbility))
+            }
+            if (notes !== undefined) {
+                activityPromises.push(logSaleActivity(leadId, 'notes', prev.notes, notes))
+            }
+
+            // Wait for all activity logging to complete (temporarily, for debugging)
+            console.log(`[UPDATE_SALE_STATUS] Logging ${activityPromises.length} activities for leadId: ${leadId}`)
+            await Promise.all(activityPromises)
+            console.log(`[UPDATE_SALE_STATUS] Finished logging activities`)
+        }
 
         return NextResponse.json({
             success: true,

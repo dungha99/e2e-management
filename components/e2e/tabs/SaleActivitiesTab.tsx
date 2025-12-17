@@ -219,8 +219,8 @@ export function SaleActivitiesTab({ phone, refreshKey }: SaleActivitiesTabProps)
 
                             {/* Field name & Value Change */}
                             {(fieldName || prevValue !== undefined || newValue !== undefined) && (
-                                <div className="px-3 pb-3">
-                                    <div className="bg-gray-50 rounded-md p-2.5">
+                                <div className="px-3 pb-2">
+                                    <div className="bg-gray-50 rounded-md">
                                         {/* Field Name */}
                                         {fieldName && (
                                             <p className="text-xs text-gray-600 mb-2 font-medium">

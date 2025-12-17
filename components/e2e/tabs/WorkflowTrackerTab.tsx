@@ -50,7 +50,6 @@ interface WorkflowTrackerTabProps {
   // Purchase workflow handlers
   onSendFirstMessage: () => void
   sendingMessage: boolean
-  onViewZaloChat: () => void
   onViewBiddingHistory: () => void
   onCreateSession: () => void
   creatingSession: boolean
@@ -80,7 +79,6 @@ export function WorkflowTrackerTab({
   onWorkflowViewChange,
   onSendFirstMessage,
   sendingMessage,
-  onViewZaloChat,
   onViewBiddingHistory,
   onCreateSession,
   creatingSession,
@@ -215,7 +213,6 @@ export function WorkflowTrackerTab({
                 title="Tin nhắn đầu"
                 status={selectedLead.has_enough_images ? "Đã có ảnh" : "Chưa có ảnh"}
                 isCompleted={selectedLead.has_enough_images || false}
-                onClick={onViewZaloChat}
               />
               <Button
                 variant="outline"

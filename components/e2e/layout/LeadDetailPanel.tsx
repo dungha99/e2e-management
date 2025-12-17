@@ -12,7 +12,6 @@ import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageS
 import { Lead } from "../types"
 import { formatCarInfo, formatPrice, formatDate } from "../utils"
 import { WorkflowTrackerTab } from "../tabs/WorkflowTrackerTab"
-import { ZaloChatTab } from "../tabs/ZaloChatTab"
 import { DecoyWebTab } from "../tabs/DecoyWebTab"
 import { RecentActivityTab } from "../tabs/RecentActivityTab"
 import { DecoyHistoryTab } from "../tabs/DecoyHistoryTab"
@@ -26,8 +25,8 @@ interface LeadDetailPanelProps {
   mobileView: "list" | "detail"
 
   // Tab State
-  activeDetailView: "workflow" | "decoy-web" | "zalo-chat" | "recent-activity" | "decoy-history"
-  onActiveDetailViewChange: (view: "workflow" | "decoy-web" | "zalo-chat" | "recent-activity" | "decoy-history") => void
+  activeDetailView: "workflow" | "decoy-web" | "recent-activity" | "decoy-history"
+  onActiveDetailViewChange: (view: "workflow" | "decoy-web" | "recent-activity" | "decoy-history") => void
 
   // Actions
   onTogglePrimary: (lead: Lead, e: React.MouseEvent) => Promise<void>
@@ -72,9 +71,6 @@ interface LeadDetailPanelProps {
   activeWorkflowView: "purchase" | "seeding"
   onWorkflowViewChange: (view: "purchase" | "seeding") => void
 
-  // ZaloChatTab Props
-  chatMessages: any[]
-  onUpdateLeadBotStatus: (botActive: boolean) => void
 
   // Dealer Bidding Props
   biddingHistory?: any[]
@@ -120,8 +116,7 @@ export function LeadDetailPanel({
   renamingLead,
   activeWorkflowView,
   onWorkflowViewChange,
-  chatMessages,
-  onUpdateLeadBotStatus,
+
   // Dealer Bidding
   biddingHistory,
   onUpdateBid,
@@ -474,19 +469,7 @@ export function LeadDetailPanel({
                 )}
               </div>
             </button>
-            <button
-              type="button"
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "zalo-chat"
-                ? "text-blue-600 border-blue-600"
-                : "text-gray-500 border-transparent hover:text-gray-700"
-                }`}
-              onClick={() => onActiveDetailViewChange("zalo-chat")}
-            >
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4" />
-                Zalo Chat
-              </div>
-            </button>
+
             <button
               type="button"
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "recent-activity"
@@ -497,7 +480,7 @@ export function LeadDetailPanel({
             >
               <div className="flex items-center gap-2">
                 <Clock className="h-4 w-4" />
-                Hoạt động gần đây
+                Hoạt động trên website
               </div>
             </button>
             <button
@@ -525,7 +508,6 @@ export function LeadDetailPanel({
               onWorkflowViewChange={onWorkflowViewChange}
               onSendFirstMessage={() => onSendFirstMessage("Hello")}
               sendingMessage={sendingMessage}
-              onViewZaloChat={() => onActiveDetailViewChange("zalo-chat")}
               onViewBiddingHistory={onViewBiddingHistory}
               onCreateSession={onCreateSession}
               creatingSession={creatingSession}
@@ -550,17 +532,6 @@ export function LeadDetailPanel({
           </div>
         )}
 
-        {activeDetailView === "zalo-chat" && (
-          <div className="flex-1 flex flex-col h-[calc(100vh-250px)]">
-            <ZaloChatTab
-              selectedLead={selectedLead}
-              chatMessages={chatMessages}
-              selectedAccount={selectedAccount || ""}
-              onUpdateLeadBotStatus={onUpdateLeadBotStatus}
-              onOpenCreateThread={onOpenCreateThread}
-            />
-          </div>
-        )}
 
         {activeDetailView === "decoy-web" && (
           <div className="h-[calc(100vh-250px)]">

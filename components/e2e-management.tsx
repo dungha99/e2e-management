@@ -176,7 +176,7 @@ export function E2EManagement() {
   const [mobileView, setMobileView] = useState<"list" | "detail">("list")
 
   // Detail view tab state
-  const [activeDetailView, setActiveDetailView] = useState<"workflow" | "decoy-web" | "zalo-chat" | "recent-activity" | "decoy-history">("workflow")
+  const [activeDetailView, setActiveDetailView] = useState<"workflow" | "decoy-web" | "recent-activity" | "decoy-history">("workflow")
 
   // Workflow 2 activation state
   const [workflow2Open, setWorkflow2Open] = useState(false)

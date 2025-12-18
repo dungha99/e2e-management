@@ -1,6 +1,7 @@
 "use client"
 
-import { useRef, useEffect, useState } from "react"
+import { useRef, useEffect, useState, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { AccountStatusPanel } from "@/components/account-status-panel"
 import { CampaignCreationPanel } from "@/components/campaign-creation-panel"
 import { CampaignHistory } from "@/components/campaign-history"
@@ -11,7 +12,9 @@ import { PasskeyGate } from "@/components/passkey-gate"
 import { Toaster } from "@/components/ui/toaster"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
-export default function DecoyCampaignManager() {
+function DecoyCampaignManagerContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const accountStatusRef = useRef<{ refresh: () => void }>(null)
   const campaignHistoryRef = useRef<{ refresh: () => void }>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -41,6 +44,28 @@ export default function DecoyCampaignManager() {
     setShowOnboarding(true)
   }
 
+  function handleTabChange(value: string) {
+    if (value === "e2e") {
+      // When E2E tab is selected, redirect to dedicated E2E route
+      const selectedAccount = localStorage.getItem('e2e-selectedAccount')
+      if (selectedAccount) {
+        // Preserve any existing URL params or use defaults
+        const tab = searchParams.get("tab") || "priority"
+        const page = searchParams.get("page") || "1"
+        router.push(`/e2e/${selectedAccount}?tab=${tab}&page=${page}`)
+      } else {
+        // If no account selected, still navigate but let the page handle showing account selector
+        router.push('/e2e/placeholder?tab=priority&page=1')
+      }
+    } else if (value === "dashboard") {
+      // Navigate to root without tab param (default)
+      router.push('/')
+    } else {
+      // For other tabs (campaigns), update URL with tab param
+      router.push(`/?tab=${value}`)
+    }
+  }
+
   if (isCheckingAuth) {
     return null // or a loading spinner
   }
@@ -49,10 +74,13 @@ export default function DecoyCampaignManager() {
     return <PasskeyGate onAuthenticated={() => setIsAuthenticated(true)} />
   }
 
+  // Read tab from URL or default to dashboard
+  const currentTab = searchParams.get("tab") || "dashboard"
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <main className="container mx-auto px-8 py-8 flex-1">
-        <Tabs defaultValue="e2e" className="w-full">
+        <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
           <div className="flex items-center justify-between mb-6">
             <TabsList>
               <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
@@ -111,5 +139,13 @@ export default function DecoyCampaignManager() {
       <OnboardingModal open={showOnboarding} onOpenChange={setShowOnboarding} />
       <Toaster />
     </div>
+  )
+}
+
+export default function DecoyCampaignManager() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+      <DecoyCampaignManagerContent />
+    </Suspense>
   )
 }

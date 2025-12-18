@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server"
-import { tempInspectionQuery } from "@/lib/db"
 
 export async function POST(request: Request) {
   try {
@@ -10,36 +9,39 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "car_id and is_primary are required" }, { status: 400 })
     }
 
-    // Check if record exists
-    const existingResult = await tempInspectionQuery(
-      `SELECT id FROM "primary" WHERE car_id = $1 LIMIT 1`,
-      [car_id]
-    )
+    // Call external VuCar API to update is_hot_lead in sale_status
+    const apiResponse = await fetch("https://api.vucar.vn/sale-status/upsert", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-secret": process.env.VUCAR_API_SECRET || "",
+      },
+      body: JSON.stringify({
+        carId: car_id,
+        isHotLead: is_primary,
+      }),
+    })
 
-    if (existingResult.rows.length > 0) {
-      // Update existing record
-      await tempInspectionQuery(
-        `UPDATE "primary" SET is_primary = $1 WHERE car_id = $2`,
-        [is_primary, car_id]
-      )
-    } else {
-      // Insert new record
-      await tempInspectionQuery(
-        `INSERT INTO "primary" (car_id, is_primary) VALUES ($1, $2)`,
-        [car_id, is_primary]
-      )
+    if (!apiResponse.ok) {
+      const errorText = await apiResponse.text()
+      console.error("[E2E Update Primary] API error:", apiResponse.status, errorText)
+      throw new Error(`VuCar API error: ${apiResponse.status}`)
     }
+
+    const apiData = await apiResponse.json()
 
     return NextResponse.json({
       success: true,
       car_id,
-      is_primary
+      is_primary,
+      apiResponse: apiData,
     })
   } catch (error) {
     console.error("[E2E Update Primary] Error updating primary status:", error)
     return NextResponse.json({
       success: false,
-      error: "Failed to update primary status"
+      error: "Failed to update primary status",
+      details: error instanceof Error ? error.message : "Unknown error",
     }, { status: 500 })
   }
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 
-const VUCAR_API_SECRET = "vucar-rest-api-secret-2025-f8a3c9d1e4b6"
+const VUCAR_API_SECRET = process.env.VUCAR_API_SECRET || ""
 const VUCAR_API_BASE_URL = "https://api.vucar.vn"
 
 interface LogActivityRequest {

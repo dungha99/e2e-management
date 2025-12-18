@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Loader2, Activity, ChevronLeft, ChevronRight, CheckCircle2, Zap, User, Clock, FileEdit, ArrowRight } from "lucide-react"
+import { Loader2, Activity, ChevronLeft, ChevronRight, CheckCircle2, Zap, User, Clock, FileEdit, ArrowRight, Sparkles } from "lucide-react"
 
 interface SaleActivity {
     id: string
@@ -55,6 +55,15 @@ const FIELD_LABELS: Record<string, string> = {
 
 // Get icon and color based on activity type
 const getActivityStyle = (type: string) => {
+    if (type.includes('DECOY')) {
+        return {
+            icon: Sparkles,
+            bgColor: 'bg-violet-50',
+            iconColor: 'text-violet-500',
+            borderColor: 'border-l-violet-400',
+            dotColor: 'bg-violet-500'  // Violet dot for decoy activities
+        }
+    }
     if (type.includes('AUCTION') || type.includes('CREATED')) {
         return {
             icon: Zap,
@@ -154,6 +163,27 @@ export function SaleActivitiesTab({ phone, refreshKey }: SaleActivitiesTabProps)
         if (typeof v === 'number') return v.toLocaleString('vi-VN')
         if (typeof v === 'boolean') return v ? 'Có' : 'Không'
         return String(v)
+    }
+
+    // Truncated text component for long content
+    const TruncatedText = ({ text, maxLength = 150 }: { text: string; maxLength?: number }) => {
+        const [isExpanded, setIsExpanded] = useState(false)
+
+        if (!text || text.length <= maxLength) {
+            return <span>{text}</span>
+        }
+
+        return (
+            <span>
+                {isExpanded ? text : `${text.slice(0, maxLength)}...`}
+                <button
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    className="ml-1 text-blue-600 hover:text-blue-800 font-medium focus:outline-none"
+                >
+                    {isExpanded ? 'Thu gọn' : 'Xem thêm'}
+                </button>
+            </span>
+        )
     }
 
     if (loading) {
@@ -265,7 +295,7 @@ export function SaleActivitiesTab({ phone, refreshKey }: SaleActivitiesTabProps)
                                     {/* Note content - show directly without label */}
                                     {(meta.note_content || meta.noteContent || meta.content) && (
                                         <div className="bg-amber-50 rounded-md p-2.5 text-xs text-gray-800">
-                                            {meta.note_content || meta.noteContent || meta.content}
+                                            <TruncatedText text={meta.note_content || meta.noteContent || meta.content} maxLength={150} />
                                         </div>
                                     )}
 
@@ -283,9 +313,14 @@ export function SaleActivitiesTab({ phone, refreshKey }: SaleActivitiesTabProps)
                                                         'changed_reason', 'changedReason', 'old', 'new', 'reason',
                                                         'note_content', 'noteContent', 'content'].includes(k)
                                                 ).map(([key, value]) => (
-                                                    <div key={key} className="flex items-center gap-2 text-xs">
-                                                        <span className="text-gray-500">{getFieldLabel(key)}:</span>
-                                                        <span className="font-medium text-gray-800">{formatValue(value)}</span>
+                                                    <div key={key} className="text-xs">
+                                                        <span className="text-gray-500">{getFieldLabel(key)}: </span>
+                                                        <span className="font-medium text-gray-800">
+                                                            {typeof value === 'string' && value.length > 150
+                                                                ? <TruncatedText text={value} maxLength={150} />
+                                                                : formatValue(value)
+                                                            }
+                                                        </span>
                                                     </div>
                                                 ))}
                                             </div>

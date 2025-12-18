@@ -3,9 +3,8 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, ChevronRight, Check, X, Car, User, Phone, FileText, Pencil } from "lucide-react"
+import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, ChevronRight, Check, X, Car, User, Phone } from "lucide-react"
 import { Lead, BiddingHistory } from "../types"
 import { formatPrice } from "../utils"
 import { maskPhone } from "@/lib/utils"
@@ -68,9 +67,6 @@ interface WorkflowTrackerTabProps {
   biddingHistory?: BiddingHistory[]
   onUpdateBid?: (bidId: string, newPrice: number) => Promise<void>
   loadingBiddingHistory?: boolean
-
-  // Notes editing
-  onUpdateNotes?: (notes: string) => Promise<void>
 }
 
 export function WorkflowTrackerTab({
@@ -91,18 +87,14 @@ export function WorkflowTrackerTab({
   onOpenDecoyDialog,
   biddingHistory = [],
   onUpdateBid,
-  loadingBiddingHistory = false,
-  onUpdateNotes
+  loadingBiddingHistory = false
 }: WorkflowTrackerTabProps) {
   // Local state for inline editing
   const [editingBidId, setEditingBidId] = useState<string | null>(null)
   const [editingPrice, setEditingPrice] = useState("")
   const [savingBid, setSavingBid] = useState(false)
 
-  // Notes editing state
-  const [isEditingNotes, setIsEditingNotes] = useState(false)
-  const [editedNotes, setEditedNotes] = useState("")
-  const [savingNotes, setSavingNotes] = useState(false)
+
 
   // Get top 5 bids sorted by price (descending)
   const topBids = [...biddingHistory]
@@ -136,37 +128,15 @@ export function WorkflowTrackerTab({
     }
   }
 
-  // Notes editing handlers
-  const handleStartEditNotes = () => {
-    setEditedNotes(selectedLead.notes || "")
-    setIsEditingNotes(true)
-  }
 
-  const handleCancelEditNotes = () => {
-    setIsEditingNotes(false)
-    setEditedNotes("")
-  }
-
-  const handleSaveNotes = async () => {
-    if (!onUpdateNotes) return
-
-    setSavingNotes(true)
-    try {
-      await onUpdateNotes(editedNotes)
-      setIsEditingNotes(false)
-      setEditedNotes("")
-    } finally {
-      setSavingNotes(false)
-    }
-  }
 
   return (
     <>
       {/* Workflow Tracker */}
-      <div className="bg-white rounded-lg p-8 shadow-sm">
+      <div className="bg-white rounded-lg p-5 shadow-sm">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
-            <h3 className="text-lg font-semibold text-gray-900">Tiến độ quy trình</h3>
+            <h3 className="text-sm font-semibold text-gray-900">Tiến độ quy trình</h3>
             {(selectedLead.bidding_session_count || 0) > 0 && (
               <div className="flex items-center gap-2 ml-4">
                 <span className="text-sm text-gray-600">Đang xem:</span>
@@ -330,212 +300,191 @@ export function WorkflowTrackerTab({
       </div>
 
       {/* Additional Info Cards */}
-      <div className="grid grid-cols-2 gap-6 mt-6">
-        {/* Notes Section */}
-        <div className="bg-white rounded-lg p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-              <FileText className="h-4 w-4 text-blue-600" />
-              Ghi chú
-            </h4>
-            {!isEditingNotes && onUpdateNotes && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-gray-500 hover:text-blue-600"
-                onClick={handleStartEditNotes}
-              >
-                <Pencil className="h-3.5 w-3.5 mr-1" />
-                Sửa
-              </Button>
-            )}
+      <div className="mt-6">
+        {/* Price Info - Minimal Style with Subtle Decorations */}
+        <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-medium text-gray-900">Thông tin giá & Thống kê</h4>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onViewBiddingHistory}
+              disabled={!selectedLead.car_id}
+              className="text-xs text-gray-500 hover:text-gray-700 h-6 px-2"
+            >
+              Xem chi tiết →
+            </Button>
           </div>
 
-          {isEditingNotes ? (
-            <div className="space-y-3">
-              <Textarea
-                value={editedNotes}
-                onChange={(e) => setEditedNotes(e.target.value)}
-                placeholder="Nhập ghi chú..."
-                className="min-h-[120px] text-sm resize-none"
-                autoFocus
-              />
-              <div className="flex items-center justify-end gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCancelEditNotes}
-                  disabled={savingNotes}
-                  className="h-8"
-                >
-                  <X className="h-3.5 w-3.5 mr-1" />
-                  Hủy
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={handleSaveNotes}
-                  disabled={savingNotes}
-                  className="h-8 bg-blue-600 hover:bg-blue-700"
-                >
-                  {savingNotes ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                      Đang lưu...
-                    </>
-                  ) : (
-                    <>
-                      <Check className="h-3.5 w-3.5 mr-1" />
-                      Lưu
-                    </>
-                  )}
-                </Button>
+          {/* Stats Row - Minimal with icons */}
+          <div className="grid grid-cols-4 gap-4 mb-5 pb-5 border-b border-gray-100">
+            <div>
+              <div className="flex items-center gap-1.5 mb-1">
+                <User className="h-3 w-3 text-gray-400" />
+                <p className="text-xs text-gray-400">Đã gửi</p>
               </div>
+              <p className="text-xl font-semibold text-gray-900">{biddingHistory.length}</p>
+              <p className="text-[10px] text-gray-400">dealers</p>
             </div>
-          ) : (
-            <div className="min-h-[80px]">
-              {selectedLead.notes ? (
-                <p className="text-sm text-gray-900 whitespace-pre-wrap">{selectedLead.notes}</p>
-              ) : (
-                <p className="text-sm text-gray-400 italic">Chưa có ghi chú</p>
-              )}
+            <div>
+              <div className="flex items-center gap-1.5 mb-1">
+                <Zap className="h-3 w-3 text-gray-400" />
+                <p className="text-xs text-gray-400">Tỷ lệ phản hồi</p>
+              </div>
+              <p className="text-xl font-semibold text-gray-900">
+                {biddingHistory.length > 0
+                  ? `${Math.round((topBids.length / biddingHistory.length) * 100)}%`
+                  : "—"}
+              </p>
+              <p className="text-[10px] text-gray-400">{topBids.length}/{biddingHistory.length} có giá</p>
             </div>
-          )}
-        </div>
-
-        {/* Price Info - Enhanced */}
-        <div className="bg-white rounded-lg p-6 shadow-sm">
-          <h4 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
-            <DollarSign className="h-4 w-4 text-emerald-600" />
-            Thông tin giá
-          </h4>
-
-          {/* Main Price Info Grid */}
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div className="bg-emerald-50 rounded-lg p-3">
-              <p className="text-xs text-gray-500 mb-1">Giá khách mong muốn</p>
-              <p className="text-lg font-bold text-emerald-600">
-                {selectedLead.price_customer ? formatPrice(selectedLead.price_customer) : "N/A"}
+            <div>
+              <div className="flex items-center gap-1.5 mb-1">
+                <DollarSign className="h-3 w-3 text-emerald-500" />
+                <p className="text-xs text-gray-400">Giá khách</p>
+              </div>
+              <p className="text-xl font-semibold text-emerald-700">
+                {selectedLead.price_customer ? formatPrice(selectedLead.price_customer) : "—"}
               </p>
             </div>
-            <div className="bg-blue-50 rounded-lg p-3">
-              <p className="text-xs text-gray-500 mb-1">Giá cao nhất (Dealer)</p>
-              <div className="flex items-center gap-2">
-                <p className="text-lg font-bold text-blue-600">
-                  {selectedLead.dealer_bidding?.maxPrice ? formatPrice(selectedLead.dealer_bidding.maxPrice) : "N/A"}
+            <div>
+              <div className="flex items-center gap-1.5 mb-1">
+                <DollarSign className="h-3 w-3 text-blue-500" />
+                <p className="text-xs text-gray-400">Giá cao nhất</p>
+              </div>
+              <div className="flex items-center gap-1">
+                <p className="text-xl font-semibold text-blue-700">
+                  {selectedLead.dealer_bidding?.maxPrice ? formatPrice(selectedLead.dealer_bidding.maxPrice) : "—"}
                 </p>
                 {selectedLead.dealer_bidding?.status === "got_price" &&
                   selectedLead.price_customer &&
                   selectedLead.dealer_bidding?.maxPrice &&
                   selectedLead.dealer_bidding.maxPrice > selectedLead.price_customer && (
-                    <Badge variant="destructive" className="text-xs">Override</Badge>
+                    <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1 rounded">↑</span>
                   )}
               </div>
             </div>
           </div>
 
-          {/* Dealer Bidding Details */}
-          <div className="border-t pt-4">
-            <div className="flex items-center justify-between mb-3">
-              <h5 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                Chi tiết giá Dealer
+          {/* Two Column Layout */}
+          <div className="grid grid-cols-2 gap-6">
+            {/* Top Bids */}
+            <div>
+              <h5 className="text-xs font-medium text-gray-500 mb-3 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
+                Top Dealer Bids
               </h5>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onViewBiddingHistory}
-                disabled={!selectedLead.car_id}
-                className="text-xs text-blue-600 hover:text-blue-700 h-6 px-2"
-              >
-                Xem tất cả
-                <ChevronRight className="h-3 w-3 ml-1" />
-              </Button>
+              {loadingBiddingHistory ? (
+                <div className="flex items-center py-4 text-gray-400">
+                  <Loader2 className="h-3 w-3 animate-spin mr-2" />
+                  <span className="text-xs">Loading...</span>
+                </div>
+              ) : topBids.length === 0 ? (
+                <p className="text-xs text-gray-400 py-2">Chưa có giá</p>
+              ) : (
+                <div className="space-y-0.5">
+                  {topBids.map((bid, index) => (
+                    <div
+                      key={bid.id}
+                      className={`flex items-center justify-between py-1.5 px-2 rounded group transition-colors ${index === 0 ? "bg-blue-50/50" : "hover:bg-gray-50"
+                        }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] w-4 h-4 flex items-center justify-center rounded-full ${index === 0 ? "bg-blue-100 text-blue-600 font-medium" : "text-gray-400"
+                          }`}>
+                          {index + 1}
+                        </span>
+                        <span className="text-xs text-gray-700 truncate max-w-[100px]">{bid.dealer_name}</span>
+                      </div>
+                      {editingBidId === bid.id ? (
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="text"
+                            value={editingPrice}
+                            onChange={(e) => setEditingPrice(e.target.value)}
+                            className="h-5 w-16 text-[10px] text-right border-gray-200"
+                            autoFocus
+                          />
+                          <button
+                            className="text-gray-400 hover:text-emerald-600 transition-colors"
+                            onClick={() => handleSaveEdit(bid.id)}
+                            disabled={savingBid}
+                          >
+                            {savingBid ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                          </button>
+                          <button
+                            className="text-gray-400 hover:text-red-500 transition-colors"
+                            onClick={handleCancelEdit}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <span className={`text-xs font-medium ${index === 0 ? "text-blue-600" : "text-gray-600"}`}>
+                            {formatPrice(bid.price)}
+                          </span>
+                          {onUpdateBid && (
+                            <button
+                              className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-gray-500 transition-all"
+                              onClick={() => handleStartEdit(bid)}
+                            >
+                              <span className="text-[10px]">✎</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {loadingBiddingHistory ? (
-              <div className="flex items-center justify-center py-4 text-gray-400">
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                <span className="text-xs">Đang tải...</span>
+            {/* Suggested Dealers */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <h5 className="text-xs font-medium text-gray-500 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>
+                  Đề xuất Dealer
+                </h5>
+                <span className="text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1">beta</span>
               </div>
-            ) : topBids.length === 0 ? (
-              <div className="text-center py-4 text-gray-400">
-                <p className="text-xs">Chưa có dealer nào trả giá</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onViewBiddingHistory}
-                  disabled={!selectedLead.car_id}
-                  className="mt-2 text-xs"
-                >
-                  Xem lịch sử giá
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {topBids.map((bid, index) => (
-                  <div
-                    key={bid.id}
-                    className={`flex items-center justify-between py-2 px-3 rounded-lg ${index === 0 ? "bg-blue-50 border border-blue-100" : "bg-gray-50"
-                      }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      {index === 0 && (
-                        <span className="text-xs font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">
-                          TOP
-                        </span>
-                      )}
-                      <span className="text-sm font-medium text-gray-900">{bid.dealer_name}</span>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between py-2 px-2.5 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors cursor-pointer group">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-medium text-gray-600 group-hover:bg-gray-300 transition-colors">A</div>
+                    <div>
+                      <p className="text-xs text-gray-700">Auto Dealer Hà Nội</p>
+                      <p className="text-[10px] text-gray-400">Thường mua dòng này</p>
                     </div>
-
-                    {editingBidId === bid.id ? (
-                      <div className="flex items-center gap-1">
-                        <Input
-                          type="text"
-                          value={editingPrice}
-                          onChange={(e) => setEditingPrice(e.target.value)}
-                          className="h-7 w-28 text-sm text-right"
-                          placeholder="Nhập giá"
-                          autoFocus
-                        />
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                          onClick={() => handleSaveEdit(bid.id)}
-                          disabled={savingBid}
-                        >
-                          {savingBid ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                          onClick={handleCancelEdit}
-                          disabled={savingBid}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 group">
-                        <span className={`text-sm font-semibold ${index === 0 ? "text-blue-600" : "text-gray-700"}`}>
-                          {formatPrice(bid.price)}
-                        </span>
-                        {onUpdateBid && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => handleStartEdit(bid)}
-                          >
-                            <span className="text-xs">✏️</span>
-                          </Button>
-                        )}
-                      </div>
-                    )}
                   </div>
-                ))}
+                  <span className="text-xs font-medium text-emerald-600">+5-10%</span>
+                </div>
+                <div className="flex items-center justify-between py-2 px-2.5 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors cursor-pointer group">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-medium text-gray-600 group-hover:bg-gray-300 transition-colors">B</div>
+                    <div>
+                      <p className="text-xs text-gray-700">Bình Minh Motors</p>
+                      <p className="text-[10px] text-gray-400">Đang tìm xe tương tự</p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-medium text-emerald-600">+3-8%</span>
+                </div>
+                <div className="flex items-center justify-between py-2 px-2.5 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors cursor-pointer group">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-medium text-gray-600 group-hover:bg-gray-300 transition-colors">C</div>
+                    <div>
+                      <p className="text-xs text-gray-700">Car Center Q7</p>
+                      <p className="text-[10px] text-gray-400">Mới hoạt động mạnh</p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-medium text-emerald-600">+2-5%</span>
+                </div>
               </div>
-            )}
+              <p className="text-[9px] text-gray-300 mt-2 italic">* Dựa trên lịch sử giao dịch</p>
+            </div>
           </div>
         </div>
       </div>

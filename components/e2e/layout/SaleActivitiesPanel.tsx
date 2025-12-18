@@ -4,12 +4,16 @@ import { useState } from "react"
 import { Lead } from "../types"
 import { SaleActivitiesTab } from "../tabs/SaleActivitiesTab"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { FileText, Pencil, Check, X, Loader2 } from "lucide-react"
 
 interface SaleActivitiesPanelProps {
     selectedLead: Lead | null
     isMobile: boolean
     mobileView: "list" | "detail"
     refreshKey?: number  // Increment to trigger refresh
+    onUpdateNotes?: (notes: string) => Promise<void>
 }
 
 export function SaleActivitiesPanel({
@@ -17,8 +21,38 @@ export function SaleActivitiesPanel({
     isMobile,
     mobileView,
     refreshKey,
+    onUpdateNotes,
 }: SaleActivitiesPanelProps) {
-    const [activeTab, setActiveTab] = useState<string>("summary")
+    const [activeTab, setActiveTab] = useState<string>("activities")
+
+    // Notes editing state
+    const [isEditingNotes, setIsEditingNotes] = useState(false)
+    const [editedNotes, setEditedNotes] = useState("")
+    const [savingNotes, setSavingNotes] = useState(false)
+
+    // Notes editing handlers
+    const handleStartEditNotes = () => {
+        setEditedNotes(selectedLead?.notes || "")
+        setIsEditingNotes(true)
+    }
+
+    const handleCancelEditNotes = () => {
+        setIsEditingNotes(false)
+        setEditedNotes("")
+    }
+
+    const handleSaveNotes = async () => {
+        if (!onUpdateNotes) return
+
+        setSavingNotes(true)
+        try {
+            await onUpdateNotes(editedNotes)
+            setIsEditingNotes(false)
+            setEditedNotes("")
+        } finally {
+            setSavingNotes(false)
+        }
+    }
 
     // Hide on mobile when in list view
     if (isMobile && mobileView === "list") {
@@ -34,6 +68,77 @@ export function SaleActivitiesPanel({
 
     return (
         <div className="w-80 flex-shrink-0 border-l border-gray-200 overflow-hidden flex flex-col">
+
+            {/* Notes Section - Above Tabs */}
+            <div className="bg-white border-b border-gray-200 p-3">
+                <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-blue-600" />
+                        Ghi chú
+                    </h4>
+                    {!isEditingNotes && onUpdateNotes && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-gray-500 hover:text-blue-600"
+                            onClick={handleStartEditNotes}
+                        >
+                            <Pencil className="h-3 w-3 mr-1" />
+                            Sửa
+                        </Button>
+                    )}
+                </div>
+
+                {isEditingNotes ? (
+                    <div className="space-y-2">
+                        <Textarea
+                            value={editedNotes}
+                            onChange={(e) => setEditedNotes(e.target.value)}
+                            placeholder="Nhập ghi chú..."
+                            className="min-h-[80px] max-h-[120px] text-sm resize-none"
+                            autoFocus
+                        />
+                        <div className="flex items-center justify-end gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleCancelEditNotes}
+                                disabled={savingNotes}
+                                className="h-7"
+                            >
+                                <X className="h-3 w-3 mr-1" />
+                                Hủy
+                            </Button>
+                            <Button
+                                size="sm"
+                                onClick={handleSaveNotes}
+                                disabled={savingNotes}
+                                className="h-7 bg-blue-600 hover:bg-blue-700"
+                            >
+                                {savingNotes ? (
+                                    <>
+                                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                        Đang lưu...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Check className="h-3 w-3 mr-1" />
+                                        Lưu
+                                    </>
+                                )}
+                            </Button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="max-h-[150px] overflow-y-auto">
+                        {selectedLead.notes ? (
+                            <p className="text-sm text-gray-900 whitespace-pre-wrap">{selectedLead.notes}</p>
+                        ) : (
+                            <p className="text-sm text-gray-400 italic">Chưa có ghi chú</p>
+                        )}
+                    </div>
+                )}
+            </div>
 
             {/* Tabs */}
             <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">

@@ -2,33 +2,37 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Loader2, MessageCircle } from "lucide-react"
+import { Loader2, MessageCircle, RefreshCw } from "lucide-react"
 import { Lead, DecoyThread } from "../types"
 
 interface DecoyWebTabProps {
   selectedLead: Lead | null
   onCreateThread?: () => void
+  refreshKey?: number  // Increment this to trigger a refresh
 }
 
 export function DecoyWebTab({
   selectedLead,
-  onCreateThread
+  onCreateThread,
+  refreshKey
 }: DecoyWebTabProps) {
   const [decoyWebThreads, setDecoyWebThreads] = useState<DecoyThread[]>([])
   const [selectedDecoyWebThreadId, setSelectedDecoyWebThreadId] = useState<string | null>(null)
   const [loadingDecoyWeb, setLoadingDecoyWeb] = useState(false)
 
-  // Fetch decoy web threads when lead changes
+  // Fetch decoy web threads when lead changes or refreshKey changes
   useEffect(() => {
+    console.log("[DecoyWebTab] useEffect triggered - leadId:", selectedLead?.id, "refreshKey:", refreshKey)
     if (selectedLead?.id) {
       fetchDecoyWebChat(selectedLead.id)
     } else {
       setDecoyWebThreads([])
       setSelectedDecoyWebThreadId(null)
     }
-  }, [selectedLead?.id])
+  }, [selectedLead?.id, refreshKey])
 
   async function fetchDecoyWebChat(leadId: string) {
+    console.log("[DecoyWebTab] Fetching decoy web chat for leadId:", leadId)
     setLoadingDecoyWeb(true)
     setDecoyWebThreads([])
     setSelectedDecoyWebThreadId(null)
@@ -45,6 +49,7 @@ export function DecoyWebTab({
       } else {
         const data = await response.json()
         const threads = data.threads || []
+        console.log("[DecoyWebTab] Fetched threads:", threads.length)
         setDecoyWebThreads(threads)
         if (threads.length > 0) {
           setSelectedDecoyWebThreadId(threads[0].id)
@@ -55,6 +60,13 @@ export function DecoyWebTab({
       setDecoyWebThreads([])
     } finally {
       setLoadingDecoyWeb(false)
+    }
+  }
+
+  // Manual refresh function
+  function handleRefresh() {
+    if (selectedLead?.id) {
+      fetchDecoyWebChat(selectedLead.id)
     }
   }
 
@@ -72,14 +84,23 @@ export function DecoyWebTab({
         {/* Left Panel - Thread List */}
         <div className="w-80 border-r overflow-y-auto flex flex-col">
           {/* Create Thread Button */}
-          <div className="p-3 border-b bg-gray-50">
+          <div className="p-3 border-b bg-gray-50 flex gap-2">
             <Button
               onClick={onCreateThread}
-              className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
               size="sm"
             >
               <MessageCircle className="h-4 w-4 mr-2" />
               Tạo thread mới
+            </Button>
+            <Button
+              onClick={handleRefresh}
+              variant="outline"
+              size="sm"
+              disabled={loadingDecoyWeb}
+              title="Làm mới danh sách"
+            >
+              <RefreshCw className={`h-4 w-4 ${loadingDecoyWeb ? 'animate-spin' : ''}`} />
             </Button>
           </div>
           <div className="flex-1 p-4 overflow-y-auto">
@@ -97,11 +118,10 @@ export function DecoyWebTab({
                   <button
                     key={thread.id}
                     onClick={() => setSelectedDecoyWebThreadId(thread.id)}
-                    className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                      selectedDecoyWebThreadId === thread.id
-                        ? "bg-orange-100 text-orange-900 border-orange-300"
-                        : "bg-muted/30 hover:bg-muted/50"
-                    }`}
+                    className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedDecoyWebThreadId === thread.id
+                      ? "bg-orange-100 text-orange-900 border-orange-300"
+                      : "bg-muted/30 hover:bg-muted/50"
+                      }`}
                   >
                     <div className="font-semibold text-sm mb-1">
                       Bot: {thread.bot_name || "Unknown"}
@@ -161,11 +181,10 @@ export function DecoyWebTab({
                         className={`flex ${isBot ? "justify-end" : "justify-start"}`}
                       >
                         <div
-                          className={`max-w-[70%] rounded-lg p-3 ${
-                            isBot
-                              ? "bg-orange-500 text-white"
-                              : "bg-gray-200 text-gray-900"
-                          }`}
+                          className={`max-w-[70%] rounded-lg p-3 ${isBot
+                            ? "bg-orange-500 text-white"
+                            : "bg-gray-200 text-gray-900"
+                            }`}
                         >
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-xs font-semibold">

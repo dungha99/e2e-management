@@ -121,6 +121,9 @@ export function E2EManagement() {
   // Sale Activities refresh key - increment to trigger refresh
   const [activitiesRefreshKey, setActivitiesRefreshKey] = useState(0)
 
+  // Decoy Web refresh key - increment to trigger refresh after creating thread
+  const [decoyWebRefreshKey, setDecoyWebRefreshKey] = useState(0)
+
 
   // Bidding history state
   const [biddingHistoryOpen, setBiddingHistoryOpen] = useState(false)
@@ -980,6 +983,12 @@ export function E2EManagement() {
           await handleSendZns(selectedLead.phone)
         }
 
+        // Trigger Decoy Web Tab refresh
+        console.log("[handleCreateThread] Triggering decoyWebRefreshKey increment")
+        setDecoyWebRefreshKey(prev => {
+          console.log("[handleCreateThread] decoyWebRefreshKey will change from", prev, "to", prev + 1)
+          return prev + 1
+        })
 
         // Close create modal and reset input
         setCreateThreadOpen(false)
@@ -2443,11 +2452,6 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
           onRenameLead={handleRenameLead}
           renamingLead={renamingLead}
 
-          chatMessages={[]}
-          onUpdateLeadBotStatus={(active) => {
-            if (selectedLead) handleBotToggle(selectedLead, active)
-          }}
-
           // Dealer Bidding Props
           biddingHistory={biddingHistory}
           onUpdateBid={handleUpdateBidPriceInline}
@@ -2456,8 +2460,8 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
           // Notes editing
           onUpdateNotes={handleUpdateNotesInline}
 
-          // Activities refresh
-          onActivitiesRefresh={() => setActivitiesRefreshKey(prev => prev + 1)}
+          // Decoy Web refresh
+          decoyWebRefreshKey={decoyWebRefreshKey}
         />
 
         {/* Sale Activities Panel - Right Side */}
@@ -2466,6 +2470,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
           isMobile={isMobile}
           mobileView={mobileView}
           refreshKey={activitiesRefreshKey}
+          onUpdateNotes={handleUpdateNotesInline}
         />
       </div>
 

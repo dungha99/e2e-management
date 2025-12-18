@@ -79,6 +79,9 @@ interface LeadDetailPanelProps {
 
   // Notes editing
   onUpdateNotes?: (notes: string) => Promise<void>
+
+  // Decoy Web refresh
+  decoyWebRefreshKey?: number
 }
 
 export function LeadDetailPanel({
@@ -122,8 +125,13 @@ export function LeadDetailPanel({
   onUpdateBid,
   loadingBiddingHistory,
   // Notes editing
-  onUpdateNotes
+  onUpdateNotes,
+  // Decoy Web refresh
+  decoyWebRefreshKey
 }: LeadDetailPanelProps) {
+  // Debug log to track refreshKey
+  console.log("[LeadDetailPanel] decoyWebRefreshKey:", decoyWebRefreshKey, "activeDetailView:", activeDetailView)
+
   // Gallery state
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
@@ -538,6 +546,7 @@ export function LeadDetailPanel({
             <DecoyWebTab
               selectedLead={selectedLead}
               onCreateThread={onOpenCreateThread}
+              refreshKey={decoyWebRefreshKey}
             />
           </div>
         )}

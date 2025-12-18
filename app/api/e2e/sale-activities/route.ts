@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getCached } from "@/lib/cache"
 
-const VUCAR_API_SECRET = "vucar-rest-api-secret-2025-f8a3c9d1e4b6"
+const VUCAR_API_SECRET = process.env.VUCAR_API_SECRET || ""
 
 export async function GET(request: Request) {
     try {

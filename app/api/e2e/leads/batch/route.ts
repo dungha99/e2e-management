@@ -1,25 +1,32 @@
 import { NextResponse } from "next/server"
-import { vucarV2Query, tempInspectionQuery, query } from "@/lib/db"
+import { vucarV2Query } from "@/lib/db"
 import { getCached } from "@/lib/cache"
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { uid, page = 1, per_page = 10 } = body
+    const { uid, page = 1, per_page = 10, tab = "priority", search = "", sources = [], refreshKey = 0 } = body
 
     if (!uid) {
       return NextResponse.json({ error: "UID is required" }, { status: 400 })
     }
 
+    // Validate tab parameter
+    if (!["priority", "nurture"].includes(tab)) {
+      return NextResponse.json({ error: "Invalid tab parameter. Must be 'priority' or 'nurture'" }, { status: 400 })
+    }
+
     const offset = (page - 1) * per_page
 
-    // Cache key includes uid and pagination params
-    const cacheKey = `leads-batch:${uid}:p${page}:pp${per_page}`
+    // Cache key includes uid, tab, pagination params, search, sources, AND refreshKey
+    const sourcesKey = sources.length > 0 ? sources.sort().join(",") : "all"
+    const searchKey = search ? `s:${search}` : "nosearch"
+    const cacheKey = `leads-batch:${uid}:${tab}:p${page}:pp${per_page}:${searchKey}:src:${sourcesKey}:rk:${refreshKey}`
 
     const result = await getCached(
       cacheKey,
       async () => {
-        return await fetchBatchData(uid, page, per_page, offset)
+        return await fetchBatchData(uid, tab, page, per_page, offset, search, sources)
       },
       30 // Cache for 30 seconds - lead data changes frequently
     )
@@ -34,53 +41,88 @@ export async function POST(request: Request) {
   }
 }
 
-async function fetchBatchData(uid: string, page: number, per_page: number, offset: number) {
+async function fetchBatchData(
+  uid: string,
+  tab: string,
+  page: number,
+  per_page: number,
+  offset: number,
+  search: string,
+  sources: string[]
+) {
+  // Build WHERE condition based on tab
+  const tabCondition = tab === "priority"
+    ? "AND ss.is_hot_lead = true"
+    : "AND (ss.is_hot_lead IS NULL OR ss.is_hot_lead = false)"
 
-  // Single optimized query to get all leads with related data
+  // Build search condition for phone
+  const searchCondition = search
+    ? `AND (l.phone LIKE '%${search}%' OR l.additional_phone LIKE '%${search}%')`
+    : ""
+
+  // Build source filter condition
+  const sourceCondition = sources.length > 0
+    ? `AND l.source = ANY(ARRAY[${sources.map(s => `'${s}'`).join(",")}])`
+    : ""
+
+  // Highly optimized query:
+  // 1. Rank with minimal data
+  // 2. Filter distinct phones (rn = 1)
+  // 3. Sort and paginate once
+  // 4. Enrich only the paginated subset
   const leadsResult = await vucarV2Query(
-    `WITH lead_cars AS (
-        SELECT DISTINCT ON (l.phone)
+    `WITH rank_base AS (
+        SELECT
           l.id as lead_id,
-          l.name,
           l.phone,
-          l.additional_phone,
-          l.identify_number,
-          l.bank_account_number,
-          l.otp_verified,
           l.created_at,
-          l.pic_id,
-          l.pic_og,
-          l.source,
-          l.url,
-          l.qx_qc_scoring,
-          l.customer_feedback,
-          l.is_referral,
           c.id as car_id,
-          c.plate,
-          c.brand,
-          c.model,
-          c.variant,
-          c.year,
-          c.mileage,
-          c.sku,
-          c.location,
-          c.additional_images
+          ROW_NUMBER() OVER (
+            PARTITION BY l.phone
+            ORDER BY l.created_at DESC, c.created_at DESC NULLS LAST
+          ) as rn
         FROM leads l
         LEFT JOIN cars c ON c.lead_id = l.id
-        WHERE l.pic_id = $1::uuid
           AND (c.updated_at IS NULL OR c.updated_at > NOW() - INTERVAL '2 months')
-        ORDER BY l.phone, l.created_at DESC, c.created_at DESC NULLS LAST
-      ),
-      total_count AS (
-        SELECT COUNT(*) as total FROM lead_cars
+        LEFT JOIN sale_status ss ON ss.car_id = c.id
+        WHERE l.pic_id = $1::uuid
+          ${tabCondition}
+          ${searchCondition}
+          ${sourceCondition}
       ),
       paginated_leads AS (
-        SELECT * FROM lead_cars
-        ORDER BY created_at DESC
+        SELECT lead_id, car_id, created_at, phone
+        FROM rank_base
+        WHERE rn = 1
+        ORDER BY created_at DESC, phone
         LIMIT $2 OFFSET $3
       )
       SELECT
-        pl.*,
+        l.id as lead_id,
+        l.name,
+        l.phone,
+        l.additional_phone,
+        l.identify_number,
+        l.bank_account_number,
+        l.otp_verified,
+        l.created_at,
+        l.pic_id,
+        l.pic_og,
+        l.source,
+        l.url,
+        l.qx_qc_scoring,
+        l.customer_feedback,
+        l.is_referral,
+        c.id as car_id,
+        c.plate,
+        c.brand,
+        c.model,
+        c.variant,
+        c.year,
+        c.mileage,
+        c.sku,
+        c.location,
+        c.additional_images,
         u.user_name as pic_name,
         ss.id as sale_status_id,
         ss.price_customer,
@@ -89,65 +131,29 @@ async function fetchBatchData(uid: string, page: number, per_page: number, offse
         ss.stage,
         ss.notes,
         ss.messages_zalo,
-        (SELECT total FROM total_count) as total_count
+        ss.is_hot_lead
       FROM paginated_leads pl
-      LEFT JOIN users u ON pl.pic_id = u.id
+      JOIN leads l ON l.id = pl.lead_id
+      LEFT JOIN cars c ON c.id = pl.car_id
       LEFT JOIN sale_status ss ON ss.car_id = pl.car_id
+      LEFT JOIN users u ON l.pic_id = u.id
       ORDER BY pl.created_at DESC`,
     [uid, per_page, offset]
   )
 
   const leads = leadsResult.rows
-  const totalCount = leads.length > 0 ? parseInt(leads[0].total_count) : 0
-  const totalPages = Math.ceil(totalCount / per_page)
 
   // Extract car IDs and lead IDs for batch queries
   const carIds = leads.filter((l) => l.car_id).map((l) => l.car_id)
   const leadIds = leads.map((l) => l.lead_id)
+  const phones = leads.map((l) => l.phone).filter(Boolean)
 
-  // Batch query for primary status (different database)
-  let primaryStatuses: Record<string, boolean> = {}
-  if (carIds.length > 0) {
-    const primaryResult = await tempInspectionQuery(
-      `SELECT car_id, is_primary FROM "primary" WHERE car_id = ANY($1::uuid[])`,
-      [carIds]
-    )
-    primaryStatuses = Object.fromEntries(
-      primaryResult.rows.map((row) => [row.car_id, row.is_primary])
-    )
-  }
-
-  // Batch query for dealer biddings
-  let dealerBiddings: Record<string, any[]> = {}
-  if (carIds.length > 0) {
-    const biddingsResult = await query(
-      `SELECT
-          db.car_id,
-          json_agg(
-            json_build_object(
-              'id', db.id,
-              'dealer_id', db.dealer_id,
-              'price', db.price,
-              'created_at', db.created_at,
-              'comment', db.comment
-            ) ORDER BY db.created_at DESC
-          ) as biddings
-        FROM dealer_biddings db
-        WHERE db.car_id = ANY($1::uuid[])
-        GROUP BY db.car_id`,
-      [carIds]
-    )
-    dealerBiddings = Object.fromEntries(
-      biddingsResult.rows.map((row) => [row.car_id, row.biddings || []])
-    )
-  }
-
-  // Batch query for decoy thread counts
-  let decoyThreadCounts: Record<string, number> = {}
-  if (leadIds.length > 0) {
-    const phones = leads.map((l) => l.phone).filter(Boolean)
-    if (phones.length > 0) {
-      const threadsResult = await vucarV2Query(
+  // Run CRM enrichment queries in parallel (fast queries only)
+  // Dealer biddings moved to separate endpoint for progressive loading
+  const [decoyThreadsResult, sessionsResult] = await Promise.all([
+    // Query 1: Decoy thread counts (CRM - fast)
+    leadIds.length > 0 && phones.length > 0
+      ? vucarV2Query(
         `SELECT
             l.id as lead_id,
             COUNT(DISTINCT ct.id) as thread_count
@@ -158,33 +164,36 @@ async function fetchBatchData(uid: string, page: number, per_page: number, offse
           GROUP BY l.id`,
         [leadIds]
       )
-      decoyThreadCounts = Object.fromEntries(
-        threadsResult.rows.map((row) => [row.lead_id, parseInt(row.thread_count) || 0])
-      )
-    }
-  }
+      : Promise.resolve({ rows: [] }),
 
-  // Batch query for bidding session counts and workflow2 status
-  let biddingSessionCounts: Record<string, number> = {}
-  let workflow2Status: Record<string, boolean | null> = {}
-  if (carIds.length > 0) {
-    const sessionsResult = await vucarV2Query(
-      `SELECT
-          car_auction_id as car_id,
-          COUNT(*) as session_count,
-          MAX(is_active::int) as is_active
-        FROM campaigns
-        WHERE car_auction_id = ANY($1::uuid[])
-        GROUP BY car_auction_id`,
-      [carIds]
-    )
-    biddingSessionCounts = Object.fromEntries(
-      sessionsResult.rows.map((row) => [row.car_id, parseInt(row.session_count) || 0])
-    )
-    workflow2Status = Object.fromEntries(
-      sessionsResult.rows.map((row) => [row.car_id, row.is_active === 1 ? true : false])
-    )
-  }
+    // Query 2: Bidding sessions & workflow2 (CRM - fast)
+    carIds.length > 0
+      ? vucarV2Query(
+        `SELECT
+            car_auction_id as car_id,
+            COUNT(*) as session_count,
+            MAX(is_active::int) as is_active
+          FROM campaigns
+          WHERE car_auction_id = ANY($1::uuid[])
+          GROUP BY car_auction_id`,
+        [carIds]
+      )
+      : Promise.resolve({ rows: [] }),
+  ])
+
+  // Process results into lookup maps
+
+  const decoyThreadCounts = Object.fromEntries(
+    decoyThreadsResult.rows.map((row) => [row.lead_id, parseInt(row.thread_count) || 0])
+  )
+
+  const biddingSessionCounts = Object.fromEntries(
+    sessionsResult.rows.map((row) => [row.car_id, parseInt(row.session_count) || 0])
+  )
+
+  const workflow2Status = Object.fromEntries(
+    sessionsResult.rows.map((row) => [row.car_id, row.is_active === 1 ? true : false])
+  )
 
   // Transform and enrich leads data
   const enrichedLeads = leads.map((lead) => {
@@ -240,7 +249,16 @@ async function fetchBatchData(uid: string, page: number, per_page: number, offse
       has_enough_images: has_enough_images,
       workflow2_is_active: lead.car_id ? (workflow2Status[lead.car_id] ?? null) : null,
       additional_images: additionalImages,
-      is_primary: lead.car_id ? primaryStatuses[lead.car_id] || false : false,
+      is_primary: lead.is_hot_lead || false,
+      // Flatten sale_status fields to top level for easier access
+      price_customer: lead.price_customer,
+      bot_active: lead.bot_status || false,
+      price_highest_bid: lead.price_highest_bid,
+      stage: lead.stage || "UNDEFINED",
+      notes: lead.notes,
+      first_message_sent: first_message_sent,
+      session_created: session_created,
+      // Also keep nested sale_status for backwards compatibility
       sale_status: lead.sale_status_id
         ? {
           id: lead.sale_status_id,
@@ -253,9 +271,12 @@ async function fetchBatchData(uid: string, page: number, per_page: number, offse
           session_created: session_created,
         }
         : null,
-      dealer_bidding: lead.car_id ? dealerBiddings[lead.car_id] || [] : [],
       decoy_thread_count: decoyThreadCounts[lead.lead_id] || 0,
       bidding_session_count: lead.car_id ? biddingSessionCounts[lead.car_id] || 0 : 0,
+      // Add dealer_bidding default - will be enriched by frontend
+      dealer_bidding: lead.price_highest_bid
+        ? { status: "got_price" as const, maxPrice: lead.price_highest_bid }
+        : { status: "not_sent" as const },
     }
   })
 
@@ -264,8 +285,6 @@ async function fetchBatchData(uid: string, page: number, per_page: number, offse
     pagination: {
       current_page: page,
       per_page: per_page,
-      total_pages: totalPages,
-      total_leads: totalCount,
     },
   }
 }

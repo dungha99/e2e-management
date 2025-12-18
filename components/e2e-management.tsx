@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import { useIsMobile } from "@/components/ui/use-mobile"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,6 +22,11 @@ import { Calendar } from "@/components/ui/calendar"
 // Extracted component imports
 import { Lead, BiddingHistory, Dealer, ITEMS_PER_PAGE, DealerBiddingStatus } from "./e2e/types"
 import { useAccounts } from "@/contexts/AccountsContext"
+import {
+  useLeadsCounts, useLeads,
+  useDealerBiddings,
+  useLeadSources
+} from "@/hooks/use-leads"
 
 // Dialog components
 import { SendToDealerGroupsDialog } from "./e2e/dialogs/SendToDealerGroupsDialog"
@@ -80,25 +86,34 @@ function WorkflowStep({ icon, title, status, isCompleted, onClick }: {
   )
 }
 
-export function E2EManagement() {
+interface E2EManagementProps {
+  userId?: string
+  initialTab?: "priority" | "nurture"
+  initialPage?: number
+  initialSearch?: string
+  initialSources?: string[]
+}
+
+export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
   const { toast } = useToast()
   const { accounts: ACCOUNTS } = useAccounts()
-  // Initialize selectedAccount from localStorage to persist across page reloads
-  const [selectedAccount, setSelectedAccount] = useState<string>(() => {
+
+  // Phase 1: URL sync layer (non-breaking)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+
+  // Use userId from props (URL param) or fallback to localStorage for backwards compatibility
+  const selectedAccount = propUserId || (() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('e2e-selectedAccount') || ""
     }
     return ""
-  })
-  const [leads, setLeads] = useState<Lead[]>([])
-  const [loading, setLoading] = useState(false)
+  })()
   const [callingBot, setCallingBot] = useState(false)
-  const [loadingCarIds, setLoadingCarIds] = useState(false)
-  const [leadToCreateBidding, setLeadToCreateBidding] = useState<Lead | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [currentPage, setCurrentPage] = useState(1)
+  const loadingCarIds = false // Replaced by React Query loading state
+
+  // Phase 2: Use URL as single source of truth - no duplicate state
   const [searchPhone, setSearchPhone] = useState<string>("")
-  const [appliedSearchPhone, setAppliedSearchPhone] = useState<string>("")
   const [editingBiddingId, setEditingBiddingId] = useState<string | null>(null)
   const [editingPrice, setEditingPrice] = useState<string>("")
   const [updatingBidding, setUpdatingBidding] = useState(false)
@@ -110,7 +125,6 @@ export function E2EManagement() {
 
   // Selected lead state
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
-  const [runningE2E, setRunningE2E] = useState(false)
 
   // Decoy Chat state removed (handled by component)
 
@@ -168,11 +182,92 @@ export function E2EManagement() {
   // Update primary status state
   const [updatingPrimary, setUpdatingPrimary] = useState(false)
 
-  // Filter tab state
-  const [activeTab, setActiveTab] = useState<"priority" | "nurture">("priority")
+  // Cache busting key for leads list
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  // Source filter state
-  const [sourceFilter, setSourceFilter] = useState<string[]>([])
+  // Phase 2: React Query hooks for data fetching (server-side)
+  // Read params directly from URL - URL is the single source of truth
+  const activeTab = (searchParams.get("tab") as "priority" | "nurture") || "priority"
+  const currentPage = parseInt(searchParams.get("page") || "1")
+  const appliedSearchPhone = searchParams.get("search") || ""
+  const sourceFilter = searchParams.get("sources")?.split(",").filter(Boolean) || []
+
+  const tab = activeTab
+  const page = currentPage
+  const search = appliedSearchPhone
+  const sources = sourceFilter
+
+  // Helper function to build URLs with proper path structure
+  const buildUrl = useCallback((queryParams: URLSearchParams): string => {
+    if (propUserId) {
+      // When userId is in path, use /e2e/[userId]?params structure
+      return `/e2e/${propUserId}?${queryParams.toString()}`
+    } else {
+      // Backwards compatibility: just query params
+      return `?${queryParams.toString()}`
+    }
+  }, [propUserId])
+
+  // Fetch counts with filters
+  const { data: countsData, isLoading: loadingCounts, refetch: refetchCounts } = useLeadsCounts({
+    uid: selectedAccount,
+    search,
+    sources,
+    refreshKey
+  })
+  const counts = countsData || { priority: 0, nurture: 0, total: 0 }
+
+  // Fetch leads with server-side filtering
+  const {
+    data: leadsData,
+    isLoading: loading,
+    refetch: refetchLeads,
+  } = useLeads({
+    uid: selectedAccount,
+    tab,
+    page,
+    per_page: ITEMS_PER_PAGE,
+    search,
+    sources,
+    refreshKey,
+  })
+
+  // Extract leads from response
+  const leads = leadsData?.leads || []
+
+  // Extract car IDs for dealer biddings (memoized to prevent unnecessary refetches)
+  const carIds = useMemo(() =>
+    leads.filter((l: Lead) => l.car_id).map((l: Lead) => l.car_id!),
+    [leads]
+  )
+
+  // Fetch dealer biddings in background (progressive loading)
+  const { data: dealerBiddingsMap } = useDealerBiddings({ car_ids: carIds })
+
+  // Fetch distinct lead sources for filtering
+  const { data: sourceData } = useLeadSources(selectedAccount)
+
+  // Enrich leads with dealer biddings
+  const enrichedLeads = useMemo(() => {
+    if (!dealerBiddingsMap) return leads
+
+    return leads.map((lead: Lead) => {
+      if (!lead.car_id || !dealerBiddingsMap[lead.car_id]) {
+        return lead
+      }
+
+      const biddings = dealerBiddingsMap[lead.car_id]
+      if (biddings.length > 0) {
+        const maxPrice = Math.max(...biddings.map((b: any) => b.price))
+        return {
+          ...lead,
+          dealer_bidding: { status: "got_price" as const, maxPrice },
+        }
+      }
+
+      return lead
+    })
+  }, [leads, dealerBiddingsMap])
 
   // Mobile view state
   const isMobile = useIsMobile()
@@ -235,12 +330,20 @@ export function E2EManagement() {
   const [loadingSummary, setLoadingSummary] = useState(false)
   const [summaryError, setSummaryError] = useState<string | null>(null)
 
-  // Persist selectedAccount to localStorage whenever it changes
-  useEffect(() => {
-    if (selectedAccount) {
-      localStorage.setItem('e2e-selectedAccount', selectedAccount)
+  // Handler for account changes - navigate to new user URL
+  const handleAccountChange = (newUserId: string) => {
+    if (propUserId) {
+      // When using URL-based routing, navigate to new user URL
+      router.push(`/e2e/${newUserId}?tab=priority&page=1`)
+    } else {
+      // Backwards compatibility: update localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('e2e-selectedAccount', newUserId)
+      }
+      // Force page reload to apply new account
+      window.location.reload()
     }
-  }, [selectedAccount])
+  }
 
   // Keyboard navigation for gallery
   useEffect(() => {
@@ -326,18 +429,8 @@ export function E2EManagement() {
     }
   }, [selectedLead?.additional_images]);
 
-  useEffect(() => {
-    if (selectedAccount) {
-      setCurrentPage(1) // Reset to first page when account changes
-      setSearchPhone("") // Clear search
-      setAppliedSearchPhone("") // Clear applied search
-      setActiveTab("priority") // Reset to priority tab
-      fetchLeads(selectedAccount)
-    }
-  }, [selectedAccount])
-
-  // No longer needed - batch endpoint returns all enriched data upfront
-  // Client-side pagination happens in the useMemo below (filteredLeads, currentPageLeads)
+  // Phase 2: React Query handles all data fetching and URL param changes automatically
+  // Account changes are handled by handleAccountChange which sets default URL params
 
   async function fetchMessagesZalo(car_id: string): Promise<boolean> {
     try {
@@ -755,15 +848,13 @@ export function E2EManagement() {
         return
       }
 
-      // Update the lead in state
-      setLeads((prevLeads) =>
-        prevLeads.map((l) => (l.id === lead.id ? { ...l, bot_active: newStatus } : l))
-      )
-
       // Update selected lead if it's the same
       if (selectedLead?.id === lead.id) {
         setSelectedLead({ ...selectedLead, bot_active: newStatus })
       }
+
+      // Refetch leads to get updated data from server
+      refetchLeads()
 
       toast({
         title: "Thành công",
@@ -834,11 +925,10 @@ export function E2EManagement() {
     if (!phone) return
 
     try {
-      const response = await fetch("https://api.vucar.vn/notifications/send", {
+      const response = await fetch("/api/e2e/send-notification", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-secret": "vucar-rest-api-secret-2025-f8a3c9d1e4b6"
         },
         body: JSON.stringify({
           code: "499943",
@@ -1074,15 +1164,8 @@ export function E2EManagement() {
 
       setSelectedLead(updatedLead)
 
-      // Also update in leads list
-      setLeads((prevLeads) =>
-        prevLeads.map((l) =>
-          l.id === selectedLead.id ? updatedLead : l
-        )
-      )
-
-      // Refresh E2E messages if car_id exists
-
+      // Refetch leads to get updated data from server
+      refetchLeads()
 
       toast({
         title: "Đã đồng bộ",
@@ -1265,12 +1348,9 @@ export function E2EManagement() {
 
       setSelectedLead(updatedLead)
 
-      // Also update in leads list
-      setLeads((prevLeads) =>
-        prevLeads.map((l) =>
-          l.id === selectedLead.id ? { ...l, is_primary: newPrimaryStatus } : l
-        )
-      )
+      // Refetch leads to get updated data from server (with cache busting)
+      setRefreshKey(prev => prev + 1)
+      refetchCounts()
 
       toast({
         title: "Thành công",
@@ -1544,9 +1624,9 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
       }
 
       setSelectedLead(updatedLead)
-      setLeads((prevLeads) =>
-        prevLeads.map((l) => (l.id === selectedLead.id ? updatedLead : l))
-      )
+
+      // Refetch leads to get updated data from server
+      refetchLeads()
 
       toast({
         title: "Thành công",
@@ -1568,272 +1648,23 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
 
 
   async function searchLeadByPhone() {
+    // Phase 2: Update URL only, React Query will automatically refetch
+    const params = new URLSearchParams(searchParams.toString())
+
     if (!searchPhone.trim()) {
-      // If search is cleared, reset filter and refetch current page
-      setAppliedSearchPhone("")
-      setCurrentPage(1)
-      if (selectedAccount) {
-        await fetchLeads(selectedAccount)
-      }
-      return
+      // If search is cleared, remove search param and reset to page 1
+      params.delete("search")
+      params.set("page", "1")
+    } else {
+      // Add search param and reset to page 1
+      params.set("search", searchPhone)
+      params.set("page", "1")
     }
 
-    setAppliedSearchPhone(searchPhone) // Apply the search filter
-
-    console.log("[E2E] Searching for lead with phone:", searchPhone)
-    setLoadingCarIds(true)
-    setCurrentPage(1)
-
-    // Filter leads that match the search
-    const matchingLeads = leads.filter(
-      (lead: Lead) =>
-        lead.phone?.includes(searchPhone) ||
-        lead.additional_phone?.includes(searchPhone)
-    )
-
-    if (matchingLeads.length === 0) {
-      toast({
-        title: "Không tìm thấy",
-        description: "Không tìm thấy lead với số điện thoại này",
-        variant: "destructive",
-      })
-      setLoadingCarIds(false)
-      return
-    }
-
-    console.log("[E2E] Found", matchingLeads.length, "matching lead(s), fetching details...")
-
-    try {
-      // Fetch all details for matching leads
-      const enrichedLeads = await Promise.all(
-        matchingLeads.map(async (lead) => {
-          // If lead has both phone and additional_phone, fetch details for both
-          const phonesToSearch = []
-          if (lead.phone) phonesToSearch.push(lead.phone)
-          if (lead.additional_phone && lead.additional_phone !== lead.phone) {
-            phonesToSearch.push(lead.additional_phone)
-          }
-
-          if (phonesToSearch.length === 0) {
-            return {
-              ...lead,
-              car_id: null,
-              dealer_bidding: { status: "not_sent" as const },
-              bot_active: false,
-              price_customer: null,
-              brand: null,
-              model: null,
-              variant: null,
-              year: null,
-              has_enough_images: false,
-              first_message_sent: false,
-              decoy_thread_count: 0,
-            }
-          }
-
-          // Fetch details for all phone numbers and merge results
-          const allLeadDetails = await Promise.all(
-            phonesToSearch.map(phone => fetchLeadDetails(phone))
-          )
-
-          // Use the first non-null result or merge data from multiple sources
-          const leadDetails = allLeadDetails.reduce((merged, current) => {
-            return {
-              car_id: merged.car_id || current.car_id,
-              price_customer: merged.price_customer || current.price_customer,
-              brand: merged.brand || current.brand,
-              model: merged.model || current.model,
-              variant: merged.variant || current.variant,
-              year: merged.year || current.year,
-              plate: merged.plate || current.plate,
-              stage: merged.stage || current.stage,
-              has_enough_images: merged.has_enough_images || current.has_enough_images,
-              bot_status: merged.bot_status || current.bot_status,
-              price_highest_bid: merged.price_highest_bid || current.price_highest_bid,
-              first_message_sent: merged.first_message_sent || current.first_message_sent,
-              session_created: merged.session_created || current.session_created,
-              notes: merged.notes || current.notes,
-              pic_id: merged.pic_id || current.pic_id,
-              pic_name: merged.pic_name || current.pic_name,
-              location: merged.location || current.location,
-              mileage: merged.mileage || current.mileage,
-              is_primary: merged.is_primary || current.is_primary,
-              workflow2_is_active: merged.workflow2_is_active ?? current.workflow2_is_active,
-              sku: merged.sku || current.sku,
-              car_created_at: merged.car_created_at || current.car_created_at,
-              image: merged.image || current.image,
-              additional_images: merged.additional_images || current.additional_images,
-              qualified: merged.qualified || current.qualified,
-              intentionLead: merged.intentionLead || current.intentionLead,
-              negotiationAbility: merged.negotiationAbility || current.negotiationAbility,
-            }
-          }, allLeadDetails[0])
-
-          let dealer_bidding: DealerBiddingStatus = { status: "not_sent" }
-
-          // Priority 1: Check price_highest_bid from sale_status
-          if (leadDetails.price_highest_bid) {
-            dealer_bidding = {
-              status: "got_price",
-              maxPrice: leadDetails.price_highest_bid
-            }
-          }
-          // Priority 2: Check dealer_biddings table if we have car_id
-          else if (leadDetails.car_id) {
-            dealer_bidding = await checkDealerBidding(leadDetails.car_id)
-          }
-
-          // Fetch decoy thread count
-          const decoyThreadCount = await fetchDecoyThreadCount(lead.id)
-
-          // Fetch bidding session count and active campaigns
-          const { count: biddingSessionCount, hasActiveCampaigns } = leadDetails.car_id
-            ? await fetchBiddingSessionCount(leadDetails.car_id)
-            : { count: 0, hasActiveCampaigns: false }
-
-          return {
-            ...lead,
-            car_id: leadDetails.car_id,
-            car_auction_id: leadDetails.car_id,
-            dealer_bidding,
-            bot_active: leadDetails.bot_status,
-            price_customer: leadDetails.price_customer,
-            brand: leadDetails.brand,
-            model: leadDetails.model,
-            variant: leadDetails.variant,
-            year: leadDetails.year,
-            plate: leadDetails.plate,
-            stage: leadDetails.stage,
-            has_enough_images: leadDetails.has_enough_images,
-            first_message_sent: leadDetails.first_message_sent,
-            session_created: leadDetails.session_created,
-            decoy_thread_count: decoyThreadCount,
-            notes: leadDetails.notes,
-            location: leadDetails.location,
-            mileage: leadDetails.mileage,
-            is_primary: leadDetails.is_primary,
-            bidding_session_count: biddingSessionCount,
-            has_active_campaigns: hasActiveCampaigns,
-          }
-        })
-      )
-
-      // Update only the matching leads in the full leads array
-      const updatedLeads = leads.map(
-        (lead) => enrichedLeads.find((el) => el.id === lead.id) || lead
-      )
-
-      setLeads(updatedLeads)
-      setLoadingCarIds(false)
-
-      console.log("[E2E] Successfully fetched details for matching leads")
-    } catch (err) {
-      console.error("[E2E] Error fetching lead details:", err)
-      toast({
-        title: "Lỗi",
-        description: "Không thể tải thông tin chi tiết",
-        variant: "destructive",
-      })
-      setLoadingCarIds(false)
-    }
+    router.push(buildUrl(params), { scroll: false })
   }
 
-  async function fetchLeads(uid: string) {
-    setLoading(true)
-    setLoadingCarIds(true)
-    setError(null)
-
-    try {
-      // Fetch all leads using batch endpoint with high per_page to get all data at once
-      // This maintains compatibility with existing client-side filtering/pagination
-      const response = await fetch("/api/e2e/leads/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          uid,
-          page: 1,
-          per_page: 1000 // High value to get all leads (adjust if needed)
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch leads: ${response.status}`)
-      }
-
-      const data = await response.json()
-
-      // Transform batch response to match frontend Lead interface
-      const enrichedLeads = data.leads.map((lead: any) => ({
-        id: lead.id,
-        name: lead.name,
-        phone: lead.phone,
-        additional_phone: lead.additional_phone,
-        identify_number: lead.identify_number,
-        bank_account_number: lead.bank_account_number,
-        otp_verified: lead.otp_verified,
-        created_at: lead.created_at,
-        pic_id: lead.pic_id,
-        pic_og: lead.pic_og,
-        pic_name: lead.pic_name,
-        source: lead.source,
-        url: lead.url,
-        qx_qc_scoring: lead.qx_qc_scoring,
-        customer_feedback: lead.customer_feedback,
-        is_referral: lead.is_referral,
-        car_id: lead.car_id,
-        plate: lead.plate,
-        brand: lead.brand,
-        model: lead.model,
-        variant: lead.variant,
-        year: lead.year,
-        mileage: lead.mileage,
-        sku: lead.sku,
-        location: lead.location,
-        has_enough_images: lead.has_enough_images,
-        workflow2_is_active: lead.workflow2_is_active,
-        additional_images: lead.additional_images,
-        is_primary: lead.is_primary,
-        // Sale status fields
-        price_customer: lead.sale_status?.price_customer,
-        bot_active: lead.sale_status?.bot_status || false,
-        price_highest_bid: lead.sale_status?.price_highest_bid,
-        stage: lead.sale_status?.stage || "UNDEFINED",
-        notes: lead.sale_status?.notes,
-        first_message_sent: lead.sale_status?.first_message_sent || false,
-        session_created: lead.sale_status?.session_created || false,
-        // Dealer bidding - transform to match DealerBiddingStatus interface
-        dealer_bidding: (() => {
-          if (lead.sale_status?.price_highest_bid) {
-            return {
-              status: "got_price" as const,
-              maxPrice: lead.sale_status.price_highest_bid
-            }
-          } else if (lead.dealer_bidding && lead.dealer_bidding.length > 0) {
-            const maxPrice = Math.max(...lead.dealer_bidding.map((b: any) => b.price))
-            return {
-              status: "got_price" as const,
-              maxPrice: maxPrice
-            }
-          } else {
-            return { status: "not_sent" as const }
-          }
-        })(),
-        decoy_thread_count: lead.decoy_thread_count || 0,
-        bidding_session_count: lead.bidding_session_count || 0,
-        car_created_at: lead.created_at,
-      }))
-
-      setLeads(enrichedLeads)
-      setLoading(false)
-      setLoadingCarIds(false)
-    } catch (err) {
-      console.error("[E2E] Error fetching leads:", err)
-      setError(err instanceof Error ? err.message : "Failed to fetch leads")
-      setLoading(false)
-      setLoadingCarIds(false)
-    }
-  }
-
+  // Phase 2: Manual fetch functions removed - replaced by React Query hooks
   // DEPRECATED: fetchPageData is no longer needed as batch endpoint returns all enriched data
   // Keeping this commented for reference during migration
   // async function fetchPageData(pageLeadsToFetch: Lead[]) {
@@ -1921,58 +1752,63 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     return "bg-white-100 text-white-800"
   }
 
-  // Get unique sources from leads for filter dropdown
-  const availableSources = Array.from(
-    new Set(leads.map(lead => lead.source).filter((s): s is string => !!s))
-  ).sort()
 
-  // Filter leads by phone search, source filter, and tab (client-side filtering)
-  const filteredLeads = leads.filter((lead) => {
-    // Filter by phone search
-    if (appliedSearchPhone) {
-      const phone = lead.phone || lead.additional_phone || ""
-      if (!phone.includes(appliedSearchPhone)) return false
-    }
+  // Get unique sources from database for filter dropdown
+  const availableSources: string[] = sourceData?.sources || []
 
-    // Filter by source
-    if (sourceFilter.length > 0) {
-      if (!lead.source || !sourceFilter.includes(lead.source)) return false
-    }
+  // Phase 2: All filtering is now done on backend (tab, search, sources)
+  // Server returns already filtered and paginated results
 
-    // Filter by tab (priority vs nurture)
-    if (activeTab === "priority") {
-      return lead.is_primary === true
+  // Use counts from backend for tab badges
+  const priorityCount = counts.priority
+  const nurtureCount = counts.nurture
+
+  // Pagination calculations based on backend counts
+  const currentTabCount = activeTab === "priority" ? priorityCount : nurtureCount
+  const totalPages = Math.ceil(currentTabCount / ITEMS_PER_PAGE)
+
+  // Leads are already filtered and paginated from backend, display them directly
+  const currentPageLeads = enrichedLeads
+
+  const handleTabChange = (tab: "priority" | "nurture") => {
+    // Phase 2: Update URL only, React Query will automatically refetch
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("tab", tab)
+    params.set("page", "1") // Reset to first page when tab changes
+
+    router.push(buildUrl(params), { scroll: false })
+  }
+
+  // Phase 2: Unified handlers that update URL only
+  const handlePageChange = (newPage: number) => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("page", String(newPage))
+
+    router.push(buildUrl(params), { scroll: false })
+  }
+
+  const handleSourceFilterChange = (newSources: string[]) => {
+    const params = new URLSearchParams(searchParams.toString())
+
+    if (newSources.length > 0) {
+      params.set("sources", newSources.join(","))
     } else {
-      return lead.is_primary !== true
+      params.delete("sources")
     }
-  })
+    params.set("page", "1") // Reset to first page when filtering
 
-  // Count for tabs - undefined is_primary is treated as "Nuôi dưỡng"
-  // Note: counts are based on leads BEFORE source filter to show total availability
-  const priorityCount = leads.filter(lead => {
-    if (sourceFilter.length > 0 && (!lead.source || !sourceFilter.includes(lead.source))) return false
-    return lead.is_primary === true
-  }).length
-  const nurtureCount = leads.filter(lead => {
-    if (sourceFilter.length > 0 && (!lead.source || !sourceFilter.includes(lead.source))) return false
-    return lead.is_primary !== true
-  }).length
-
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredLeads.length / ITEMS_PER_PAGE)
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
-  const endIndex = startIndex + ITEMS_PER_PAGE
-  const currentPageLeads = filteredLeads.slice(startIndex, endIndex)
+    router.push(buildUrl(params), { scroll: false })
+  }
 
   const handlePreviousPage = () => {
     if (currentPage > 1) {
-      setCurrentPage(currentPage - 1)
+      handlePageChange(currentPage - 1)
     }
   }
 
   const handleNextPage = () => {
     if (currentPage < totalPages) {
-      setCurrentPage(currentPage + 1)
+      handlePageChange(currentPage + 1)
     }
   }
 
@@ -2213,9 +2049,9 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
       }
 
       setSelectedLead(updatedLead)
-      setLeads((prevLeads) =>
-        prevLeads.map((l) => (l.id === selectedLead.id ? updatedLead : l))
-      )
+
+      // Refetch leads to get updated data from server
+      refetchLeads()
 
       toast({
         title: "Thành công",
@@ -2334,14 +2170,12 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     const data = await response.json()
 
     if (data.success) {
-      setLeads((prevLeads) =>
-        prevLeads.map((l) =>
-          l.id === leadId ? { ...l, is_primary: isPrimary } : l
-        )
-      )
       if (selectedLead?.id === leadId) {
         setSelectedLead({ ...selectedLead, is_primary: isPrimary })
       }
+      // Refetch leads to get updated data from server (with cache busting)
+      setRefreshKey(prev => prev + 1)
+      refetchCounts()
     } else {
       throw new Error("Failed to update primary status")
     }
@@ -2352,7 +2186,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
       {/* Account Selector */}
       <AccountSelector
         selectedAccount={selectedAccount}
-        onAccountChange={setSelectedAccount}
+        onAccountChange={handleAccountChange}
         loading={loading}
         loadingCarIds={loadingCarIds}
         isMobile={isMobile}
@@ -2377,7 +2211,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
             onSearchChange={setSearchPhone}
             onSearch={searchLeadByPhone}
             activeTab={activeTab}
-            onTabChange={setActiveTab}
+            onTabChange={handleTabChange}
             priorityCount={priorityCount}
             nurtureCount={nurtureCount}
             currentPageLeads={currentPageLeads}
@@ -2385,12 +2219,12 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
             onLeadClick={handleLeadClick}
             currentPage={currentPage}
             totalPages={totalPages}
-            onPageChange={setCurrentPage}
+            onPageChange={handlePageChange}
             onSummaryOpen={() => setSummaryDialogOpen(true)}
             onUpdatePrimary={handleUpdatePrimary}
             updatingPrimary={updatingPrimary}
             sourceFilter={sourceFilter}
-            onSourceFilterChange={setSourceFilter}
+            onSourceFilterChange={handleSourceFilterChange}
             availableSources={availableSources}
           />
         )}
@@ -2478,9 +2312,10 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
       <CreateBiddingDialog
         open={confirmBiddingOpen}
         onOpenChange={setConfirmBiddingOpen}
-        lead={leadToCreateBidding || selectedLead}
+        lead={selectedLead}
         onSuccess={() => {
-          searchLeadByPhone()
+          // Phase 2: React Query will automatically refetch when we call refetch
+          refetchLeads()
         }}
       />
 
@@ -2491,7 +2326,8 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         selectedLead={selectedLead}
         onSuccess={(sessionCreated) => {
           setSelectedLead(prev => prev ? { ...prev, session_created: sessionCreated } : null)
-          searchLeadByPhone()
+          // Phase 2: React Query will automatically refetch when we call refetch
+          refetchLeads()
         }}
       />
 
@@ -2503,7 +2339,8 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         defaultData={workflow2Data}
         onSuccess={(workflow2Active) => {
           setSelectedLead(prev => prev ? { ...prev, workflow2_is_active: workflow2Active } : null)
-          searchLeadByPhone()
+          // Phase 2: React Query will automatically refetch when we call refetch
+          refetchLeads()
         }}
         onOpenDecoyDialog={() => setDecoyDialogOpen(true)}
       />
@@ -2620,7 +2457,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         open={sendDealerDialogOpen}
         onOpenChange={setSendDealerDialogOpen}
         selectedLead={selectedLead}
-        onSuccess={searchLeadByPhone}
+        onSuccess={refetchLeads}
         dealerGroups={dealerGroups}
         loadingDealerGroups={loadingDealerGroups}
       />

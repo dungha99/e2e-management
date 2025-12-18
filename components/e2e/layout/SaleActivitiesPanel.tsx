@@ -67,7 +67,7 @@ export function SaleActivitiesPanel({
     const phone = selectedLead.phone || selectedLead.additional_phone || null
 
     return (
-        <div className="w-80 flex-shrink-0 border-l border-gray-200 overflow-hidden flex flex-col">
+        <div className="w-72 lg:w-80 flex-shrink-0 border-l border-gray-200 overflow-hidden flex flex-col hidden lg:flex">
 
             {/* Notes Section - Above Tabs */}
             <div className="bg-white border-b border-gray-200 p-3">

@@ -46,6 +46,7 @@ import { SaleActivitiesPanel } from "./e2e/layout/SaleActivitiesPanel"
 // Layout components
 import { AccountSelector } from "./e2e/layout/AccountSelector"
 import { LeadListSidebar } from "./e2e/layout/LeadListSidebar"
+import { CampaignKanbanView } from "./e2e/kanban"
 
 // Local interfaces for component-specific types not in shared types
 interface DealerGroup {
@@ -272,6 +273,9 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
   // Mobile view state
   const isMobile = useIsMobile()
   const [mobileView, setMobileView] = useState<"list" | "detail">("list")
+
+  // View mode state (list vs kanban)
+  const [viewMode, setViewMode] = useState<"list" | "kanban">("list")
 
   // Detail view tab state
   const [activeDetailView, setActiveDetailView] = useState<"workflow" | "decoy-web" | "recent-activity" | "decoy-history">("workflow")
@@ -1025,6 +1029,17 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
           description: data.error || "Không thể tạo thread",
           variant: "destructive",
         })
+
+        // Send ZNS as fallback when thread creation fails
+        if (sendZns && selectedLead.phone) {
+          await handleSendZns(selectedLead.phone)
+        }
+
+        // Close dialog and reset input even on failure
+        setCreateThreadOpen(false)
+        setFourDigitsInput("")
+        setFirstMessageInput("Hello")
+        setSendZns(false)
         return
       }
 
@@ -2197,116 +2212,146 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         }}
       />
 
-      {/* Split View Layout */}
-      <div className={`flex gap-4 h-[calc(100vh-${isMobile ? '64px' : '100px'})] bg-gray-50`}>
-        {/* Lead List Sidebar */}
-        {(!isMobile || mobileView === 'list') && (
-          <LeadListSidebar
+      {/* View Mode Toggle */}
+      <div className="flex items-center justify-between px-4 py-2 bg-white border-b">
+        <div className="text-sm font-medium text-gray-700">Chế độ xem</div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={viewMode === "list" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setViewMode("list")}
+            className="text-xs"
+          >
+            📋 Danh sách
+          </Button>
+          <Button
+            variant={viewMode === "kanban" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setViewMode("kanban")}
+            className="text-xs"
+          >
+            📊 Kanban
+          </Button>
+        </div>
+      </div>
+
+      {/* Main Content - Conditional based on view mode */}
+      {viewMode === "kanban" ? (
+        <div className="p-4 bg-gray-50 h-[calc(100vh-150px)]">
+          <CampaignKanbanView picId={selectedAccount} />
+        </div>
+      ) : (
+        /* Split View Layout */
+        <div className={`flex gap-4 h-[calc(100vh-${isMobile ? '64px' : '100px'})] bg-gray-50`}>
+          {/* Lead List Sidebar */}
+          {(!isMobile || mobileView === 'list') && (
+            <LeadListSidebar
+              isMobile={isMobile}
+              mobileView={mobileView}
+              selectedAccount={selectedAccount}
+              loading={loading}
+              loadingCarIds={loadingCarIds}
+              searchPhone={searchPhone}
+              onSearchChange={setSearchPhone}
+              onSearch={searchLeadByPhone}
+              activeTab={activeTab}
+              onTabChange={handleTabChange}
+              priorityCount={priorityCount}
+              nurtureCount={nurtureCount}
+              currentPageLeads={currentPageLeads}
+              selectedLead={selectedLead}
+              onLeadClick={handleLeadClick}
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={handlePageChange}
+              onSummaryOpen={() => setSummaryDialogOpen(true)}
+              onUpdatePrimary={handleUpdatePrimary}
+              updatingPrimary={updatingPrimary}
+              sourceFilter={sourceFilter}
+              onSourceFilterChange={handleSourceFilterChange}
+              availableSources={availableSources}
+            />
+          )}
+
+
+
+          {/* Right Panel - Lead Details */}
+          <LeadDetailPanel
+            selectedAccount={selectedAccount}
+            selectedLead={selectedLead}
             isMobile={isMobile}
             mobileView={mobileView}
-            selectedAccount={selectedAccount}
-            loading={loading}
-            loadingCarIds={loadingCarIds}
-            searchPhone={searchPhone}
-            onSearchChange={setSearchPhone}
-            onSearch={searchLeadByPhone}
-            activeTab={activeTab}
-            onTabChange={handleTabChange}
-            priorityCount={priorityCount}
-            nurtureCount={nurtureCount}
-            currentPageLeads={currentPageLeads}
-            selectedLead={selectedLead}
-            onLeadClick={handleLeadClick}
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={handlePageChange}
-            onSummaryOpen={() => setSummaryDialogOpen(true)}
-            onUpdatePrimary={handleUpdatePrimary}
+
+
+            activeDetailView={activeDetailView}
+            onActiveDetailViewChange={setActiveDetailView}
+
+
+            onTogglePrimary={handleTogglePrimary}
             updatingPrimary={updatingPrimary}
-            sourceFilter={sourceFilter}
-            onSourceFilterChange={handleSourceFilterChange}
-            availableSources={availableSources}
+
+            onQuickEdit={handleQuickEdit}
+            onSyncLead={handleSyncCurrentLead}
+            syncing={syncing}
+
+            activeWorkflowView={activeWorkflowView}
+            onWorkflowViewChange={setActiveWorkflowView}
+
+            onShowDetail={() => setDetailDialogOpen(true)}
+
+            onCallBot={(action) => handleCallTrigger(action)}
+            callingBot={callingBot}
+
+            onOpenInspection={() => setInspectionSystemOpen(true)}
+
+            workflow2Data={workflow2Data}
+            workflow2Open={workflow2Open}
+            setWorkflow2Open={setWorkflow2Open}
+            onDecoyDialog={() => setDecoyDialogOpen(true)}
+
+            onOpenCreateThread={() => setCreateThreadOpen(true)}
+            onOpenWorkflowDialog={() => setWorkflow2Open(true)}
+
+            // Workflow Handlers
+            onSendFirstMessage={handleSendFirstMessage}
+            sendingMessage={sendingMessage}
+            onViewBiddingHistory={() => {
+              if (selectedLead?.car_id) {
+                fetchBiddingHistory(selectedLead.car_id)
+              }
+            }}
+            onCreateSession={() => setConfirmSessionOpen(true)}
+            creatingSession={false}
+            onBotToggle={(active) => {
+              if (selectedLead) handleBotToggle(selectedLead, active)
+              return Promise.resolve()
+            }}
+            togglingBot={false}
+            onRenameLead={handleRenameLead}
+            renamingLead={renamingLead}
+
+            // Dealer Bidding Props
+            biddingHistory={biddingHistory}
+            onUpdateBid={handleUpdateBidPriceInline}
+            loadingBiddingHistory={loadingBiddingHistory}
+
+            // Notes editing
+            onUpdateNotes={handleUpdateNotesInline}
+
+            // Decoy Web refresh
+            decoyWebRefreshKey={decoyWebRefreshKey}
           />
-        )}
 
-
-
-        {/* Right Panel - Lead Details */}
-        <LeadDetailPanel
-          selectedAccount={selectedAccount}
-          selectedLead={selectedLead}
-          isMobile={isMobile}
-          mobileView={mobileView}
-
-
-          activeDetailView={activeDetailView}
-          onActiveDetailViewChange={setActiveDetailView}
-
-
-          onTogglePrimary={handleTogglePrimary}
-          updatingPrimary={updatingPrimary}
-
-          onQuickEdit={handleQuickEdit}
-          onSyncLead={handleSyncCurrentLead}
-          syncing={syncing}
-
-          activeWorkflowView={activeWorkflowView}
-          onWorkflowViewChange={setActiveWorkflowView}
-
-          onShowDetail={() => setDetailDialogOpen(true)}
-
-          onCallBot={(action) => handleCallTrigger(action)}
-          callingBot={callingBot}
-
-          onOpenInspection={() => setInspectionSystemOpen(true)}
-
-          workflow2Data={workflow2Data}
-          workflow2Open={workflow2Open}
-          setWorkflow2Open={setWorkflow2Open}
-          onDecoyDialog={() => setDecoyDialogOpen(true)}
-
-          onOpenCreateThread={() => setCreateThreadOpen(true)}
-          onOpenWorkflowDialog={() => setWorkflow2Open(true)}
-
-          // Workflow Handlers
-          onSendFirstMessage={handleSendFirstMessage}
-          sendingMessage={sendingMessage}
-          onViewBiddingHistory={() => {
-            if (selectedLead?.car_id) {
-              fetchBiddingHistory(selectedLead.car_id)
-            }
-          }}
-          onCreateSession={() => setConfirmSessionOpen(true)}
-          creatingSession={false}
-          onBotToggle={(active) => {
-            if (selectedLead) handleBotToggle(selectedLead, active)
-            return Promise.resolve()
-          }}
-          togglingBot={false}
-          onRenameLead={handleRenameLead}
-          renamingLead={renamingLead}
-
-          // Dealer Bidding Props
-          biddingHistory={biddingHistory}
-          onUpdateBid={handleUpdateBidPriceInline}
-          loadingBiddingHistory={loadingBiddingHistory}
-
-          // Notes editing
-          onUpdateNotes={handleUpdateNotesInline}
-
-          // Decoy Web refresh
-          decoyWebRefreshKey={decoyWebRefreshKey}
-        />
-
-        {/* Sale Activities Panel - Right Side */}
-        <SaleActivitiesPanel
-          selectedLead={selectedLead}
-          isMobile={isMobile}
-          mobileView={mobileView}
-          refreshKey={activitiesRefreshKey}
-          onUpdateNotes={handleUpdateNotesInline}
-        />
-      </div>
+          {/* Sale Activities Panel - Right Side */}
+          <SaleActivitiesPanel
+            selectedLead={selectedLead}
+            isMobile={isMobile}
+            mobileView={mobileView}
+            refreshKey={activitiesRefreshKey}
+            onUpdateNotes={handleUpdateNotesInline}
+          />
+        </div>
+      )}
 
       {/* Create Bidding Confirmation Dialog */}
       <CreateBiddingDialog
@@ -2620,6 +2665,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         handleCreateThread={handleCreateThread}
         createThreadLoading={createThreadLoading}
       />
+
 
     </div>
 

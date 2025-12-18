@@ -4,6 +4,7 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { Suspense } from "react"
 import { E2EManagement } from "@/components/e2e-management"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Toaster } from "@/components/ui/toaster"
 
 // Separate component to use search params
 function E2EPageContent({ userId }: { userId: string }) {
@@ -27,7 +28,7 @@ function E2EPageContent({ userId }: { userId: string }) {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="container mx-auto px-8 py-8">
+      <main className="px-2 md:px-4 py-4">
         <Tabs value="e2e" onValueChange={handleTabChange} className="w-full">
           <div className="flex items-center justify-between mb-6">
             <TabsList>
@@ -50,6 +51,7 @@ function E2EPageContent({ userId }: { userId: string }) {
           </TabsContent>
         </Tabs>
       </main>
+      <Toaster />
     </div>
   )
 }

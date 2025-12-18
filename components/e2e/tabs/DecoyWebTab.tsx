@@ -79,10 +79,10 @@ export function DecoyWebTab({
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm h-[600px] flex flex-col overflow-hidden">
-      <div className="flex-1 flex gap-4 overflow-hidden">
+    <div className="bg-white rounded-lg shadow-sm h-full min-h-[400px] flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row gap-0 md:gap-4 overflow-hidden">
         {/* Left Panel - Thread List */}
-        <div className="w-80 border-r overflow-y-auto flex flex-col">
+        <div className="w-full md:w-64 lg:w-80 border-b md:border-b-0 md:border-r overflow-y-auto flex flex-col shrink-0 max-h-48 md:max-h-none">
           {/* Create Thread Button */}
           <div className="p-3 border-b bg-gray-50 flex gap-2">
             <Button

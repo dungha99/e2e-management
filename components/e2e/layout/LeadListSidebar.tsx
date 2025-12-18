@@ -125,7 +125,7 @@ export function LeadListSidebar({
   }
 
   return (
-    <div className={`${isMobile ? 'w-full' : 'w-80'} border-r flex flex-col bg-white`}>
+    <div className={`${isMobile ? 'w-full' : 'w-72 lg:w-80'} min-w-0 border-r flex flex-col bg-white`}>
       {/* Header */}
       <div className="p-4 border-b bg-gray-100">
         <div className="flex items-center justify-between mb-4">

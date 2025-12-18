@@ -214,12 +214,12 @@ export function LeadDetailPanel({
     <div className="flex-1 overflow-hidden flex flex-col ">
       <div className="flex-1 overflow-y-auto">
         {/* Header */}
-        <div className="px-8 pt-6 pb-6 border-b sticky top-0 z-10">
-          <div className="flex flex-wrap items-start gap-4 mb-4">
-            <div className="flex items-center gap-4">
+        <div className="px-4 md:px-6 lg:px-8 pt-4 md:pt-6 pb-4 md:pb-6 border-b sticky top-0 z-10 bg-white">
+          <div className="flex flex-wrap items-start gap-3 md:gap-4 mb-4">
+            <div className="flex items-center gap-3 md:gap-4">
               {/* Car Image Thumbnail */}
               <div
-                className={`w-40 aspect-[3/2] rounded-lg border-2 border-gray-200 bg-gray-100 overflow-hidden flex items-center justify-center shadow-sm relative group ${galleryImages.length > 0 ? 'cursor-pointer hover:border-blue-400 transition-colors' : ''}`}
+                className={`w-28 md:w-40 aspect-[3/2] rounded-lg border-2 border-gray-200 bg-gray-100 overflow-hidden flex items-center justify-center shadow-sm relative group ${galleryImages.length > 0 ? 'cursor-pointer hover:border-blue-400 transition-colors' : ''}`}
                 onClick={handleThumbnailClick}
                 title={galleryImages.length > 0 ? "Nhấn để xem tất cả ảnh" : undefined}
               >

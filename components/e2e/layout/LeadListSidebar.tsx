@@ -244,10 +244,7 @@ export function LeadListSidebar({
       {/* Filter Tabs */}
       <div className="px-4 py-3 border-b flex gap-4">
         <button
-          onClick={() => {
-            onTabChange("priority")
-            onPageChange(1)
-          }}
+          onClick={() => onTabChange("priority")}
           className={`flex items-center gap-2 text-sm font-medium pb-2 transition-colors ${activeTab === "priority"
             ? "text-purple-600 border-b-2 border-purple-600"
             : "text-gray-500 hover:text-gray-700"
@@ -260,10 +257,7 @@ export function LeadListSidebar({
           </Badge>
         </button>
         <button
-          onClick={() => {
-            onTabChange("nurture")
-            onPageChange(1)
-          }}
+          onClick={() => onTabChange("nurture")}
           className={`flex items-center gap-2 text-sm font-medium pb-2 transition-colors ${activeTab === "nurture"
             ? "text-emerald-600 border-b-2 border-emerald-600"
             : "text-gray-500 hover:text-gray-700"
@@ -271,7 +265,7 @@ export function LeadListSidebar({
         >
           <MessageCircle className="h-4 w-4" />
           Nuôi dưỡng
-          <Badge className={activeTab === "nurture" ? "bg-emerald-600 text-white text-xs" : "bg-gray-200 text-gray-700 text-xs"}>
+          <Badge className={activeTab === "nurture" ? "bg-emerald-600 text-white text-white text-xs" : "bg-gray-200 text-gray-700 text-xs"}>
             {nurtureCount}
           </Badge>
         </button>

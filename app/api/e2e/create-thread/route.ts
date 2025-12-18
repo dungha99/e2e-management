@@ -53,7 +53,7 @@ export async function POST(req: Request) {
 
         // 4. Call external Vucar API
         const endpoint = "https://api.vucar.vn/chats/thread"
-        const apiKey = "vucar-rest-api-secret-2025-f8a3c9d1e4b6"
+        const apiKey = process.env.VUCAR_API_SECRET || ""
 
         const payload = {
             userId: userId,

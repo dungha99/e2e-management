@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { vucarV2Query, tempInspectionQuery } from "@/lib/db"
+import { vucarV2Query } from "@/lib/db"
 
 export async function POST(request: Request) {
   let phone: string | undefined
@@ -34,6 +34,7 @@ export async function POST(request: Request) {
         ss.qualified,
         ss.intention,
         ss.negotiation_ability,
+        ss.is_hot_lead,
         c.brand,
         c.model,
         c.variant,
@@ -84,21 +85,8 @@ export async function POST(request: Request) {
     // Session created check - now from main query (no separate DB call)
     const session_created = leadData.car_id && parseInt(leadData.campaign_count) > 0
 
-    // Check if car is primary (still needs separate query - different database)
-    let is_primary = false
-    if (leadData.car_id) {
-      try {
-        const primaryResult = await tempInspectionQuery(
-          `SELECT is_primary FROM "primary" WHERE car_id = $1 LIMIT 1`,
-          [leadData.car_id]
-        )
-        is_primary = primaryResult.rows[0]?.is_primary || false
-      } catch (error) {
-        console.error("[E2E Lead Details] Error fetching primary status:", error)
-        // Don't fail the whole request if primary check fails
-        is_primary = false
-      }
-    }
+    // Use is_hot_lead from sale_status as is_primary (consistent with batch endpoint)
+    const is_primary = leadData.is_hot_lead || false
 
     // Workflow2 is_active status - now from main query (no separate DB call)
     const workflow2_is_active = leadData.workflow2_is_active !== null ? leadData.workflow2_is_active : null

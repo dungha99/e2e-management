@@ -1,10 +1,12 @@
 "use client"
 
 import { useSearchParams, useRouter } from "next/navigation"
+import { Suspense } from "react"
 import { E2EManagement } from "@/components/e2e-management"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
-export default function E2EPage({ params }: { params: { userId: string } }) {
+// Separate component to use search params
+function E2EPageContent({ userId }: { userId: string }) {
   const searchParams = useSearchParams()
   const router = useRouter()
 
@@ -39,7 +41,7 @@ export default function E2EPage({ params }: { params: { userId: string } }) {
 
           <TabsContent value="e2e" className="mt-0">
             <E2EManagement
-              userId={params.userId}
+              userId={userId}
               initialTab={tab}
               initialPage={page}
               initialSearch={search}
@@ -49,5 +51,13 @@ export default function E2EPage({ params }: { params: { userId: string } }) {
         </Tabs>
       </main>
     </div>
+  )
+}
+
+export default function E2EPage({ params }: { params: { userId: string } }) {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+      <E2EPageContent userId={params.userId} />
+    </Suspense>
   )
 }

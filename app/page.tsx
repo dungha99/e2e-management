@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useEffect, useState } from "react"
+import { useRef, useEffect, useState, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { AccountStatusPanel } from "@/components/account-status-panel"
 import { CampaignCreationPanel } from "@/components/campaign-creation-panel"
@@ -12,7 +12,7 @@ import { PasskeyGate } from "@/components/passkey-gate"
 import { Toaster } from "@/components/ui/toaster"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
-export default function DecoyCampaignManager() {
+function DecoyCampaignManagerContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const accountStatusRef = useRef<{ refresh: () => void }>(null)
@@ -139,5 +139,13 @@ export default function DecoyCampaignManager() {
       <OnboardingModal open={showOnboarding} onOpenChange={setShowOnboarding} />
       <Toaster />
     </div>
+  )
+}
+
+export default function DecoyCampaignManager() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+      <DecoyCampaignManagerContent />
+    </Suspense>
   )
 }

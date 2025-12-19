@@ -125,7 +125,7 @@ export function LeadListSidebar({
   }
 
   return (
-    <div className={`${isMobile ? 'w-full' : 'w-60 lg:w-80'} min-w-0 border-r flex flex-col bg-white`}>
+    <div className={`${isMobile ? 'flex-1 w-full' : 'w-60 lg:w-80'} min-w-0 border-r flex flex-col bg-white ${isMobile ? 'scroll-touch' : ''}`}>
       {/* Header */}
       <div className="p-4 border-b bg-gray-100">
         <div className="flex items-center justify-between mb-4">
@@ -271,8 +271,8 @@ export function LeadListSidebar({
         </button>
       </div>
 
-      {/* Leads List */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Leads List - Scrollable area with touch scroll */}
+      <div className="flex-1 overflow-y-auto scroll-touch scrollbar-hide">
         <div className="divide-y divide-gray-100">
           {!selectedAccount ? (
             <div className="flex flex-col items-center justify-center py-20 px-6">
@@ -293,9 +293,9 @@ export function LeadListSidebar({
             currentPageLeads.map((lead, index) => (
               <div
                 key={`${lead.id}-${index}`}
-                className={`p-4 transition-colors ${loading || loadingCarIds
+                className={`p-4 transition-colors touch-target ${loading || loadingCarIds
                   ? "cursor-not-allowed opacity-50"
-                  : "hover:bg-blue-50"
+                  : "hover:bg-blue-50 active:bg-blue-100"
                   } ${selectedLead?.id === lead.id ? "bg-blue-50 border-l-4 border-blue-600" : ""}`}
               >
                 <div className="flex items-center gap-3 mb-2">
@@ -426,9 +426,9 @@ export function LeadListSidebar({
         </div>
       </div>
 
-      {/* Pagination */}
+      {/* Pagination - With safe area for mobile */}
       {totalPages > 1 && (
-        <div className="border-t p-3 bg-gray-50">
+        <div className="border-t p-3 bg-gray-50 safe-area-bottom">
           <div className="flex items-center justify-center gap-1 mb-2">
             <Button
               variant="ghost"

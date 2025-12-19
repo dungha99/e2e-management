@@ -74,8 +74,8 @@ function DecoyCampaignManagerContent() {
     return <PasskeyGate onAuthenticated={() => setIsAuthenticated(true)} />
   }
 
-  // Read tab from URL or default to dashboard
-  const currentTab = searchParams.get("tab") || "dashboard"
+  // Read tab from URL or default to e2e
+  const currentTab = searchParams.get("tab") || "e2e"
 
   return (
     <div className="min-h-screen bg-background flex flex-col">

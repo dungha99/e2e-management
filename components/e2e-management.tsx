@@ -2226,7 +2226,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
   }
 
   return (
-    <div className="w-full">
+    <div className={`w-full ${isMobile ? 'h-dvh overflow-hidden' : ''}`}>
       {/* Account Selector */}
       <AccountSelector
         selectedAccount={selectedAccount}
@@ -2241,28 +2241,30 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         }}
       />
 
-      {/* View Mode Toggle */}
-      <div className="flex items-center justify-between px-4 py-2 bg-white border-b">
-        <div className="text-sm font-medium text-gray-700">Chế độ xem</div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant={viewMode === "list" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setViewMode("list")}
-            className="text-xs"
-          >
-            📋 Danh sách
-          </Button>
-          <Button
-            variant={viewMode === "kanban" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setViewMode("kanban")}
-            className="text-xs"
-          >
-            📊 Kanban
-          </Button>
+      {/* View Mode Toggle - Hidden on mobile for cleaner app-like experience */}
+      {!isMobile && (
+        <div className="flex items-center justify-between px-4 py-2 bg-white border-b">
+          <div className="text-sm font-medium text-gray-700">Chế độ xem</div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={viewMode === "list" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setViewMode("list")}
+              className="text-xs"
+            >
+              📋 Danh sách
+            </Button>
+            <Button
+              variant={viewMode === "kanban" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setViewMode("kanban")}
+              className="text-xs"
+            >
+              📊 Kanban
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Main Content - Conditional based on view mode */}
       {viewMode === "kanban" ? (
@@ -2270,8 +2272,8 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
           <CampaignKanbanView picId={selectedAccount} />
         </div>
       ) : (
-        /* Split View Layout */
-        <div className={`flex gap-4 h-[calc(100vh-${isMobile ? '64px' : '100px'})] bg-gray-50`}>
+        /* Split View Layout - Mobile uses full height with safe areas */
+        <div className={`flex ${isMobile ? 'flex-col h-[calc(100dvh-56px)]' : 'gap-4 h-[calc(100vh-100px)]'} bg-gray-50 scroll-touch`}>
           {/* Lead List Sidebar */}
           {(!isMobile || mobileView === 'list') && (
             <LeadListSidebar

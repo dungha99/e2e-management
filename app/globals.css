@@ -122,3 +122,136 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Mobile App-Like Enhancements */
+@layer utilities {
+  /* Safe area insets for notched devices (iOS) */
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  
+  .safe-area-inset {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+
+  /* Touch-friendly minimum tap target sizes */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Mobile scrolling with momentum */
+  .scroll-touch {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* Hide scrollbar but keep functionality - mobile */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Mobile-specific styles */
+@media (max-width: 767px) {
+  /* Full height containers using dynamic viewport */
+  .mobile-full-height {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+
+  /* Smooth page transitions */
+  .mobile-transition {
+    transition: transform 0.3s cubic-bezier(0.25, 0.1, 0.25, 1),
+                opacity 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+  }
+
+  /* Bottom sheet style for dialogs */
+  [role="dialog"] {
+    border-radius: 16px 16px 0 0;
+  }
+
+  /* Improve touch scrolling */
+  body {
+    overscroll-behavior-y: none;
+  }
+
+  /* Fix for iOS rubber-banding */
+  html, body {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  
+  #__next, main, [data-radix-scroll-area-viewport] {
+    height: 100%;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Larger touch targets on mobile */
+  button, 
+  [role="button"],
+  a,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+
+  /* Active states for touch feedback */
+  button:active,
+  [role="button"]:active,
+  a:active {
+    transform: scale(0.98);
+    transition: transform 0.1s ease-out;
+  }
+
+  /* Fixed bottom navigation bar style */
+  .mobile-bottom-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    border-top: 1px solid #e5e5e5;
+    padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    z-index: 50;
+    display: flex;
+    gap: 8px;
+    justify-content: space-around;
+  }
+
+  /* Add bottom padding to content when bottom bar is present */
+  .has-bottom-bar {
+    padding-bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Small monitor / tablet optimizations */
+@media (min-width: 768px) and (max-width: 1023px) {
+  /* Slightly larger touch targets for tablet */
+  button,
+  [role="button"] {
+    min-height: 40px;
+  }
+
+  /* Improve spacing on tablets */
+  .tablet-compact {
+    padding: 12px;
+  }
+}

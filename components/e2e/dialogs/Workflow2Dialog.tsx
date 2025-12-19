@@ -117,7 +117,7 @@ export function Workflow2Dialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px] max-sm:max-w-full max-sm:h-[90vh] max-sm:rounded-t-2xl max-sm:rounded-b-none max-sm:fixed max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:translate-y-0 max-sm:translate-x-0">
         <DialogHeader>
           <DialogTitle>Kích hoạt Workflow 2</DialogTitle>
           <DialogDescription>

@@ -211,10 +211,10 @@ export function LeadDetailPanel({
   }
 
   return (
-    <div className="flex-1 overflow-hidden flex flex-col ">
-      <div className="flex-1 overflow-y-auto">
-        {/* Header */}
-        <div className="px-3 sm:px-4 md:px-6 lg:px-8 pt-3 sm:pt-4 md:pt-6 pb-3 sm:pb-4 md:pb-6 border-b sticky top-0 z-10">
+    <div className={`flex-1 overflow-hidden flex flex-col ${isMobile ? 'h-full' : ''}`}>
+      <div className={`flex-1 overflow-y-auto scroll-touch ${isMobile ? 'has-bottom-bar' : ''}`}>
+        {/* Header - Optimized for mobile with white background */}
+        <div className={`px-3 sm:px-4 md:px-6 lg:px-8 pt-3 sm:pt-4 md:pt-6 pb-3 sm:pb-4 md:pb-6 border-b sticky top-0 z-10 ${isMobile ? 'bg-white' : ''}`}>
           {/* Mobile: Stacked layout, Desktop: Side by side */}
           <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-start gap-3 md:gap-4 mb-3 md:mb-4">
             {/* Car Image + Lead Info Container */}
@@ -602,6 +602,39 @@ export function LeadDetailPanel({
           onIndexChange={setSelectedImageIndex}
         />
       </div>
+
+      {/* Mobile Bottom Action Bar - App-like navigation */}
+      {isMobile && (
+        <div className="mobile-bottom-bar">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onSyncLead}
+            disabled={syncing}
+            className="flex-1 text-gray-600"
+          >
+            <RefreshCw className={`h-4 w-4 mr-1.5 ${syncing ? "animate-spin" : ""}`} />
+            <span className="text-xs">Đồng bộ</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={callingBot}
+            onClick={() => onCallBot('FIRST_CALL')}
+            className="flex-1 text-orange-600 border-orange-600"
+          >
+            <PhoneCall className="h-4 w-4 mr-1.5" />
+            <span className="text-xs">Gọi Bot</span>
+          </Button>
+          <Button
+            size="sm"
+            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+            onClick={onOpenInspection}
+          >
+            <span className="text-xs">Đặt lịch KD</span>
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

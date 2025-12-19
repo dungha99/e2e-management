@@ -104,7 +104,7 @@ export function AccountSelector({
   // For mobile, render the full header with back button
   if (isMobile) {
     return (
-      <div className="bg-white border-b px-4 py-3">
+      <div className="bg-white border-b px-4 py-3 safe-area-top">
         <div className="flex items-center justify-between">
           <h1 className="font-bold text-gray-900 text-lg">
             {mobileView === 'detail' ? (

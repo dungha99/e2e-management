@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, ChevronRight, Check, X, Car, User, Phone } from "lucide-react"
 import { Lead, BiddingHistory } from "../types"
-import { formatPrice } from "../utils"
+import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { maskPhone } from "@/lib/utils"
 
 interface WorkflowStepProps {
@@ -20,11 +20,11 @@ interface WorkflowStepProps {
 function WorkflowStep({ icon, title, status, isCompleted = false, onClick }: WorkflowStepProps) {
   return (
     <div
-      className={`flex flex-col items-center gap-3 ${onClick ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
+      className={`flex flex-col items-center gap-2 sm:gap-3 ${onClick ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
       onClick={onClick}
     >
       <div
-        className={`w-16 h-16 rounded-full flex items-center justify-center transition-colors ${isCompleted
+        className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-colors ${isCompleted
           ? "bg-emerald-100 text-emerald-600 border-2 border-emerald-600"
           : "bg-gray-100 text-gray-400 border-2 border-gray-300"
           }`}
@@ -32,8 +32,8 @@ function WorkflowStep({ icon, title, status, isCompleted = false, onClick }: Wor
         {icon}
       </div>
       <div className="text-center">
-        <p className="font-medium text-sm text-gray-900">{title}</p>
-        <p className={`text-xs mt-1 ${isCompleted ? "text-emerald-600" : "text-gray-500"}`}>
+        <p className="font-medium text-xs sm:text-sm text-gray-900">{title}</p>
+        <p className={`text-[10px] sm:text-xs mt-0.5 sm:mt-1 ${isCompleted ? "text-emerald-600" : "text-gray-500"}`}>
           {status}
         </p>
       </div>
@@ -104,7 +104,8 @@ export function WorkflowTrackerTab({
 
   const handleStartEdit = (bid: BiddingHistory) => {
     setEditingBidId(bid.id)
-    setEditingPrice(bid.price.toString())
+    // Display as shorthand (e.g., 500000000 -> "500")
+    setEditingPrice(formatPriceForEdit(bid.price))
   }
 
   const handleCancelEdit = () => {
@@ -115,8 +116,9 @@ export function WorkflowTrackerTab({
   const handleSaveEdit = async (bidId: string) => {
     if (!onUpdateBid || !editingPrice) return
 
-    const newPrice = parseInt(editingPrice.replace(/\D/g, ""), 10)
-    if (isNaN(newPrice) || newPrice < 1) return
+    // Parse shorthand price (e.g., 500 -> 500000000)
+    const newPrice = parseShorthandPrice(editingPrice)
+    if (newPrice === undefined || newPrice < 1) return
 
     setSavingBid(true)
     try {
@@ -133,30 +135,31 @@ export function WorkflowTrackerTab({
   return (
     <>
       {/* Workflow Tracker */}
-      <div className="bg-white rounded-lg p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-3">
+      <div className="bg-white rounded-lg p-3 sm:p-5 shadow-sm">
+        {/* Header - Stack on mobile */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
             <h3 className="text-sm font-semibold text-gray-900">Tiến độ quy trình</h3>
             {(selectedLead.bidding_session_count || 0) > 0 && (
-              <div className="flex items-center gap-2 ml-4">
-                <span className="text-sm text-gray-600">Đang xem:</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs sm:text-sm text-gray-600 hidden sm:inline">Đang xem:</span>
                 <button
                   onClick={() => onWorkflowViewChange("purchase")}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${activeWorkflowView === "purchase"
+                  className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors ${activeWorkflowView === "purchase"
                     ? "bg-emerald-100 text-emerald-700"
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                     }`}
                 >
-                  Quy trình Thu Mua
+                  Thu Mua
                 </button>
                 <button
                   onClick={() => onWorkflowViewChange("seeding")}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${activeWorkflowView === "seeding"
+                  className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors ${activeWorkflowView === "seeding"
                     ? "bg-purple-100 text-purple-700"
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                     }`}
                 >
-                  Quy trình Seeding (WF2)
+                  Seeding
                 </button>
               </div>
             )}
@@ -166,7 +169,7 @@ export function WorkflowTrackerTab({
               variant="default"
               size="sm"
               onClick={onOpenWorkflow2}
-              className="bg-emerald-600 hover:bg-emerald-700"
+              className="bg-emerald-600 hover:bg-emerald-700 text-xs sm:text-sm w-full sm:w-auto"
             >
               Kích hoạt WF 2
             </Button>
@@ -174,74 +177,77 @@ export function WorkflowTrackerTab({
         </div>
 
         {/* Workflow Steps */}
+        {/* Workflow Steps - Horizontally scrollable on mobile */}
         {activeWorkflowView === "purchase" ? (
-          <div className="flex items-center justify-between gap-2 mb-8 px-4">
-            {/* Tin nhắn đầu */}
-            <div className="flex flex-col items-center gap-3 flex-1">
-              <WorkflowStep
-                icon={<CheckCircle className="w-8 h-8" />}
-                title="Tin nhắn đầu"
-                status={selectedLead.has_enough_images ? "Đã có ảnh" : "Chưa có ảnh"}
-                isCompleted={selectedLead.has_enough_images || false}
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onSendFirstMessage}
-                disabled={sendingMessage || selectedLead.first_message_sent}
-                className="text-xs"
-              >
-                {sendingMessage ? "Đang gửi..." : selectedLead.first_message_sent ? "Đã gửi" : "Gửi tin nhắn đầu"}
-              </Button>
-            </div>
+          <div className="overflow-x-auto pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-thin">
+            <div className="flex items-start justify-between gap-3 sm:gap-4 mb-4 sm:mb-8 min-w-[500px] sm:min-w-0 px-1 sm:px-4">
+              {/* Tin nhắn đầu */}
+              <div className="flex flex-col items-center gap-2 sm:gap-3 flex-1">
+                <WorkflowStep
+                  icon={<CheckCircle className="w-6 h-6 sm:w-8 sm:h-8" />}
+                  title="Tin nhắn đầu"
+                  status={selectedLead.has_enough_images ? "Đã có ảnh" : "Chưa có ảnh"}
+                  isCompleted={selectedLead.has_enough_images || false}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onSendFirstMessage}
+                  disabled={sendingMessage || selectedLead.first_message_sent}
+                  className="text-[10px] sm:text-xs h-7 sm:h-8 px-2 sm:px-3"
+                >
+                  {sendingMessage ? "Đang gửi..." : selectedLead.first_message_sent ? "Đã gửi" : "Gửi tin nhắn đầu"}
+                </Button>
+              </div>
 
-            {/* Chào Dealer */}
-            <div className="flex flex-col items-center gap-3 flex-1">
-              <WorkflowStep
-                icon={<DollarSign className="w-8 h-8" />}
-                title="Chào Dealer"
-                status={selectedLead.dealer_bidding?.status === "got_price" ? "Đã có giá Dealer" : "Chưa có giá"}
-                isCompleted={selectedLead.dealer_bidding?.status === "got_price"}
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onViewBiddingHistory}
-                disabled={!selectedLead.car_id}
-                className="text-xs"
-              >
-                Xem lịch sử giá
-              </Button>
-            </div>
+              {/* Chào Dealer */}
+              <div className="flex flex-col items-center gap-2 sm:gap-3 flex-1">
+                <WorkflowStep
+                  icon={<DollarSign className="w-6 h-6 sm:w-8 sm:h-8" />}
+                  title="Chào Dealer"
+                  status={selectedLead.dealer_bidding?.status === "got_price" ? "Đã có giá" : "Chưa có giá"}
+                  isCompleted={selectedLead.dealer_bidding?.status === "got_price"}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onViewBiddingHistory}
+                  disabled={!selectedLead.car_id}
+                  className="text-[10px] sm:text-xs h-7 sm:h-8 px-2 sm:px-3"
+                >
+                  Xem lịch sử giá
+                </Button>
+              </div>
 
-            {/* Tạo Phiên */}
-            <div className="flex flex-col items-center gap-3 flex-1">
-              <WorkflowStep
-                icon={<Play className="w-8 h-8" />}
-                title="Tạo Phiên"
-                status={selectedLead.session_created ? "Phiên đã tạo" : "Chưa tạo phiên"}
-                isCompleted={selectedLead.session_created || false}
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onCreateSession}
-                disabled={creatingSession || selectedLead.session_created}
-                className="text-xs"
-              >
-                {creatingSession ? "Đang tạo..." : selectedLead.session_created ? "Đã tạo" : "Tạo Phiên"}
-              </Button>
-            </div>
+              {/* Tạo Phiên */}
+              <div className="flex flex-col items-center gap-2 sm:gap-3 flex-1">
+                <WorkflowStep
+                  icon={<Play className="w-6 h-6 sm:w-8 sm:h-8" />}
+                  title="Tạo Phiên"
+                  status={selectedLead.session_created ? "Phiên đã tạo" : "Chưa tạo phiên"}
+                  isCompleted={selectedLead.session_created || false}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onCreateSession}
+                  disabled={creatingSession || selectedLead.session_created}
+                  className="text-[10px] sm:text-xs h-7 sm:h-8 px-2 sm:px-3"
+                >
+                  {creatingSession ? "Đang tạo..." : selectedLead.session_created ? "Đã tạo" : "Tạo Phiên"}
+                </Button>
+              </div>
 
-            {/* Decoy Web */}
-            <div className="flex flex-col items-center gap-3">
-              <WorkflowStep
-                icon={<Search className="w-8 h-8" />}
-                title="Decoy Web"
-                status={`${selectedLead.decoy_thread_count || 0} threads`}
-                isCompleted={(selectedLead.decoy_thread_count || 0) > 0}
-                onClick={onViewDecoyWeb}
-              />
+              {/* Decoy Web */}
+              <div className="flex flex-col items-center gap-2 sm:gap-3">
+                <WorkflowStep
+                  icon={<Search className="w-6 h-6 sm:w-8 sm:h-8" />}
+                  title="Decoy Web"
+                  status={`${selectedLead.decoy_thread_count || 0} threads`}
+                  isCompleted={(selectedLead.decoy_thread_count || 0) > 0}
+                  onClick={onViewDecoyWeb}
+                />
+              </div>
             </div>
           </div>
         ) : (
@@ -286,12 +292,13 @@ export function WorkflowTrackerTab({
 
         {/* Other Action Buttons - Only for purchase workflow */}
         {activeWorkflowView === "purchase" && (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 mt-2 sm:mt-0">
             <Button
               variant="outline"
+              size="sm"
               onClick={onRenameLead}
               disabled={renamingLead || !selectedLead?.pic_id}
-              className="text-gray-700"
+              className="text-gray-700 text-xs sm:text-sm w-full sm:w-auto"
             >
               {renamingLead ? "Đang đổi tên..." : "Đổi tên Lead"}
             </Button>
@@ -300,40 +307,40 @@ export function WorkflowTrackerTab({
       </div>
 
       {/* Additional Info Cards */}
-      <div className="mt-6">
+      <div className="mt-4 sm:mt-6">
         {/* Price Info - Minimal Style with Subtle Decorations */}
-        <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white rounded-lg p-3 sm:p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
             <div className="flex items-center gap-2">
-              <h4 className="text-sm font-medium text-gray-900">Thông tin giá & Thống kê</h4>
+              <h4 className="text-xs sm:text-sm font-medium text-gray-900">Thông tin giá & Thống kê</h4>
             </div>
             <Button
               variant="ghost"
               size="sm"
               onClick={onViewBiddingHistory}
               disabled={!selectedLead.car_id}
-              className="text-xs text-gray-500 hover:text-gray-700 h-6 px-2"
+              className="text-[10px] sm:text-xs text-gray-500 hover:text-gray-700 h-6 px-1.5 sm:px-2"
             >
               Xem chi tiết →
             </Button>
           </div>
 
-          {/* Stats Row - Minimal with icons */}
-          <div className="grid grid-cols-4 gap-4 mb-5 pb-5 border-b border-gray-100">
+          {/* Stats Row - 2 cols on mobile, 4 cols on larger screens */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-4 sm:mb-5 pb-4 sm:pb-5 border-b border-gray-100">
             <div>
-              <div className="flex items-center gap-1.5 mb-1">
+              <div className="flex items-center gap-1 sm:gap-1.5 mb-0.5 sm:mb-1">
                 <User className="h-3 w-3 text-gray-400" />
-                <p className="text-xs text-gray-400">Đã gửi</p>
+                <p className="text-[10px] sm:text-xs text-gray-400">Đã gửi</p>
               </div>
-              <p className="text-xl font-semibold text-gray-900">{biddingHistory.length}</p>
+              <p className="text-lg sm:text-xl font-semibold text-gray-900">{biddingHistory.length}</p>
               <p className="text-[10px] text-gray-400">dealers</p>
             </div>
             <div>
-              <div className="flex items-center gap-1.5 mb-1">
+              <div className="flex items-center gap-1 sm:gap-1.5 mb-0.5 sm:mb-1">
                 <Zap className="h-3 w-3 text-gray-400" />
-                <p className="text-xs text-gray-400">Tỷ lệ phản hồi</p>
+                <p className="text-[10px] sm:text-xs text-gray-400">Tỷ lệ phản hồi</p>
               </div>
-              <p className="text-xl font-semibold text-gray-900">
+              <p className="text-lg sm:text-xl font-semibold text-gray-900">
                 {biddingHistory.length > 0
                   ? `${Math.round((topBids.length / biddingHistory.length) * 100)}%`
                   : "—"}
@@ -341,21 +348,21 @@ export function WorkflowTrackerTab({
               <p className="text-[10px] text-gray-400">{topBids.length}/{biddingHistory.length} có giá</p>
             </div>
             <div>
-              <div className="flex items-center gap-1.5 mb-1">
+              <div className="flex items-center gap-1 sm:gap-1.5 mb-0.5 sm:mb-1">
                 <DollarSign className="h-3 w-3 text-emerald-500" />
-                <p className="text-xs text-gray-400">Giá khách</p>
+                <p className="text-[10px] sm:text-xs text-gray-400">Giá khách</p>
               </div>
-              <p className="text-xl font-semibold text-emerald-700">
+              <p className="text-lg sm:text-xl font-semibold text-emerald-700">
                 {selectedLead.price_customer ? formatPrice(selectedLead.price_customer) : "—"}
               </p>
             </div>
             <div>
-              <div className="flex items-center gap-1.5 mb-1">
+              <div className="flex items-center gap-1 sm:gap-1.5 mb-0.5 sm:mb-1">
                 <DollarSign className="h-3 w-3 text-blue-500" />
-                <p className="text-xs text-gray-400">Giá cao nhất</p>
+                <p className="text-[10px] sm:text-xs text-gray-400">Giá cao nhất</p>
               </div>
               <div className="flex items-center gap-1">
-                <p className="text-xl font-semibold text-blue-700">
+                <p className="text-lg sm:text-xl font-semibold text-blue-700">
                   {selectedLead.dealer_bidding?.maxPrice ? formatPrice(selectedLead.dealer_bidding.maxPrice) : "—"}
                 </p>
                 {selectedLead.dealer_bidding?.status === "got_price" &&
@@ -368,8 +375,8 @@ export function WorkflowTrackerTab({
             </div>
           </div>
 
-          {/* Two Column Layout */}
-          <div className="grid grid-cols-2 gap-6">
+          {/* Two Column Layout - Stack on mobile */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
             {/* Top Bids */}
             <div>
               <h5 className="text-xs font-medium text-gray-500 mb-3 flex items-center gap-1.5">

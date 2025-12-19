@@ -100,6 +100,44 @@ export function handlePriceFormat(
   setter(numValue.toLocaleString("vi-VN"))
 }
 
+/**
+ * Parse shorthand price input. If value < 10,000, treat as millions (e.g., 500 -> 500,000,000)
+ * This makes it easier for users to input large VND values.
+ */
+export function parseShorthandPrice(priceStr: string): number | undefined {
+  if (!priceStr) return undefined
+  // Remove all dots and commas before parsing
+  const cleaned = priceStr.replace(/[.,]/g, "")
+  let val = parseFloat(cleaned)
+
+  // If value < 10,000, assume it's a shortcut for millions (e.g. 350 -> 350,000,000)
+  if (!isNaN(val) && val < 10000) {
+    val *= 1000000
+  }
+  return isNaN(val) ? undefined : val
+}
+
+/**
+ * Format a full price value for editing display.
+ * Converts to shorthand if it's a clean million value.
+ * E.g., 500,000,000 -> "500" (for display in input field)
+ */
+export function formatPriceForEdit(price: number | null | undefined): string {
+  if (!price || price === 0) return ""
+
+  // If price is a clean million value (divisible by 1,000,000 with no remainder),
+  // AND the result is less than 10,000, show shorthand
+  if (price >= 1000000 && price % 1000000 === 0) {
+    const millions = price / 1000000
+    if (millions < 10000) {
+      return millions.toString()
+    }
+  }
+
+  // Otherwise, show full formatted value
+  return price.toLocaleString("vi-VN")
+}
+
 export function formatDate(dateString: string | null | undefined): string {
   if (!dateString) return "-"
   return new Date(dateString).toLocaleDateString("vi-VN", {

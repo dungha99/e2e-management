@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Loader2, Plus, Check, ChevronsUpDown, CheckCircle } from "lucide-react"
 import { BiddingHistory, Dealer, Lead } from "../types"
-import { formatPrice, formatDate, formatCarInfo } from "../utils"
+import { formatPrice, formatDate, formatCarInfo, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { cn } from "@/lib/utils"
 
 interface BiddingHistoryDialogProps {
@@ -165,10 +165,10 @@ export function BiddingHistoryDialog({
               </Popover>
             </div>
             <div className="grid gap-2 w-32">
-              <Label>Giá (VNĐ)</Label>
+              <Label>Giá (triệu)</Label>
               <Input
-                type="number"
-                placeholder="Nhập giá"
+                type="text"
+                placeholder="VD: 500"
                 value={newBidPrice}
                 onChange={(e) => setNewBidPrice(e.target.value)}
               />
@@ -222,7 +222,8 @@ export function BiddingHistoryDialog({
                         {editingBiddingId === bid.id ? (
                           <div className="flex items-center gap-2">
                             <Input
-                              type="number"
+                              type="text"
+                              placeholder="VD: 500"
                               value={editingPrice}
                               onChange={(e) => setEditingPrice?.(e.target.value)}
                               className="h-8 w-32"
@@ -258,7 +259,8 @@ export function BiddingHistoryDialog({
                               className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                               onClick={() => {
                                 setEditingBiddingId?.(bid.id)
-                                setEditingPrice?.(bid.price.toString())
+                                // Use shorthand format for editing (e.g., 500000000 -> "500")
+                                setEditingPrice?.(formatPriceForEdit(bid.price))
                               }}
                             >
                               <div className="h-3 w-3">✎</div>

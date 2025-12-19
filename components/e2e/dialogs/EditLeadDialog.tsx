@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Loader2, ExternalLink, Copy, ChevronLeft, ChevronRight } from "lucide-react"
 import { Lead } from "../types"
-import { formatPrice, formatCarInfo } from "../utils"
+import { formatPrice, formatCarInfo, formatPriceForEdit } from "../utils"
 import { maskPhone } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
 
@@ -122,8 +122,9 @@ Giá mong muốn: ${lead.price_customer ? formatPrice(lead.price_customer) : "N/
     setEditMode(true)
     // Initialize form fields with current lead values
     setEditedStage(lead.stage || "")
-    setEditedPriceCustomer(lead.price_customer?.toLocaleString("vi-VN") || "")
-    setEditedPriceHighestBid(lead.price_highest_bid?.toLocaleString("vi-VN") || "")
+    // Use shorthand format for prices (e.g., 500000000 -> "500")
+    setEditedPriceCustomer(formatPriceForEdit(lead.price_customer))
+    setEditedPriceHighestBid(formatPriceForEdit(lead.price_highest_bid))
     setEditedQualified(lead.qualified || "")
     setEditedIntentionLead(lead.intentionLead || "")
     setEditedNegotiationAbility(lead.negotiationAbility || "")
@@ -384,9 +385,8 @@ Giá mong muốn: ${lead.price_customer ? formatPrice(lead.price_customer) : "N/
                       type="text"
                       value={editedPriceCustomer}
                       onChange={(e) => setEditedPriceCustomer(e.target.value)}
-                      onBlur={(e) => handlePriceFormat(e.target.value, setEditedPriceCustomer)}
                       className="h-8 text-sm font-semibold text-emerald-600"
-                      placeholder="Nhập giá"
+                      placeholder="VD: 500 = 500 triệu"
                     />
                   ) : (
                     <p className="text-sm font-bold text-emerald-600">
@@ -403,9 +403,8 @@ Giá mong muốn: ${lead.price_customer ? formatPrice(lead.price_customer) : "N/
                       type="text"
                       value={editedPriceHighestBid}
                       onChange={(e) => setEditedPriceHighestBid(e.target.value)}
-                      onBlur={(e) => handlePriceFormat(e.target.value, setEditedPriceHighestBid)}
                       className="h-8 text-sm font-semibold text-blue-600"
-                      placeholder="Nhập giá"
+                      placeholder="VD: 500 = 500 triệu"
                     />
                   ) : (
                     <p className="text-sm font-bold text-blue-600">

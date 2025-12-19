@@ -214,12 +214,14 @@ export function LeadDetailPanel({
     <div className="flex-1 overflow-hidden flex flex-col ">
       <div className="flex-1 overflow-y-auto">
         {/* Header */}
-        <div className="px-4 md:px-6 lg:px-8 pt-4 md:pt-6 pb-4 md:pb-6 border-b sticky top-0 z-10">
-          <div className="flex flex-wrap items-start gap-3 md:gap-4 mb-4">
-            <div className="flex items-center gap-3 md:gap-4">
-              {/* Car Image Thumbnail */}
+        <div className="px-3 sm:px-4 md:px-6 lg:px-8 pt-3 sm:pt-4 md:pt-6 pb-3 sm:pb-4 md:pb-6 border-b sticky top-0 z-10 bg-white">
+          {/* Mobile: Stacked layout, Desktop: Side by side */}
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-start gap-3 md:gap-4 mb-3 md:mb-4">
+            {/* Car Image + Lead Info Container */}
+            <div className="flex flex-col sm:flex-row items-start gap-3 md:gap-4 w-full sm:w-auto sm:flex-1">
+              {/* Car Image Thumbnail - Full width on mobile */}
               <div
-                className={`w-28 md:w-40 aspect-[3/2] rounded-lg border-2 border-gray-200 bg-gray-100 overflow-hidden flex items-center justify-center shadow-sm relative group ${galleryImages.length > 0 ? 'cursor-pointer hover:border-blue-400 transition-colors' : ''}`}
+                className={`w-full sm:w-28 md:w-40 aspect-[3/2] rounded-lg border-2 border-gray-200 bg-gray-100 overflow-hidden flex items-center justify-center shadow-sm relative group flex-shrink-0 ${galleryImages.length > 0 ? 'cursor-pointer hover:border-blue-400 transition-colors' : ''}`}
                 onClick={handleThumbnailClick}
                 title={galleryImages.length > 0 ? "Nhấn để xem tất cả ảnh" : undefined}
               >
@@ -287,64 +289,74 @@ export function LeadDetailPanel({
                   </div>
                 )}
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-bold text-gray-900">{selectedLead.name}</h2>
-                  <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-gray-50 border border-gray-200">
+
+              {/* Lead Info */}
+              <div className="flex-1 min-w-0">
+                {/* Name Row - Stacked on mobile */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+                  <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{selectedLead.name}</h2>
+                  <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                    <div className="flex items-center gap-1 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md bg-gray-50 border border-gray-200">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 w-5 p-0 hover:bg-transparent"
+                        onClick={(e) => onTogglePrimary(selectedLead, e)}
+                        disabled={updatingPrimary || !selectedLead.car_id}
+                        title={selectedLead.is_primary ? "Bỏ đánh dấu Primary" : "Đánh dấu là Primary"}
+                      >
+                        {updatingPrimary ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                        ) : (
+                          <Star
+                            className={`h-4 w-4 ${selectedLead.is_primary
+                              ? "fill-purple-600 text-purple-600"
+                              : "text-gray-400 hover:text-gray-500"
+                              }`}
+                          />
+                        )}
+                      </Button>
+                      <span className={`text-xs font-medium ${selectedLead.is_primary
+                        ? "text-purple-600"
+                        : "text-gray-600"
+                        }`}>
+                        {selectedLead.is_primary ? "Ưu tiên" : "Nuôi dưỡng"}
+                      </span>
+                    </div>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-5 w-5 p-0 hover:bg-transparent"
-                      onClick={(e) => onTogglePrimary(selectedLead, e)}
-                      disabled={updatingPrimary || !selectedLead.car_id}
-                      title={selectedLead.is_primary ? "Bỏ đánh dấu Primary" : "Đánh dấu là Primary"}
+                      className="h-6 w-6 p-0 hover:bg-transparent text-gray-400 hover:text-blue-600"
+                      onClick={(e) => onQuickEdit(selectedLead, e)}
+                      title="Chỉnh sửa nhanh"
                     >
-                      {updatingPrimary ? (
-                        <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
-                      ) : (
-                        <Star
-                          className={`h-4 w-4 ${selectedLead.is_primary
-                            ? "fill-purple-600 text-purple-600"
-                            : "text-gray-400 hover:text-gray-500"
-                            }`}
-                        />
-                      )}
+                      <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                    <span className={`text-xs font-medium ${selectedLead.is_primary
-                      ? "text-purple-600"
-                      : "text-gray-600"
-                      }`}>
-                      {selectedLead.is_primary ? "Ưu tiên" : "Nuôi dưỡng"}
-                    </span>
+                    <div className="flex items-center gap-1 text-gray-500">
+                      <Clock className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
+                      <span className="text-xs sm:text-sm">
+                        {formatDate(selectedLead.created_at)}
+                      </span>
+                    </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0 hover:bg-transparent text-gray-400 hover:text-blue-600"
-                    onClick={(e) => onQuickEdit(selectedLead, e)}
-                    title="Chỉnh sửa nhanh"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Clock className="h-4 w-4 text-gray-400" />
-                  <span className="text-sm text-gray-500">
-                    {formatDate(selectedLead.created_at)}
-                  </span>
                 </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <p className="text-base font-medium text-gray-700">
+
+                {/* Car Info Row */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mt-1">
+                  <p className="text-sm sm:text-base font-medium text-gray-700 truncate">
                     {formatCarInfo(selectedLead)}
                   </p>
                   {selectedLead.price_customer && (
-                    <span className="text-emerald-600 font-semibold">
+                    <span className="text-sm sm:text-base text-emerald-600 font-semibold">
                       {formatPrice(selectedLead.price_customer)}
                     </span>
                   )}
                 </div>
-                {/* Sale Status Badges */}
-                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+
+                {/* Sale Status Badges - Scrollable on mobile */}
+                <div className="flex items-center gap-1.5 mt-2 overflow-x-auto pb-1 scrollbar-thin">
                   {selectedLead.stage && (
-                    <span className={`px-2 py-0.5 text-xs font-medium rounded ${selectedLead.stage === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded whitespace-nowrap ${selectedLead.stage === 'COMPLETED' ? 'bg-green-100 text-green-800' :
                       selectedLead.stage === 'DEPOSIT_PAID' ? 'bg-emerald-100 text-emerald-800' :
                         selectedLead.stage === 'CAR_VIEW' ? 'bg-blue-100 text-blue-800' :
                           selectedLead.stage === 'NEGOTIATION' ? 'bg-yellow-100 text-yellow-800' :
@@ -357,7 +369,7 @@ export function LeadDetailPanel({
                     </span>
                   )}
                   {selectedLead.qualified && (
-                    <span className={`px-2 py-0.5 text-xs font-medium rounded ${selectedLead.qualified === 'STRONG_QUALIFIED' ? 'bg-green-100 text-green-800' :
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded whitespace-nowrap ${selectedLead.qualified === 'STRONG_QUALIFIED' ? 'bg-green-100 text-green-800' :
                       selectedLead.qualified === 'WEAK_QUALIFIED' ? 'bg-red-100 text-red-800' :
                         selectedLead.qualified === 'NON_QUALIFIED' ? 'bg-orange-100 text-orange-800' :
                           'bg-gray-100 text-gray-700'
@@ -366,7 +378,7 @@ export function LeadDetailPanel({
                     </span>
                   )}
                   {selectedLead.intentionLead && (
-                    <span className={`px-2 py-0.5 text-xs font-medium rounded ${selectedLead.intentionLead === 'FAST' ? 'bg-green-100 text-green-800' :
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded whitespace-nowrap ${selectedLead.intentionLead === 'FAST' ? 'bg-green-100 text-green-800' :
                       selectedLead.intentionLead === 'SLOW' ? 'bg-yellow-100 text-yellow-800' :
                         selectedLead.intentionLead === 'DELAY' ? 'bg-red-100 text-red-800' :
                           'bg-gray-100 text-gray-700'
@@ -375,7 +387,7 @@ export function LeadDetailPanel({
                     </span>
                   )}
                   {selectedLead.negotiationAbility && (
-                    <span className={`px-2 py-0.5 text-xs font-medium rounded ${selectedLead.negotiationAbility === 'HARD' ? 'bg-green-100 text-green-800' :
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded whitespace-nowrap ${selectedLead.negotiationAbility === 'HARD' ? 'bg-green-100 text-green-800' :
                       selectedLead.negotiationAbility === 'MAYBE' ? 'bg-yellow-100 text-yellow-800' :
                         selectedLead.negotiationAbility === 'EASY' ? 'bg-red-100 text-red-800' :
                           'bg-gray-100 text-gray-700'
@@ -386,22 +398,24 @@ export function LeadDetailPanel({
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+
+            {/* Action Buttons - Full width on mobile, stacked in grid */}
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={onSyncLead}
                 disabled={syncing}
-                className="text-gray-600"
+                className="text-gray-600 text-xs sm:text-sm"
               >
-                <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-                {syncing ? "Đang đồng bộ..." : "Đồng bộ"}
+                <RefreshCw className={`h-3.5 sm:h-4 w-3.5 sm:w-4 mr-1.5 sm:mr-2 ${syncing ? "animate-spin" : ""}`} />
+                {syncing ? "Đồng bộ..." : "Đồng bộ"}
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={onShowDetail}
-                className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                className="text-blue-600 border-blue-600 hover:bg-blue-50 text-xs sm:text-sm"
               >
                 Chi tiết
               </Button>
@@ -412,14 +426,15 @@ export function LeadDetailPanel({
                     variant="outline"
                     size="sm"
                     disabled={callingBot}
-                    className="text-orange-600 border-orange-600 hover:bg-orange-50"
+                    className="text-orange-600 border-orange-600 hover:bg-orange-50 text-xs sm:text-sm"
                   >
                     {callingBot ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <Loader2 className="h-3.5 sm:h-4 w-3.5 sm:w-4 animate-spin" />
                     ) : (
                       <>
-                        <PhoneCall className="h-4 w-4 mr-2" />
-                        GỌI BOT
+                        <PhoneCall className="h-3.5 sm:h-4 w-3.5 sm:w-4 mr-1.5 sm:mr-2" />
+                        <span className="hidden sm:inline">GỌI BOT</span>
+                        <span className="sm:hidden">Gọi</span>
                       </>
                     )}
                   </Button>
@@ -436,42 +451,45 @@ export function LeadDetailPanel({
 
               <Button
                 size="sm"
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm"
                 onClick={onOpenInspection}
               >
-                Đặt lịch KD
+                <span className="hidden sm:inline">Đặt lịch KD</span>
+                <span className="sm:hidden">Lịch KD</span>
               </Button>
             </div>
           </div>
 
-          {/* Tabs */}
-          <div className="flex items-center gap-6 border-b -mb-6">
+          {/* Tabs - Horizontally scrollable on mobile */}
+          <div className="flex items-center gap-2 sm:gap-4 md:gap-6 border-b -mb-3 sm:-mb-4 md:-mb-6 overflow-x-auto scrollbar-none pb-px">
             <button
               type="button"
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "workflow"
+              className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${activeDetailView === "workflow"
                 ? "text-blue-600 border-blue-600"
                 : "text-gray-500 border-transparent hover:text-gray-700"
                 }`}
               onClick={() => onActiveDetailViewChange("workflow")}
             >
-              <div className="flex items-center gap-2">
-                <Zap className="h-4 w-4" />
-                Workflow Tracker
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <Zap className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
+                <span className="hidden sm:inline">Workflow Tracker</span>
+                <span className="sm:hidden">Workflow</span>
               </div>
             </button>
             <button
               type="button"
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "decoy-web"
+              className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${activeDetailView === "decoy-web"
                 ? "text-orange-600 border-orange-600"
                 : "text-gray-500 border-transparent hover:text-gray-700"
                 }`}
               onClick={() => onActiveDetailViewChange("decoy-web")}
             >
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4" />
-                Decoy Web Chat
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <MessageSquare className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
+                <span className="hidden sm:inline">Decoy Web Chat</span>
+                <span className="sm:hidden">Decoy</span>
                 {(selectedLead.decoy_thread_count || 0) > 0 && (
-                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-600 text-xs">
+                  <span className="ml-0.5 sm:ml-1 px-1 sm:px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-600 text-[10px] sm:text-xs">
                     {selectedLead.decoy_thread_count}
                   </span>
                 )}
@@ -480,28 +498,30 @@ export function LeadDetailPanel({
 
             <button
               type="button"
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "recent-activity"
+              className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${activeDetailView === "recent-activity"
                 ? "text-purple-600 border-purple-600"
                 : "text-gray-500 border-transparent hover:text-gray-700"
                 }`}
               onClick={() => onActiveDetailViewChange("recent-activity")}
             >
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                Hoạt động trên website
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <Clock className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
+                <span className="hidden sm:inline">Hoạt động trên website</span>
+                <span className="sm:hidden">Hoạt động</span>
               </div>
             </button>
             <button
               type="button"
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeDetailView === "decoy-history"
+              className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${activeDetailView === "decoy-history"
                 ? "text-orange-600 border-orange-600"
                 : "text-gray-500 border-transparent hover:text-gray-700"
                 }`}
               onClick={() => onActiveDetailViewChange("decoy-history")}
             >
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4" />
-                Lịch sử Quây khách
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <MessageSquare className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
+                <span className="hidden sm:inline">Lịch sử Quây khách</span>
+                <span className="sm:hidden">Lịch sử</span>
               </div>
             </button>
           </div>

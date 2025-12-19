@@ -21,6 +21,7 @@ import { Calendar } from "@/components/ui/calendar"
 
 // Extracted component imports
 import { Lead, BiddingHistory, Dealer, ITEMS_PER_PAGE, DealerBiddingStatus } from "./e2e/types"
+import { formatPriceForEdit, parseShorthandPrice } from "./e2e/utils"
 import { useAccounts } from "@/contexts/AccountsContext"
 import {
   useLeadsCounts, useLeads,
@@ -1405,6 +1406,17 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
   async function handleCreateBiddingManual() {
     if (!selectedLead?.car_id || !newBidDealerId || !newBidPrice) return
 
+    // Parse shorthand price (e.g., 500 -> 500000000)
+    const price = parseShorthandPrice(newBidPrice)
+    if (price === undefined || price < 1) {
+      toast({
+        title: "Lỗi",
+        description: "Giá không hợp lệ",
+        variant: "destructive",
+      })
+      return
+    }
+
     setCreatingBiddingManual(true)
     try {
       const response = await fetch("/api/e2e/bidding-history/create", {
@@ -1413,7 +1425,7 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
         body: JSON.stringify({
           car_id: selectedLead.car_id,
           dealer_id: newBidDealerId,
-          price: parseFloat(newBidPrice),
+          price: price,
           comment: newBidComment
         }),
       })
@@ -1531,6 +1543,17 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
   async function handleUpdateBiddingPrice(id: string) {
     if (!editingPrice) return
 
+    // Parse shorthand price (e.g., 500 -> 500000000)
+    const price = parseShorthandPrice(editingPrice)
+    if (price === undefined || price < 1) {
+      toast({
+        title: "Lỗi",
+        description: "Giá không hợp lệ",
+        variant: "destructive",
+      })
+      return
+    }
+
     setUpdatingBidding(true)
     try {
       const response = await fetch("/api/e2e/bidding-history/update", {
@@ -1538,7 +1561,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id,
-          price: parseFloat(editingPrice)
+          price: price
         }),
       })
 
@@ -1889,8 +1912,9 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
 
     setEditMode(true)
     setEditedStage(selectedLead.stage || "")
-    setEditedPriceCustomer(selectedLead.price_customer?.toLocaleString("vi-VN") || "")
-    setEditedPriceHighestBid(selectedLead.price_highest_bid?.toLocaleString("vi-VN") || "")
+    // Use shorthand format for prices (e.g., 500000000 -> "500")
+    setEditedPriceCustomer(formatPriceForEdit(selectedLead.price_customer))
+    setEditedPriceHighestBid(formatPriceForEdit(selectedLead.price_highest_bid))
     setEditedQualified(selectedLead.qualified || "")
     setEditedIntentionLead(selectedLead.intentionLead || "")
     setEditedNegotiationAbility(selectedLead.negotiationAbility || "")
@@ -1915,8 +1939,9 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     setSelectedLead(lead)
     setEditMode(true)
     setEditedStage(lead.stage || "")
-    setEditedPriceCustomer(lead.price_customer?.toLocaleString("vi-VN") || "")
-    setEditedPriceHighestBid(lead.price_highest_bid?.toLocaleString("vi-VN") || "")
+    // Use shorthand format for prices (e.g., 500000000 -> "500")
+    setEditedPriceCustomer(formatPriceForEdit(lead.price_customer))
+    setEditedPriceHighestBid(formatPriceForEdit(lead.price_highest_bid))
     setEditedQualified(lead.qualified || "")
     setEditedIntentionLead(lead.intentionLead || "")
     setEditedNegotiationAbility(lead.negotiationAbility || "")

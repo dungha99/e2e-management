@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Lead } from "../types"
-import { formatCarInfo } from "../utils"
+import { formatCarInfo, parseShorthandPrice } from "../utils"
 
 interface Workflow2DialogProps {
   open: boolean
@@ -68,8 +68,9 @@ export function Workflow2Dialog({
         body: JSON.stringify({
           phone: phone,
           duration: parseInt(workflow2Data.duration) || 0,
-          minPrice: parseFloat(workflow2Data.minPrice) || 0,
-          maxPrice: parseFloat(workflow2Data.maxPrice) || 0,
+          // Parse shorthand prices (e.g., 500 -> 500000000)
+          minPrice: parseShorthandPrice(workflow2Data.minPrice) || 0,
+          maxPrice: parseShorthandPrice(workflow2Data.maxPrice) || 0,
           comment: workflow2Data.comment,
           numberOfComments: parseInt(workflow2Data.numberOfComments) || 0,
           bid: workflow2Data.bid,
@@ -135,21 +136,21 @@ export function Workflow2Dialog({
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="minPrice">Min Price</Label>
+            <Label htmlFor="minPrice">Min Price (triệu)</Label>
             <Input
               id="minPrice"
-              type="number"
-              placeholder="Nhập giá tối thiểu"
+              type="text"
+              placeholder="VD: 500 = 500 triệu"
               value={workflow2Data.minPrice}
               onChange={(e) => setWorkflow2Data({ ...workflow2Data, minPrice: e.target.value })}
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="maxPrice">Max Price</Label>
+            <Label htmlFor="maxPrice">Max Price (triệu)</Label>
             <Input
               id="maxPrice"
-              type="number"
-              placeholder="Nhập giá tối đa"
+              type="text"
+              placeholder="VD: 600 = 600 triệu"
               value={workflow2Data.maxPrice}
               onChange={(e) => setWorkflow2Data({ ...workflow2Data, maxPrice: e.target.value })}
             />

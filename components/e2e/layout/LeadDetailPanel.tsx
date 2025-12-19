@@ -214,7 +214,7 @@ export function LeadDetailPanel({
     <div className="flex-1 overflow-hidden flex flex-col ">
       <div className="flex-1 overflow-y-auto">
         {/* Header */}
-        <div className="px-3 sm:px-4 md:px-6 lg:px-8 pt-3 sm:pt-4 md:pt-6 pb-3 sm:pb-4 md:pb-6 border-b sticky top-0 z-10 bg-white">
+        <div className="px-3 sm:px-4 md:px-6 lg:px-8 pt-3 sm:pt-4 md:pt-6 pb-3 sm:pb-4 md:pb-6 border-b sticky top-0 z-10">
           {/* Mobile: Stacked layout, Desktop: Side by side */}
           <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-start gap-3 md:gap-4 mb-3 md:mb-4">
             {/* Car Image + Lead Info Container */}

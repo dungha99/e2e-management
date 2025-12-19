@@ -194,6 +194,47 @@ export function SaleActivitiesTab({ phone, refreshKey }: SaleActivitiesTabProps)
         )
     }
 
+    // Format date for grouping - returns just the date part
+    const getDateKey = (dateStr: string): string => {
+        const date = new Date(dateStr)
+        return date.toISOString().split('T')[0] // YYYY-MM-DD format for grouping
+    }
+
+    // Format date for display header in Vietnamese
+    const formatDateHeader = (dateKey: string): string => {
+        const date = new Date(dateKey)
+        const today = new Date()
+        const yesterday = new Date(today)
+        yesterday.setDate(yesterday.getDate() - 1)
+
+        const todayKey = today.toISOString().split('T')[0]
+        const yesterdayKey = yesterday.toISOString().split('T')[0]
+
+        if (dateKey === todayKey) return 'Hôm nay'
+        if (dateKey === yesterdayKey) return 'Hôm qua'
+
+        // Format as DD/MM/YYYY for other dates
+        const day = date.getDate().toString().padStart(2, '0')
+        const month = (date.getMonth() + 1).toString().padStart(2, '0')
+        const year = date.getFullYear()
+        return `${day}/${month}/${year}`
+    }
+
+    // Group paginated activities by date
+    const groupedActivities = paginated.reduce<Record<string, SaleActivity[]>>((acc, activity) => {
+        const dateKey = getDateKey(activity.createdAt)
+        if (!acc[dateKey]) {
+            acc[dateKey] = []
+        }
+        acc[dateKey].push(activity)
+        return acc
+    }, {})
+
+    // Get sorted date keys (newest first)
+    const sortedDateKeys = Object.keys(groupedActivities).sort((a, b) =>
+        new Date(b).getTime() - new Date(a).getTime()
+    )
+
     if (!activities.length) {
         return (
             <div className="text-center py-16 text-gray-400">
@@ -205,132 +246,145 @@ export function SaleActivitiesTab({ phone, refreshKey }: SaleActivitiesTabProps)
 
     return (
         <div className="relative">
-            {paginated.map((activity, idx) => {
-                const meta = activity.metadata || {}
-                const fieldName = meta.field_name || meta.fieldName
-                const prevValue = meta.previous_value ?? meta.previousValue ?? meta.old
-                const newValue = meta.new_value ?? meta.newValue ?? meta.new
-                const reason = meta.changed_reason || meta.changedReason || meta.reason
-                const style = getActivityStyle(activity.activityType)
-                const IconComponent = style.icon
-                const isLast = idx === paginated.length - 1
+            {sortedDateKeys.map((dateKey) => (
+                <div key={dateKey} className="mb-4">
+                    {/* Date Header */}
+                    <div className="flex items-center gap-2 mb-3">
+                        <div className="h-px bg-gray-200 flex-1" />
+                        <span className="text-xs font-semibold text-gray-500 bg-white px-2">
+                            {formatDateHeader(dateKey)}
+                        </span>
+                        <div className="h-px bg-gray-200 flex-1" />
+                    </div>
 
-                return (
-                    <div
-                        key={activity.id || idx}
-                        className="relative flex gap-3 pb-4"
-                    >
-                        {/* Activity Icon */}
-                        <div className={`w-8 h-8 rounded-full ${style.bgColor} flex items-center justify-center flex-shrink-0`}>
-                            <IconComponent className={`h-4 w-4 ${style.iconColor}`} />
-                        </div>
+                    {/* Activities for this date */}
+                    {groupedActivities[dateKey].map((activity, idx) => {
+                        const meta = activity.metadata || {}
+                        const fieldName = meta.field_name || meta.fieldName
+                        const prevValue = meta.previous_value ?? meta.previousValue ?? meta.old
+                        const newValue = meta.new_value ?? meta.newValue ?? meta.new
+                        const reason = meta.changed_reason || meta.changedReason || meta.reason
+                        const style = getActivityStyle(activity.activityType)
+                        const IconComponent = style.icon
 
-                        {/* Content */}
-                        <div className="flex-1 min-w-0 rounded-lg overflow-hidden hover:bg-gray-50 transition-all -mt-1">
-                            {/* Header */}
-                            <div className="p-3">
-                                {/* Title */}
-                                <h4 className="text-sm font-semibold text-gray-900">
-                                    {getActivityLabel(activity.activityType)}
-                                </h4>
-
-                                {/* Actor & Time */}
-                                <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                                    <span className="flex items-center gap-1">
-                                        <User className="h-3 w-3" />
-                                        {getActor(activity)}
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                        <Clock className="h-3 w-3" />
-                                        {relativeTime(activity.createdAt)}
-                                    </span>
+                        return (
+                            <div
+                                key={activity.id || idx}
+                                className="relative flex gap-3 pb-4"
+                            >
+                                {/* Activity Icon */}
+                                <div className={`w-8 h-8 rounded-full ${style.bgColor} flex items-center justify-center flex-shrink-0`}>
+                                    <IconComponent className={`h-4 w-4 ${style.iconColor}`} />
                                 </div>
-                            </div>
 
-                            {/* Field name & Value Change */}
-                            {(fieldName || prevValue !== undefined || newValue !== undefined) && (
-                                <div className="px-3 pb-2">
-                                    <div className="bg-gray-50 rounded-md">
-                                        {/* Field Name */}
-                                        {fieldName && (
-                                            <p className="text-xs text-gray-600 mb-2 font-medium">
-                                                {getFieldLabel(fieldName)}
-                                            </p>
-                                        )}
+                                {/* Content */}
+                                <div className="flex-1 min-w-0 rounded-lg overflow-hidden hover:bg-gray-50 transition-all -mt-1">
+                                    {/* Header */}
+                                    <div className="p-3">
+                                        {/* Title */}
+                                        <h4 className="text-sm font-semibold text-gray-900">
+                                            {getActivityLabel(activity.activityType)}
+                                        </h4>
 
-                                        {/* Value Change */}
-                                        {(prevValue !== undefined || newValue !== undefined) && (
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                {/* Hide previous value for NOTE_ADDED */}
-                                                {activity.activityType !== 'NOTE_ADDED' && (
-                                                    <>
-                                                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${prevValue === null || prevValue === undefined || prevValue === '' || prevValue === '—'
-                                                            ? 'bg-orange-100 text-orange-700'
-                                                            : 'bg-red-100 text-red-600 line-through'
-                                                            }`}>
-                                                            {formatValue(prevValue)}
-                                                        </span>
-                                                        <ArrowRight className="h-3 w-3 text-gray-400" />
-                                                    </>
-                                                )}
-                                                <span className="inline-flex px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-700">
-                                                    {formatValue(newValue)}
-                                                </span>
-                                            </div>
-                                        )}
+                                        {/* Actor & Time */}
+                                        <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
+                                            <span className="flex items-center gap-1">
+                                                <User className="h-3 w-3" />
+                                                {getActor(activity)}
+                                            </span>
+                                            <span className="flex items-center gap-1">
+                                                <Clock className="h-3 w-3" />
+                                                {relativeTime(activity.createdAt)}
+                                            </span>
+                                        </div>
                                     </div>
 
-                                    {/* Reason */}
-                                    {reason && reason !== '—' && (
-                                        <p className="text-xs text-gray-500 mt-2 italic">
-                                            Lý do thay đổi: {reason}
-                                        </p>
-                                    )}
-                                </div>
-                            )}
+                                    {/* Field name & Value Change */}
+                                    {(fieldName || prevValue !== undefined || newValue !== undefined) && (
+                                        <div className="px-3 pb-2">
+                                            <div className="bg-gray-50 rounded-md">
+                                                {/* Field Name */}
+                                                {fieldName && (
+                                                    <p className="text-xs text-gray-600 mb-2 font-medium">
+                                                        {getFieldLabel(fieldName)}
+                                                    </p>
+                                                )}
 
-                            {/* Other metadata (if no field_name structure) */}
-                            {!fieldName && Object.keys(meta).length > 0 && (
-                                <div className="px-3 pb-3">
-                                    {/* Note content - show directly without label */}
-                                    {(meta.note_content || meta.noteContent || meta.content) && (
-                                        <div className="bg-amber-50 rounded-md p-2.5 text-xs text-gray-800">
-                                            <TruncatedText text={meta.note_content || meta.noteContent || meta.content} maxLength={150} />
+                                                {/* Value Change */}
+                                                {(prevValue !== undefined || newValue !== undefined) && (
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        {/* Hide previous value for NOTE_ADDED */}
+                                                        {activity.activityType !== 'NOTE_ADDED' && (
+                                                            <>
+                                                                <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${prevValue === null || prevValue === undefined || prevValue === '' || prevValue === '—'
+                                                                    ? 'bg-orange-100 text-orange-700'
+                                                                    : 'bg-red-100 text-red-600 line-through'
+                                                                    }`}>
+                                                                    {formatValue(prevValue)}
+                                                                </span>
+                                                                <ArrowRight className="h-3 w-3 text-gray-400" />
+                                                            </>
+                                                        )}
+                                                        <span className="inline-flex px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-700">
+                                                            {formatValue(newValue)}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Reason */}
+                                            {reason && reason !== '—' && (
+                                                <p className="text-xs text-gray-500 mt-2 italic">
+                                                    Lý do thay đổi: {reason}
+                                                </p>
+                                            )}
                                         </div>
                                     )}
 
-                                    {/* Other fields */}
-                                    {Object.entries(meta).filter(([k]) =>
-                                        !['id', 'leadId', 'carId', 'car_id', 'field_name', 'fieldName',
-                                            'previous_value', 'previousValue', 'new_value', 'newValue',
-                                            'changed_reason', 'changedReason', 'old', 'new', 'reason',
-                                            'note_content', 'noteContent', 'content'].includes(k)
-                                    ).length > 0 && (
-                                            <div className="bg-gray-50 rounded-md p-2.5 space-y-1 mt-2">
-                                                {Object.entries(meta).filter(([k]) =>
-                                                    !['id', 'leadId', 'carId', 'car_id', 'field_name', 'fieldName',
-                                                        'previous_value', 'previousValue', 'new_value', 'newValue',
-                                                        'changed_reason', 'changedReason', 'old', 'new', 'reason',
-                                                        'note_content', 'noteContent', 'content'].includes(k)
-                                                ).map(([key, value]) => (
-                                                    <div key={key} className="text-xs">
-                                                        <span className="text-gray-500">{getFieldLabel(key)}: </span>
-                                                        <span className="font-medium text-gray-800">
-                                                            {typeof value === 'string' && value.length > 150
-                                                                ? <TruncatedText text={value} maxLength={150} />
-                                                                : formatValue(value)
-                                                            }
-                                                        </span>
+                                    {/* Other metadata (if no field_name structure) */}
+                                    {!fieldName && Object.keys(meta).length > 0 && (
+                                        <div className="px-3 pb-3">
+                                            {/* Note content - show directly without label */}
+                                            {(meta.note_content || meta.noteContent || meta.content) && (
+                                                <div className="bg-amber-50 rounded-md p-2.5 text-xs text-gray-800">
+                                                    <TruncatedText text={meta.note_content || meta.noteContent || meta.content} maxLength={150} />
+                                                </div>
+                                            )}
+
+                                            {/* Other fields */}
+                                            {Object.entries(meta).filter(([k]) =>
+                                                !['id', 'leadId', 'carId', 'car_id', 'field_name', 'fieldName',
+                                                    'previous_value', 'previousValue', 'new_value', 'newValue',
+                                                    'changed_reason', 'changedReason', 'old', 'new', 'reason',
+                                                    'note_content', 'noteContent', 'content'].includes(k)
+                                            ).length > 0 && (
+                                                    <div className="bg-gray-50 rounded-md p-2.5 space-y-1 mt-2">
+                                                        {Object.entries(meta).filter(([k]) =>
+                                                            !['id', 'leadId', 'carId', 'car_id', 'field_name', 'fieldName',
+                                                                'previous_value', 'previousValue', 'new_value', 'newValue',
+                                                                'changed_reason', 'changedReason', 'old', 'new', 'reason',
+                                                                'note_content', 'noteContent', 'content'].includes(k)
+                                                        ).map(([key, value]) => (
+                                                            <div key={key} className="text-xs">
+                                                                <span className="text-gray-500">{getFieldLabel(key)}: </span>
+                                                                <span className="font-medium text-gray-800">
+                                                                    {typeof value === 'string' && value.length > 150
+                                                                        ? <TruncatedText text={value} maxLength={150} />
+                                                                        : formatValue(value)
+                                                                    }
+                                                                </span>
+                                                            </div>
+                                                        ))}
                                                     </div>
-                                                ))}
-                                            </div>
-                                        )}
+                                                )}
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-                        </div>
-                    </div>
-                )
-            })}
+                            </div>
+                        )
+                    })}
+                </div>
+            ))}
 
             {/* Pagination */}
             {totalPages > 1 && (

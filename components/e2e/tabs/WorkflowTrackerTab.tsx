@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, ChevronRight, Check, X, Car, User, Phone } from "lucide-react"
+import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, ChevronRight, Check, X, Car, User, Phone, Copy, ChevronDown, ChevronUp } from "lucide-react"
 import { Lead, BiddingHistory } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { maskPhone } from "@/lib/utils"
@@ -67,6 +67,9 @@ interface WorkflowTrackerTabProps {
   biddingHistory?: BiddingHistory[]
   onUpdateBid?: (bidId: string, newPrice: number) => Promise<void>
   loadingBiddingHistory?: boolean
+
+  // Notes editing
+  onUpdateNotes?: (notes: string) => Promise<void>
 }
 
 export function WorkflowTrackerTab({
@@ -94,13 +97,77 @@ export function WorkflowTrackerTab({
   const [editingPrice, setEditingPrice] = useState("")
   const [savingBid, setSavingBid] = useState(false)
 
-
+  // State for expand/collapse dealer bids
+  const [isExpanded, setIsExpanded] = useState(false)
+  // State for copy feedback
+  const [copied, setCopied] = useState(false)
 
   // Get top 5 bids sorted by price (descending)
   const topBids = [...biddingHistory]
     .filter(bid => bid.price > 1) // Filter out "sent but no price" entries
     .sort((a, b) => b.price - a.price)
     .slice(0, 5)
+
+  // Get all valid bids for expanded view
+  const allValidBids = [...biddingHistory]
+    .filter(bid => bid.price > 1)
+    .sort((a, b) => b.price - a.price)
+
+  // Bids to display based on expand state
+  const displayBids = isExpanded ? allValidBids : topBids
+
+  // Generate copy content with car information and dealer bids
+  const generateCopyContent = (): string => {
+    const now = new Date()
+    const timeStr = now.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+    const dateStr = now.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" })
+
+    // Build car info parts
+    const carInfoParts = []
+    if (selectedLead.brand) carInfoParts.push(selectedLead.brand)
+    if (selectedLead.model) carInfoParts.push(selectedLead.model)
+    if (selectedLead.year) carInfoParts.push(selectedLead.year.toString())
+    const carInfo = carInfoParts.join(" ") || "N/A"
+
+    // Build odo string
+    const odoStr = selectedLead.mileage ? `${selectedLead.mileage.toLocaleString("vi-VN")} km` : "N/A"
+
+    // Build region - currently using default since Lead doesn't have region field
+    const region = "TP.HCM"
+
+    // Build price
+    const priceStr = selectedLead.price_customer
+      ? new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(selectedLead.price_customer)
+      : "N/A"
+
+    // Build dealer bids list
+    const dealerBidsStr = allValidBids
+      .map(bid => {
+        const priceInMillion = Math.round(bid.price / 1000000)
+        return `${bid.dealer_name} - ${priceInMillion}tr`
+      })
+      .join("\n")
+
+    return `Thời gian nhận thông tin: ${timeStr} ${dateStr}
+Thông tin chi tiết xe: ${carInfo.toLowerCase()}
+Số km đã đi (Odo): ${odoStr}
+Khu vực:  - ${region}
+Car_id: ${selectedLead.car_id || "N/A"}
+Giá mong muốn: ${priceStr}
+
+${dealerBidsStr}`
+  }
+
+  const handleCopy = async () => {
+    const content = generateCopyContent()
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error("Failed to copy:", err)
+    }
+  }
 
   const handleStartEdit = (bid: BiddingHistory) => {
     setEditingBidId(bid.id)
@@ -379,20 +446,49 @@ export function WorkflowTrackerTab({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
             {/* Top Bids */}
             <div>
-              <h5 className="text-xs font-medium text-gray-500 mb-3 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
-                Top Dealer Bids
-              </h5>
+              <div className="flex items-center justify-between mb-3">
+                <h5 className="text-xs font-medium text-gray-500 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
+                  Top Dealer Bids
+                  {allValidBids.length > 5 && (
+                    <span className="text-[10px] text-gray-400">({allValidBids.length})</span>
+                  )}
+                </h5>
+                <div className="flex items-center gap-1">
+                  {/* Copy button */}
+                  <button
+                    onClick={handleCopy}
+                    className={`p-1 rounded transition-colors ${copied
+                      ? "text-emerald-600 bg-emerald-50"
+                      : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                      }`}
+                    title={copied ? "Đã copy!" : "Copy thông tin"}
+                    disabled={allValidBids.length === 0}
+                  >
+                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  </button>
+                  {/* Expand/Collapse button */}
+                  {allValidBids.length > 5 && (
+                    <button
+                      onClick={() => setIsExpanded(!isExpanded)}
+                      className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                      title={isExpanded ? "Thu gọn" : "Xem tất cả"}
+                    >
+                      {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                    </button>
+                  )}
+                </div>
+              </div>
               {loadingBiddingHistory ? (
                 <div className="flex items-center py-4 text-gray-400">
                   <Loader2 className="h-3 w-3 animate-spin mr-2" />
                   <span className="text-xs">Loading...</span>
                 </div>
-              ) : topBids.length === 0 ? (
+              ) : displayBids.length === 0 ? (
                 <p className="text-xs text-gray-400 py-2">Chưa có giá</p>
               ) : (
-                <div className="space-y-0.5">
-                  {topBids.map((bid, index) => (
+                <div className={`space-y-0.5 ${isExpanded ? "max-h-[300px] overflow-y-auto scrollbar-thin" : ""}`}>
+                  {displayBids.map((bid, index) => (
                     <div
                       key={bid.id}
                       className={`flex items-center justify-between py-1.5 px-2 rounded group transition-colors ${index === 0 ? "bg-blue-50/50" : "hover:bg-gray-50"

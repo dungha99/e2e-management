@@ -929,7 +929,7 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
 
 
 
-  async function handleSendZns(phone: string) {
+  async function handleSendZns(phone: string, leadId?: string) {
     if (!phone) return
 
     try {
@@ -940,7 +940,8 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
         },
         body: JSON.stringify({
           code: "499943",
-          phoneNumbers: [phone]
+          phoneNumbers: [phone],
+          leadId: leadId // Pass leadId for sale activity logging
         })
       })
 
@@ -1036,7 +1037,7 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
 
         // Send ZNS as fallback when thread creation fails
         if (sendZns && selectedLead.phone) {
-          await handleSendZns(selectedLead.phone)
+          await handleSendZns(selectedLead.phone, selectedLead.id)
         }
 
         // Close dialog and reset input even on failure
@@ -1089,7 +1090,7 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
 
         // Send ZNS if toggle is on
         if (sendZns && selectedLead.phone) {
-          await handleSendZns(selectedLead.phone)
+          await handleSendZns(selectedLead.phone, selectedLead.id)
         }
 
         // Trigger Decoy Web Tab refresh

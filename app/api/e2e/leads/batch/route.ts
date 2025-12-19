@@ -150,7 +150,7 @@ async function fetchBatchData(
 
   // Run CRM enrichment queries in parallel (fast queries only)
   // Dealer biddings moved to separate endpoint for progressive loading
-  const [decoyThreadsResult, sessionsResult] = await Promise.all([
+  const [decoyThreadsResult, sessionsResult, latestCampaignsResult] = await Promise.all([
     // Query 1: Decoy thread counts (CRM - fast)
     leadIds.length > 0 && phones.length > 0
       ? vucarV2Query(
@@ -179,6 +179,39 @@ async function fetchBatchData(
         [carIds]
       )
       : Promise.resolve({ rows: [] }),
+
+    // Query 3: Latest campaign per car (for workflow status)
+    // Only get campaigns where created_by IS NULL (system/bot created)
+    carIds.length > 0
+      ? vucarV2Query(
+        `WITH ordered_campaigns AS (
+          SELECT 
+            cp.id,
+            cp.car_auction_id,
+            cp.is_active,
+            cp.duration,
+            cp.published_at,
+            cp.created_by,
+            ROW_NUMBER() OVER (PARTITION BY cp.car_auction_id ORDER BY cp.published_at DESC) as rn,
+            ROW_NUMBER() OVER (PARTITION BY c.lead_id ORDER BY cp.published_at ASC) as workflow_order
+          FROM campaigns cp
+          LEFT JOIN cars c ON c.id = cp.car_auction_id
+          WHERE cp.car_auction_id = ANY($1::uuid[])
+            AND cp.created_by IS NULL
+        )
+        SELECT 
+          id,
+          car_auction_id as car_id,
+          is_active,
+          duration,
+          published_at,
+          created_by,
+          workflow_order
+        FROM ordered_campaigns
+        WHERE rn = 1`,
+        [carIds]
+      )
+      : Promise.resolve({ rows: [] }),
   ])
 
   // Process results into lookup maps
@@ -193,6 +226,18 @@ async function fetchBatchData(
 
   const workflow2Status = Object.fromEntries(
     sessionsResult.rows.map((row) => [row.car_id, row.is_active === 1 ? true : false])
+  )
+
+  // Map latest campaign info by car_id
+  const latestCampaigns = Object.fromEntries(
+    latestCampaignsResult.rows.map((row) => [row.car_id, {
+      id: row.id,
+      is_active: row.is_active || false,
+      duration: row.duration ? parseFloat(row.duration) : null,
+      published_at: row.published_at,
+      workflow_order: parseInt(row.workflow_order) || 1,
+      created_by: row.created_by || null,
+    }])
   )
 
   // Transform and enrich leads data
@@ -277,6 +322,8 @@ async function fetchBatchData(
       dealer_bidding: lead.price_highest_bid
         ? { status: "got_price" as const, maxPrice: lead.price_highest_bid }
         : { status: "not_sent" as const },
+      // Latest campaign info for workflow status display
+      latest_campaign: lead.car_id ? (latestCampaigns[lead.car_id] || null) : null,
     }
   })
 

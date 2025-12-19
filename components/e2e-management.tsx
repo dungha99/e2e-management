@@ -139,6 +139,9 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
   // Decoy Web refresh key - increment to trigger refresh after creating thread
   const [decoyWebRefreshKey, setDecoyWebRefreshKey] = useState(0)
 
+  // Right panel collapse state (for tablet)
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false)
+
 
   // Bidding history state
   const [biddingHistoryOpen, setBiddingHistoryOpen] = useState(false)
@@ -2349,6 +2352,8 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
             mobileView={mobileView}
             refreshKey={activitiesRefreshKey}
             onUpdateNotes={handleUpdateNotesInline}
+            isCollapsed={rightPanelCollapsed}
+            onToggleCollapse={() => setRightPanelCollapsed(!rightPanelCollapsed)}
           />
         </div>
       )}

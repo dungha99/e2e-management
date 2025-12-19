@@ -3,6 +3,15 @@ export interface DealerBiddingStatus {
   maxPrice?: number
 }
 
+export interface LatestCampaignInfo {
+  id: string
+  is_active: boolean
+  duration: number | null
+  published_at: string
+  workflow_order: number
+  created_by: string | null
+}
+
 export interface ChatMessage {
   _id: string
   content: string
@@ -66,6 +75,7 @@ export interface Lead {
   qualified?: string | null
   intentionLead?: string | null
   negotiationAbility?: string | null
+  latest_campaign?: LatestCampaignInfo | null
 }
 
 export interface DecoyMessage {

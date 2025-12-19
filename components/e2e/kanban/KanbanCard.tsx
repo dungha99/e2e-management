@@ -27,21 +27,45 @@ interface KanbanCardProps {
 }
 
 export function KanbanCard({ campaign, onClick }: KanbanCardProps) {
-    // Calculate progress based on duration
-    // Assuming duration is in days and we calculate elapsed time from created_at
+    // Calculate progress based on duration (duration is in HOURS)
     const calculateProgress = () => {
         if (!campaign.duration || campaign.duration <= 0) return 0
 
         const createdDate = new Date(campaign.created_at)
         const now = new Date()
         const elapsedMs = now.getTime() - createdDate.getTime()
-        const elapsedDays = elapsedMs / (1000 * 60 * 60 * 24)
+        const elapsedHours = elapsedMs / (1000 * 60 * 60) // Convert to hours
 
-        const progress = Math.min(100, (elapsedDays / campaign.duration) * 100)
+        const progress = Math.min(100, (elapsedHours / campaign.duration) * 100)
         return Math.round(progress)
     }
 
+    // Calculate remaining time in hh:mm:ss format
+    const calculateRemainingTime = () => {
+        if (!campaign.duration || campaign.duration <= 0) return ""
+
+        const createdDate = new Date(campaign.created_at)
+        const now = new Date()
+        const elapsedMs = now.getTime() - createdDate.getTime()
+        const durationMs = campaign.duration * 60 * 60 * 1000 // duration is in HOURS to ms
+        const remainingMs = durationMs - elapsedMs
+
+        if (remainingMs <= 0) return "Hết hạn"
+
+        const totalSeconds = Math.floor(remainingMs / 1000)
+        const hours = Math.floor(totalSeconds / 3600)
+        const minutes = Math.floor((totalSeconds % 3600) / 60)
+        const seconds = totalSeconds % 60
+
+        const hh = String(hours).padStart(2, '0')
+        const mm = String(minutes).padStart(2, '0')
+        const ss = String(seconds).padStart(2, '0')
+
+        return `Còn ${hh}:${mm}:${ss}`
+    }
+
     const progress = calculateProgress()
+    const remainingTime = calculateRemainingTime()
     const carName = [campaign.car_year, campaign.car_brand, campaign.car_model]
         .filter(Boolean)
         .join(" ")
@@ -55,8 +79,8 @@ export function KanbanCard({ campaign, onClick }: KanbanCardProps) {
     return (
         <Card
             className={`cursor-pointer hover:shadow-md transition-shadow border-l-4 ${campaign.is_active
-                    ? "border-l-emerald-500 bg-emerald-50/30"
-                    : "border-l-gray-300 bg-white"
+                ? "border-l-emerald-500 bg-emerald-50/30"
+                : "border-l-gray-300 bg-white"
                 }`}
             onClick={onClick}
         >
@@ -106,12 +130,15 @@ export function KanbanCard({ campaign, onClick }: KanbanCardProps) {
                     />
                 </div>
 
-                {/* Footer with date */}
+                {/* Footer with date and countdown */}
                 <div className="flex items-center gap-1 text-xs text-gray-400 pt-1">
                     <Calendar className="h-3 w-3" />
                     <span>Tạo: {formattedDate}</span>
-                    {campaign.duration && (
-                        <span className="ml-auto">{campaign.duration} ngày</span>
+                    {campaign.duration && campaign.is_active && (
+                        <span className="ml-auto text-purple-600 font-medium">{remainingTime}</span>
+                    )}
+                    {campaign.duration && !campaign.is_active && (
+                        <span className="ml-auto">{campaign.duration}h</span>
                     )}
                 </div>
             </CardContent>

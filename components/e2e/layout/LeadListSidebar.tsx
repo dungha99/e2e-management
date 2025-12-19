@@ -4,9 +4,9 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SearchInput } from "@/components/ui/search-input"
-import { Loader2, User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star, Filter, X, SlidersHorizontal } from "lucide-react"
+import { Loader2, User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star, Filter, X, SlidersHorizontal, Play, CheckCircle } from "lucide-react"
 import { Lead } from "../types"
-import { formatCarInfo, formatPrice } from "../utils"
+import { formatCarInfo, formatPriceShort, calculateCampaignProgress, calculateRemainingTime } from "../utils"
 import { useToast } from "@/hooks/use-toast"
 import {
   Popover,
@@ -125,7 +125,7 @@ export function LeadListSidebar({
   }
 
   return (
-    <div className={`${isMobile ? 'w-full' : 'w-72 lg:w-80'} min-w-0 border-r flex flex-col bg-white`}>
+    <div className={`${isMobile ? 'w-full' : 'w-60 lg:w-80'} min-w-0 border-r flex flex-col bg-white`}>
       {/* Header */}
       <div className="p-4 border-b bg-gray-100">
         <div className="flex items-center justify-between mb-4">
@@ -360,9 +360,64 @@ export function LeadListSidebar({
                         </p>
                       )}
                     </div>
-                    <p className="text-xs text-emerald-600 font-semibold mt-1">
-                      {lead.price_customer ? formatPrice(lead.price_customer) : "Chưa có giá"}
-                    </p>
+                    {/* Price Display Row */}
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className="text-xs font-semibold text-emerald-600">
+                        {formatPriceShort(lead.price_customer)}
+                      </span>
+                      {lead.price_highest_bid && lead.price_highest_bid > 0 && (
+                        <>
+                          <span className="text-xs text-gray-400">vs</span>
+                          <span className="text-xs font-semibold text-blue-600">
+                            {formatPriceShort(lead.price_highest_bid)}
+                          </span>
+                          {lead.price_customer && lead.price_customer > 0 && (
+                            <span className="text-xs text-orange-500 font-medium">
+                              Gap {formatPriceShort(lead.price_customer - lead.price_highest_bid)}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    {/* Workflow Status Badge */}
+                    {lead.latest_campaign && (
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] px-1.5 py-0.5 ${lead.latest_campaign.is_active
+                            ? 'bg-purple-50 text-purple-700 border-purple-200'
+                            : 'bg-green-50 text-green-700 border-green-200'
+                            }`}
+                        >
+                          {lead.latest_campaign.is_active ? (
+                            <><Play className="h-2.5 w-2.5 mr-0.5" />WF{lead.latest_campaign.workflow_order}</>
+                          ) : (
+                            <><CheckCircle className="h-2.5 w-2.5 mr-0.5" />WF{lead.latest_campaign.workflow_order} - Done</>
+                          )}
+                        </Badge>
+                        {/* Progress bar and countdown for running campaigns */}
+                        {lead.latest_campaign.is_active && lead.latest_campaign.duration && (
+                          <>
+                            <div className="flex-1 max-w-[40px]">
+                              <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-purple-500 transition-all"
+                                  style={{
+                                    width: `${calculateCampaignProgress(
+                                      lead.latest_campaign.published_at,
+                                      lead.latest_campaign.duration
+                                    )}%`
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            <span className="text-[9px] text-purple-600 font-medium whitespace-nowrap">
+                              {calculateRemainingTime(lead.latest_campaign.published_at, lead.latest_campaign.duration)}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

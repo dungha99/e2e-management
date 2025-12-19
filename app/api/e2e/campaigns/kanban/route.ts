@@ -41,6 +41,7 @@ export async function POST(request: Request) {
         // Query campaigns with car and lead info
         // Use ROW_NUMBER partitioned by lead to get campaign order PER LEAD
         // Workflow 1 = 1st campaign of each lead, Workflow 2 = 2nd campaign of each lead, etc.
+        // Only get campaigns where created_by IS NULL (system/bot created)
         const result = await vucarV2Query(
             `WITH ordered_campaigns AS (
                 SELECT 
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
                 LEFT JOIN cars c ON c.id = cp.car_auction_id
                 LEFT JOIN leads l ON l.id = c.lead_id
                 WHERE l.pic_id = $1::uuid
+                  AND cp.created_by IS NULL
             )
             SELECT * FROM ordered_campaigns
             ORDER BY campaign_order ASC, published_at ASC`,

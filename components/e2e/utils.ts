@@ -7,6 +7,58 @@ export function formatPrice(price: number): string {
   }).format(price)
 }
 
+export function formatPriceShort(price: number | null | undefined): string {
+  if (!price || price === 0) return "N/A"
+
+  // Convert to millions and format as "Xtr"
+  const millions = price / 1000000
+  if (millions >= 1) {
+    // Round to nearest integer for millions
+    return `${Math.round(millions)}tr`
+  }
+  // For values less than 1 million, show in thousands
+  const thousands = price / 1000
+  return `${Math.round(thousands)}k`
+}
+
+export function calculateCampaignProgress(publishedAt: string, duration: number | null): number {
+  if (!duration || duration <= 0) return 0
+
+  const startDate = new Date(publishedAt)
+  const now = new Date()
+  const elapsedMs = now.getTime() - startDate.getTime()
+  const elapsedHours = elapsedMs / (1000 * 60 * 60) // duration is in HOURS
+
+  // Progress as percentage of duration (hours)
+  const progress = (elapsedHours / duration) * 100
+  return Math.min(100, Math.max(0, Math.round(progress)))
+}
+
+export function calculateRemainingTime(publishedAt: string, duration: number | null): string {
+  if (!duration || duration <= 0) return ""
+
+  const startDate = new Date(publishedAt)
+  const now = new Date()
+  const elapsedMs = now.getTime() - startDate.getTime()
+  const durationMs = duration * 60 * 60 * 1000 // duration is in HOURS to ms
+  const remainingMs = durationMs - elapsedMs
+
+  if (remainingMs <= 0) return "Hết hạn"
+
+  // Convert to hours, minutes, seconds
+  const totalSeconds = Math.floor(remainingMs / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+
+  // Format as hh:mm:ss
+  const hh = String(hours).padStart(2, '0')
+  const mm = String(minutes).padStart(2, '0')
+  const ss = String(seconds).padStart(2, '0')
+
+  return `Còn ${hh}:${mm}:${ss}`
+}
+
 export function getDealerBiddingDisplay(status?: DealerBiddingStatus): string {
   if (!status) return "Not Sent"
   switch (status.status) {

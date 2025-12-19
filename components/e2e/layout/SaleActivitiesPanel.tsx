@@ -6,7 +6,7 @@ import { SaleActivitiesTab } from "../tabs/SaleActivitiesTab"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { FileText, Pencil, Check, X, Loader2 } from "lucide-react"
+import { FileText, Pencil, Check, X, Loader2, PanelRightClose, PanelRightOpen } from "lucide-react"
 
 interface SaleActivitiesPanelProps {
     selectedLead: Lead | null
@@ -14,6 +14,8 @@ interface SaleActivitiesPanelProps {
     mobileView: "list" | "detail"
     refreshKey?: number  // Increment to trigger refresh
     onUpdateNotes?: (notes: string) => Promise<void>
+    isCollapsed?: boolean  // For tablet collapsible toggle
+    onToggleCollapse?: () => void  // Toggle handler
 }
 
 export function SaleActivitiesPanel({
@@ -22,6 +24,8 @@ export function SaleActivitiesPanel({
     mobileView,
     refreshKey,
     onUpdateNotes,
+    isCollapsed = false,
+    onToggleCollapse,
 }: SaleActivitiesPanelProps) {
     const [activeTab, setActiveTab] = useState<string>("activities")
 
@@ -66,8 +70,40 @@ export function SaleActivitiesPanel({
 
     const phone = selectedLead.phone || selectedLead.additional_phone || null
 
+    // Collapsed state - show narrow strip with expand button
+    if (isCollapsed && onToggleCollapse) {
+        return (
+            <div className="w-10 flex-shrink-0 border-l border-gray-200 bg-gray-50 hidden md:flex flex-col items-center py-4">
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onToggleCollapse}
+                    className="h-8 w-8 p-0"
+                    title="Mở rộng panel"
+                >
+                    <PanelRightOpen className="h-4 w-4 text-gray-500" />
+                </Button>
+            </div>
+        )
+    }
+
     return (
-        <div className="w-72 lg:w-80 flex-shrink-0 border-l border-gray-200 overflow-hidden flex flex-col hidden lg:flex">
+        <div className="w-60 lg:w-80 flex-shrink-0 border-l border-gray-200 overflow-hidden flex flex-col hidden md:flex">
+            {/* Collapse Toggle Button - visible on all md+ screens */}
+            {onToggleCollapse && (
+                <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 bg-gray-50">
+                    <span className="text-xs font-medium text-gray-500">Activities</span>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onToggleCollapse}
+                        className="h-6 w-6 p-0"
+                        title="Thu gọn panel"
+                    >
+                        <PanelRightClose className="h-4 w-4 text-gray-500" />
+                    </Button>
+                </div>
+            )}
 
             {/* Notes Section - Above Tabs */}
             <div className="bg-white border-b border-gray-200 p-3">

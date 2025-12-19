@@ -45,7 +45,7 @@ export async function POST(request: Request) {
         c.created_at as car_created_at,
         c.additional_images,
         (SELECT COUNT(*) FROM campaigns WHERE car_auction_id = c.id) as campaign_count,
-        (SELECT is_active FROM campaigns WHERE car_auction_id = c.id LIMIT 1) as workflow2_is_active
+        (SELECT is_active FROM campaigns WHERE car_auction_id = c.id and is_active = true LIMIT 1) as workflow2_is_active
        FROM leads l
        LEFT JOIN users u ON l.pic_id = u.id
        LEFT JOIN cars c ON c.lead_id = l.id

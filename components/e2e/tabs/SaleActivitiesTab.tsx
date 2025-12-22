@@ -92,11 +92,38 @@ const getActivityStyle = (type: string) => {
     }
 }
 
+// Aggregate metrics by activity type
+interface ActivityMetrics {
+    type: string
+    count: number
+    label: string
+}
+
 export function SaleActivitiesTab({ phone, refreshKey }: SaleActivitiesTabProps) {
     const [activities, setActivities] = useState<SaleActivity[]>([])
     const [loading, setLoading] = useState(false)
     const [page, setPage] = useState(1)
     const perPage = 8
+
+    // Compute aggregate metrics by activity type
+    const computeMetrics = (activities: SaleActivity[]): ActivityMetrics[] => {
+        const counts: Record<string, number> = {}
+        activities.forEach(a => {
+            const type = a.activityType
+            counts[type] = (counts[type] || 0) + 1
+        })
+
+        // Sort by count descending
+        return Object.entries(counts)
+            .map(([type, count]) => ({
+                type,
+                count,
+                label: ACTIVITY_LABELS[type] || type.replace(/_/g, ' ')
+            }))
+            .sort((a, b) => b.count - a.count)
+    }
+
+    const metrics = computeMetrics(activities)
 
     useEffect(() => {
         if (phone) {
@@ -246,6 +273,35 @@ export function SaleActivitiesTab({ phone, refreshKey }: SaleActivitiesTabProps)
 
     return (
         <div className="relative">
+            {/* Aggregate Metrics by Activity Type */}
+            {metrics.length > 0 && (
+                <div className="mb-4 p-3 bg-gradient-to-br from-gray-50 to-white rounded-lg border border-gray-100">
+                    <h4 className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
+                        <Activity className="h-3 w-3" />
+                        Thống kê hoạt động
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                        {metrics.map(m => {
+                            const style = getActivityStyle(m.type)
+                            return (
+                                <div
+                                    key={m.type}
+                                    className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${style.bgColor} border border-gray-100`}
+                                >
+                                    <div className={`w-2 h-2 rounded-full ${style.dotColor}`} />
+                                    <span className={`text-xs font-medium ${style.iconColor}`}>
+                                        {m.label}
+                                    </span>
+                                    <span className="text-xs font-bold text-gray-700 bg-white px-1.5 py-0.5 rounded">
+                                        {m.count}
+                                    </span>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </div>
+            )}
+
             {sortedDateKeys.map((dateKey) => (
                 <div key={dateKey} className="mb-4">
                     {/* Date Header */}

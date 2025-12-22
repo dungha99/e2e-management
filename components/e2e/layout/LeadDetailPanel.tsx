@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -8,7 +8,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car, Images } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car, Images, MapPin, Send } from "lucide-react"
 import { Lead } from "../types"
 import { formatCarInfo, formatPrice, formatDate } from "../utils"
 import { WorkflowTrackerTab } from "../tabs/WorkflowTrackerTab"
@@ -17,6 +27,7 @@ import { RecentActivityTab } from "../tabs/RecentActivityTab"
 import { DecoyHistoryTab } from "../tabs/DecoyHistoryTab"
 import { Workflow2Dialog } from "../dialogs/Workflow2Dialog"
 import { ImageGalleryModal } from "../dialogs/ImageGalleryModal"
+import { useToast } from "@/hooks/use-toast"
 
 interface LeadDetailPanelProps {
   selectedAccount: string | null
@@ -136,6 +147,109 @@ export function LeadDetailPanel({
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
 
+  // Toast notifications
+  const { toast } = useToast()
+
+  // ZNS notification state
+  interface ZnsTemplate {
+    code: string
+    name: string
+    description?: string
+  }
+  const [znsTemplates, setZnsTemplates] = useState<ZnsTemplate[]>([])
+  const [loadingTemplates, setLoadingTemplates] = useState(false)
+  const [sendingZns, setSendingZns] = useState(false)
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
+  const [selectedTemplate, setSelectedTemplate] = useState<ZnsTemplate | null>(null)
+  const [templatesDropdownOpen, setTemplatesDropdownOpen] = useState(false)
+  const [templatesFetched, setTemplatesFetched] = useState(false)
+
+  // Fetch templates when dropdown opens (only once)
+  useEffect(() => {
+    if (templatesDropdownOpen && !templatesFetched && !loadingTemplates) {
+      setLoadingTemplates(true)
+      fetch('/api/e2e/notification-templates')
+        .then(res => res.json())
+        .then(response => {
+          // API returns { success: true, data: [...], count: N }
+          if (response.success && Array.isArray(response.data)) {
+            setZnsTemplates(response.data)
+          } else if (Array.isArray(response)) {
+            // Fallback in case API returns array directly
+            setZnsTemplates(response)
+          }
+          setTemplatesFetched(true)
+        })
+        .catch(err => {
+          console.error('[ZNS Templates] Failed to fetch:', err)
+          toast({
+            title: "Lỗi",
+            description: "Không thể tải danh sách template ZNS",
+            variant: "destructive",
+          })
+          setTemplatesFetched(true) // Mark as fetched even on error to prevent retry spam
+        })
+        .finally(() => setLoadingTemplates(false))
+    }
+  }, [templatesDropdownOpen, templatesFetched, loadingTemplates, toast])
+
+  // Handle template selection - show confirmation
+  const handleTemplateSelect = (template: ZnsTemplate) => {
+    setSelectedTemplate(template)
+    setConfirmDialogOpen(true)
+  }
+
+  // Handle ZNS send confirmation
+  const handleSendZns = async () => {
+    if (!selectedTemplate || !selectedLead) return
+
+    const phone = selectedLead.phone || selectedLead.additional_phone
+    if (!phone) {
+      toast({
+        title: "Lỗi",
+        description: "Không tìm thấy số điện thoại của lead",
+        variant: "destructive",
+      })
+      setConfirmDialogOpen(false)
+      return
+    }
+
+    setSendingZns(true)
+    try {
+      const response = await fetch('/api/e2e/send-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: selectedTemplate.code,
+          phoneNumbers: [phone],
+          leadId: selectedLead.id,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        toast({
+          title: "Thành công",
+          description: `Đã gửi ZNS "${selectedTemplate.name}" thành công`,
+        })
+      } else {
+        throw new Error(data.error || 'Gửi ZNS thất bại')
+      }
+    } catch (error) {
+      console.error('[ZNS Send] Error:', error)
+      toast({
+        title: "Lỗi",
+        description: error instanceof Error ? error.message : "Gửi ZNS thất bại",
+        variant: "destructive",
+      })
+    } finally {
+      setSendingZns(false)
+      setConfirmDialogOpen(false)
+      setSelectedTemplate(null)
+    }
+  }
+
   // Collect all car images for gallery
   const galleryImages = useMemo(() => {
     const images: string[] = []
@@ -212,9 +326,9 @@ export function LeadDetailPanel({
 
   return (
     <div className={`flex-1 overflow-hidden flex flex-col ${isMobile ? 'h-full' : ''}`}>
-      <div className={`flex-1 overflow-y-auto scroll-touch ${isMobile ? 'has-bottom-bar' : ''}`}>
+      <div className={`flex-1 overflow-y-auto scroll-touch scrollbar-hide ${isMobile ? 'has-bottom-bar' : ''}`}>
         {/* Header - Optimized for mobile: reduced padding, NOT sticky on mobile to allow scroll */}
-        <div className={`px-2 sm:px-4 md:px-6 lg:px-8 pt-2 sm:pt-4 md:pt-6 pb-2 sm:pb-4 md:pb-6 border-b ${isMobile ? 'bg-white' : 'sticky top-0 z-10'}`}>
+        <div className={`px-2 sm:px-4 md:px-6 lg:px-8 pt-2 sm:pt-4 md:pt-6 pb-2 sm:pb-4 md:pb-6 border-b bg-gray-50  ${isMobile ? 'bg-white' : 'sticky top-0 z-10'}`}>
           {/* Mobile: Stacked layout, Desktop: Side by side */}
           <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-start gap-3 md:gap-4 mb-3 md:mb-4">
             {/* Car Image + Lead Info Container */}
@@ -353,8 +467,18 @@ export function LeadDetailPanel({
                   )}
                 </div>
 
+                {/* Location Row */}
+                {selectedLead.location && (
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <MapPin className="h-3.5 sm:h-4 w-3.5 sm:w-4 text-gray-400 flex-shrink-0" />
+                    <span className="text-xs sm:text-sm text-gray-600 truncate">
+                      {selectedLead.location}
+                    </span>
+                  </div>
+                )}
+
                 {/* Sale Status Badges - Scrollable on mobile */}
-                <div className="flex items-center gap-1.5 mt-2 overflow-x-auto pb-1 scrollbar-thin">
+                <div className="flex items-center gap-1.5 mt-2 overflow-x-auto pb-1 scrollbar-hide">
                   {selectedLead.stage && (
                     <span className={`px-2 py-0.5 text-xs font-medium rounded whitespace-nowrap ${selectedLead.stage === 'COMPLETED' ? 'bg-green-100 text-green-800' :
                       selectedLead.stage === 'DEPOSIT_PAID' ? 'bg-emerald-100 text-emerald-800' :
@@ -400,33 +524,37 @@ export function LeadDetailPanel({
             </div>
 
             {/* Action Buttons - Full width on mobile, stacked in grid */}
+            {/* Hierarchy: Primary (filled) > Secondary (colored bg) > Tertiary (ghost) */}
             <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto">
+              {/* Tertiary Actions - Icon-only utility buttons */}
               <Button
-                variant="outline"
-                size="sm"
+                variant="ghost"
+                size="icon"
                 onClick={onSyncLead}
                 disabled={syncing}
-                className="text-gray-600 text-xs sm:text-sm"
+                className="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                title="Đồng bộ"
               >
-                <RefreshCw className={`h-3.5 sm:h-4 w-3.5 sm:w-4 mr-1.5 sm:mr-2 ${syncing ? "animate-spin" : ""}`} />
-                {syncing ? "Đồng bộ..." : "Đồng bộ"}
+                <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
               </Button>
               <Button
-                variant="outline"
-                size="sm"
+                variant="ghost"
+                size="icon"
                 onClick={onShowDetail}
-                className="text-blue-600 border-blue-600 hover:bg-blue-50 text-xs sm:text-sm"
+                className="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                title="Chi tiết"
               >
-                Chi tiết
+                <User className="h-4 w-4" />
               </Button>
 
+              {/* Secondary Actions - Important actions with colored background */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="outline"
                     size="sm"
                     disabled={callingBot}
-                    className="text-orange-600 border-orange-600 hover:bg-orange-50 text-xs sm:text-sm"
+                    className="bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100 hover:border-orange-300 text-xs sm:text-sm"
                   >
                     {callingBot ? (
                       <Loader2 className="h-3.5 sm:h-4 w-3.5 sm:w-4 animate-spin" />
@@ -449,19 +577,69 @@ export function LeadDetailPanel({
                 </DropdownMenuContent>
               </DropdownMenu>
 
+              {/* Primary Action - Main CTA with prominent styling */}
               <Button
                 size="sm"
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm shadow-sm"
                 onClick={onOpenInspection}
               >
                 <span className="hidden sm:inline">Đặt lịch KD</span>
                 <span className="sm:hidden">Lịch KD</span>
               </Button>
+
+              {/* Secondary Action - ZNS Notification Button */}
+              <DropdownMenu open={templatesDropdownOpen} onOpenChange={setTemplatesDropdownOpen}>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={sendingZns}
+                    className="bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100 hover:border-blue-300 text-xs sm:text-sm"
+                  >
+                    {sendingZns ? (
+                      <Loader2 className="h-3.5 sm:h-4 w-3.5 sm:w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Send className="h-3.5 sm:h-4 w-3.5 sm:w-4 mr-1.5 sm:mr-2" />
+                        <span className="hidden sm:inline">Gửi noti</span>
+                        <span className="sm:hidden">Noti</span>
+                      </>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
+                  {loadingTemplates ? (
+                    <div className="flex items-center justify-center p-4">
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      <span className="text-sm text-gray-500">Đang tải...</span>
+                    </div>
+                  ) : znsTemplates.length === 0 ? (
+                    <div className="p-4 text-sm text-gray-500 text-center">
+                      Không có template nào
+                    </div>
+                  ) : (
+                    znsTemplates.map((template) => (
+                      <DropdownMenuItem
+                        key={template.code}
+                        onClick={() => handleTemplateSelect(template)}
+                        className="cursor-pointer"
+                      >
+                        <div className="flex flex-col">
+                          <span className="font-medium">{template.name}</span>
+                          {template.description && (
+                            <span className="text-xs text-gray-500">{template.description}</span>
+                          )}
+                        </div>
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
           {/* Tabs - Horizontally scrollable on mobile */}
-          <div className="flex items-center gap-2 sm:gap-4 md:gap-6 border-b -mb-3 sm:-mb-4 md:-mb-6 overflow-x-auto scrollbar-none pb-px">
+          <div className="flex items-center gap-2 sm:gap-4 md:gap-6 border-b -mb-3 sm:-mb-4 md:-mb-6 overflow-x-auto scrollbar-none pb-px bg-gray-50">
             <button
               type="button"
               className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${activeDetailView === "workflow"
@@ -572,13 +750,13 @@ export function LeadDetailPanel({
         )}
 
         {activeDetailView === "recent-activity" && (
-          <div className="h-[calc(100vh-250px)] bg-gray-50/50 p-4 overflow-y-auto">
+          <div className="h-[calc(100vh-250px)] bg-gray-50/50 p-4 overflow-y-auto scrollbar-hide">
             <RecentActivityTab phone={selectedLead?.phone || selectedLead?.additional_phone || null} />
           </div>
         )}
 
         {activeDetailView === "decoy-history" && (
-          <div className="h-[calc(100vh-250px)] bg-gray-50/50 overflow-y-auto">
+          <div className="h-[calc(100vh-250px)] bg-gray-50/50 overflow-y-auto scrollbar-hide">
             <DecoyHistoryTab phone={selectedLead?.phone || selectedLead?.additional_phone || null} />
           </div>
         )}
@@ -601,6 +779,35 @@ export function LeadDetailPanel({
           initialIndex={selectedImageIndex}
           onIndexChange={setSelectedImageIndex}
         />
+
+        {/* ZNS Send Confirmation Dialog */}
+        <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Xác nhận gửi ZNS</AlertDialogTitle>
+              <AlertDialogDescription>
+                Bạn có chắc chắn muốn gửi ZNS <strong>"{selectedTemplate?.name}"</strong> đến số điện thoại <strong>{selectedLead?.phone || selectedLead?.additional_phone}</strong>?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={sendingZns}>Hủy</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleSendZns}
+                disabled={sendingZns}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {sendingZns ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Đang gửi...
+                  </>
+                ) : (
+                  'Gửi'
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       {/* Mobile Bottom Action Bar - App-like navigation */}

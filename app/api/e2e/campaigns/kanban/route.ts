@@ -40,7 +40,8 @@ export async function POST(request: Request) {
 
         // Query campaigns with car and lead info
         // Use ROW_NUMBER partitioned by lead to get campaign order PER LEAD
-        // Workflow 1 = 1st campaign of each lead, Workflow 2 = 2nd campaign of each lead, etc.
+        // Only return the LATEST campaign for each lead (highest campaign_order)
+        // Workflow 1 = leads on 1st campaign, Workflow 2 = leads on 2nd campaign, etc.
         // Only get campaigns where created_by IS NULL (system/bot created)
         const result = await vucarV2Query(
             `WITH ordered_campaigns AS (
@@ -58,7 +59,8 @@ export async function POST(request: Request) {
                     l.id as lead_id,
                     COALESCE(l.name, '') as lead_name,
                     l.phone as lead_phone,
-                    ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY cp.published_at ASC) as campaign_order
+                    ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY cp.published_at ASC) as campaign_order,
+                    COUNT(*) OVER (PARTITION BY l.id) as total_campaigns_per_lead
                 FROM campaigns cp
                 LEFT JOIN cars c ON c.id = cp.car_auction_id
                 LEFT JOIN leads l ON l.id = c.lead_id
@@ -66,7 +68,8 @@ export async function POST(request: Request) {
                   AND cp.created_by IS NULL
             )
             SELECT * FROM ordered_campaigns
-            ORDER BY campaign_order ASC, published_at ASC`,
+            WHERE campaign_order = total_campaigns_per_lead
+            ORDER BY campaign_order ASC, is_active DESC, published_at ASC`,
             [pic_id]
         )
 

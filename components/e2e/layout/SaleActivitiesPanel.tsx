@@ -236,7 +236,7 @@ export function SaleActivitiesPanel({
                         </div>
                     </div>
                 ) : (
-                    <div className="max-h-[150px] overflow-y-auto">
+                    <div className="max-h-[150px] overflow-y-auto scrollbar-hide">
                         {selectedLead.notes ? (
                             <p className="text-sm text-gray-900 whitespace-pre-wrap">{selectedLead.notes}</p>
                         ) : (
@@ -256,7 +256,7 @@ export function SaleActivitiesPanel({
                 </div>
 
                 {/* Summary Tab Content */}
-                <TabsContent value="summary" className="flex-1 overflow-y-auto p-3 mt-0">
+                <TabsContent value="summary" className="flex-1 overflow-y-auto scrollbar-hide p-3 mt-0">
                     {/* Header with Refresh Button */}
                     <div className="flex items-center justify-between mb-3">
                         <h4 className="text-sm font-semibold text-gray-700">Lead Summary Timeline</h4>
@@ -331,7 +331,7 @@ export function SaleActivitiesPanel({
                 </TabsContent>
 
                 {/* Activities Tab Content */}
-                <TabsContent value="activities" className="flex-1 overflow-y-auto p-3 mt-0">
+                <TabsContent value="activities" className="flex-1 overflow-y-auto scrollbar-hide p-3 mt-0">
                     <SaleActivitiesTab phone={phone} refreshKey={refreshKey} />
                 </TabsContent>
             </Tabs>

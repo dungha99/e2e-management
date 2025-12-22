@@ -82,7 +82,7 @@ export function DecoyWebTab({
     <div className="bg-white rounded-lg shadow-sm h-full min-h-[400px] flex flex-col overflow-hidden">
       <div className="flex-1 flex flex-col md:flex-row gap-0 md:gap-4 overflow-hidden">
         {/* Left Panel - Thread List */}
-        <div className="w-full md:w-64 lg:w-80 border-b md:border-b-0 md:border-r overflow-y-auto flex flex-col shrink-0 max-h-48 md:max-h-none">
+        <div className="w-full md:w-64 lg:w-80 border-b md:border-b-0 md:border-r overflow-y-auto scrollbar-hide flex flex-col shrink-0 max-h-48 md:max-h-none">
           {/* Create Thread Button */}
           <div className="p-3 border-b bg-gray-50 flex gap-2">
             <Button
@@ -103,7 +103,7 @@ export function DecoyWebTab({
               <RefreshCw className={`h-4 w-4 ${loadingDecoyWeb ? 'animate-spin' : ''}`} />
             </Button>
           </div>
-          <div className="flex-1 p-4 overflow-y-auto">
+          <div className="flex-1 p-4 overflow-y-auto scrollbar-hide">
             {loadingDecoyWeb ? (
               <div className="flex items-center justify-center h-full">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -160,7 +160,7 @@ export function DecoyWebTab({
           )}
 
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 overflow-y-auto scrollbar-hide p-4">
             {!selectedDecoyWebThreadId ? (
               <div className="flex items-center justify-center h-full text-muted-foreground">
                 Chọn một thread để xem tin nhắn

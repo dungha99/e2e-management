@@ -1,9 +1,8 @@
 "use client"
 
 import { Progress } from "@/components/ui/progress"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
-import { Car, Calendar, Clock } from "lucide-react"
+import { CheckCircle, MoreVertical, MapPin, Gauge } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { maskPhone } from "@/lib/utils"
 
 interface CampaignForKanban {
@@ -64,84 +63,136 @@ export function KanbanCard({ campaign, onClick }: KanbanCardProps) {
         return `Còn ${hh}:${mm}:${ss}`
     }
 
+    // Calculate remaining days
+    const calculateRemainingDays = () => {
+        if (!campaign.duration || campaign.duration <= 0) return null
+
+        const createdDate = new Date(campaign.created_at)
+        const now = new Date()
+        const elapsedMs = now.getTime() - createdDate.getTime()
+        const durationMs = campaign.duration * 60 * 60 * 1000
+        const remainingMs = durationMs - elapsedMs
+
+        if (remainingMs <= 0) return 0
+
+        const days = Math.ceil(remainingMs / (1000 * 60 * 60 * 24))
+        return days
+    }
+
     const progress = calculateProgress()
     const remainingTime = calculateRemainingTime()
-    const carName = [campaign.car_year, campaign.car_brand, campaign.car_model]
+    const remainingDays = calculateRemainingDays()
+    const isCompleted = progress >= 100 || remainingDays === 0
+
+    // Format car name: "Brand Model Year"
+    const carName = [campaign.car_brand, campaign.car_model, campaign.car_year]
         .filter(Boolean)
         .join(" ")
 
-    const formattedDate = new Date(campaign.created_at).toLocaleDateString("vi-VN", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric"
-    })
+    // Format time from created_at
+    const formatTime = (dateStr: string): string => {
+        const date = new Date(dateStr)
+        return date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+    }
+
+    // Format date from created_at
+    const formatDate = (dateStr: string): string => {
+        const date = new Date(dateStr)
+        return date.toLocaleDateString("vi-VN", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit"
+        })
+    }
+
+    // Get first letter for avatar
+    const getInitial = (name: string | null): string => {
+        if (!name) return "?"
+        return name.charAt(0).toUpperCase()
+    }
 
     return (
-        <Card
-            className={`cursor-pointer hover:shadow-md transition-shadow border-l-4 ${campaign.is_active
-                ? "border-l-emerald-500 bg-emerald-50/30"
-                : "border-l-gray-300 bg-white"
-                }`}
+        <div
+            className="bg-white rounded-xl border border-gray-200 shadow-sm cursor-pointer hover:shadow-md transition-shadow overflow-hidden"
             onClick={onClick}
         >
-            <CardContent className="p-3 space-y-3">
-                {/* Header with status */}
-                <div className="flex items-center justify-between">
-                    <Badge
-                        variant={campaign.is_active ? "default" : "secondary"}
-                        className={`text-xs ${campaign.is_active ? "bg-emerald-500" : ""}`}
+            {/* Header - Lead Info */}
+            <div className="p-4 pb-3">
+                <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                        {/* Avatar - Simple gray circle with initial */}
+                        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 text-sm font-medium">
+                            {getInitial(campaign.lead_name)}
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-1.5">
+                                <span className="font-semibold text-gray-900 text-sm">
+                                    {campaign.lead_name || "Chưa có tên"}
+                                </span>
+                                {campaign.is_active && (
+                                    <CheckCircle className="h-4 w-4 text-gray-400" />
+                                )}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-0.5">
+                                {formatTime(campaign.created_at)} • {formatDate(campaign.created_at)}
+                            </div>
+                        </div>
+                    </div>
+                    <button
+                        className="p-1 hover:bg-gray-100 rounded transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                     >
-                        {campaign.is_active ? "Đang chạy" : "Tạm dừng"}
-                    </Badge>
-                    {campaign.car_plate && (
-                        <span className="text-xs font-mono text-gray-500">{campaign.car_plate}</span>
-                    )}
+                        <MoreVertical className="h-4 w-4 text-gray-400" />
+                    </button>
                 </div>
+            </div>
 
-                {/* Car info */}
-                <div className="flex items-center gap-2">
-                    <Car className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm font-medium text-gray-900 truncate">
-                        {carName || "Chưa có thông tin xe"}
-                    </span>
-                </div>
-
-                {/* Lead info */}
-                {campaign.lead_name && (
-                    <div className="text-xs text-gray-600">
-                        {campaign.lead_name} • {campaign.lead_phone ? maskPhone(campaign.lead_phone) : "N/A"}
+            {/* Car Info Section */}
+            <div className="px-4 pb-3">
+                <h4 className="font-bold text-gray-900 text-sm mb-0.5">
+                    {carName || "Chưa có thông tin xe"}
+                </h4>
+                {campaign.car_plate && (
+                    <div className="text-xs text-gray-400 font-mono mb-1">
+                        {campaign.car_plate}
                     </div>
                 )}
-
-                {/* Progress bar */}
-                <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                        <span className="text-gray-500 flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            Tiến độ
-                        </span>
-                        <span className={`font-medium ${progress >= 100 ? "text-emerald-600" : "text-gray-600"}`}>
-                            {progress}%
-                        </span>
+                {/* Lead phone */}
+                {campaign.lead_phone && (
+                    <div className="text-xs text-gray-500">
+                        {maskPhone(campaign.lead_phone)}
                     </div>
-                    <Progress
-                        value={progress}
-                        className={`h-2 ${progress >= 100 ? "[&>div]:bg-emerald-500" : "[&>div]:bg-blue-500"}`}
-                    />
-                </div>
+                )}
+            </div>
 
-                {/* Footer with date and countdown */}
-                <div className="flex items-center gap-1 text-xs text-gray-400 pt-1">
-                    <Calendar className="h-3 w-3" />
-                    <span>Tạo: {formattedDate}</span>
-                    {campaign.duration && campaign.is_active && (
-                        <span className="ml-auto text-purple-600 font-medium">{remainingTime}</span>
-                    )}
-                    {campaign.duration && !campaign.is_active && (
-                        <span className="ml-auto">{campaign.duration}h</span>
-                    )}
+            {/* Progress / Action Section */}
+            {isCompleted ? (
+                <Button
+                    className="w-full rounded-none rounded-b-xl bg-green-50 hover:bg-green-100 text-green-600 border-t border-gray-100 py-3 h-auto font-medium"
+                    variant="ghost"
+                    onClick={(e) => {
+                        e.stopPropagation()
+                        // Handle action
+                    }}
+                >
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Hoàn thành • Tiếp theo
+                </Button>
+            ) : (
+                <div className="px-4 pb-4 pt-1">
+                    <div className="flex items-center gap-3">
+                        <Progress
+                            value={progress}
+                            className="h-1.5 flex-1 bg-gray-100 [&>div]:bg-blue-500"
+                        />
+                        {remainingDays !== null && (
+                            <span className="text-xs text-gray-400 whitespace-nowrap">
+                                {remainingDays} ngày
+                            </span>
+                        )}
+                    </div>
                 </div>
-            </CardContent>
-        </Card>
+            )}
+        </div>
     )
 }

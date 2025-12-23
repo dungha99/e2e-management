@@ -21,7 +21,7 @@ function E2EPageContent({ userId }: { userId: string }) {
     if (value === "dashboard") {
       router.push("/")
     } else if (value === "campaigns") {
-      router.push("/?tab=campaigns")
+      router.push(`/decoy-management`)
     }
     // If value is "e2e", stay on current page
   }

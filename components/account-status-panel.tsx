@@ -131,34 +131,32 @@ export const AccountStatusPanel = forwardRef<{ refresh: () => void }>((props, re
   }
 
   return (
-    <Card className="h-fit sticky top-6 shadow-sm">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-        <CardTitle className="text-lg">Decoy Personas</CardTitle>
-        <Button variant="ghost" size="icon" onClick={fetchAccountStatus} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+    <Card className="h-fit shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 pt-3">
+        <CardTitle className="text-sm font-semibold">Decoy Personas</CardTitle>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={fetchAccountStatus} disabled={loading}>
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
         </Button>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-3 pb-3 pt-0">
         {lastUpdated && (
-          <p className="text-xs text-muted-foreground text-center mb-4">
-            Cập nhật lần cuối vào{" "}
-            {lastUpdated.toLocaleTimeString("vi-VN", {
+          <p className="text-[10px] text-muted-foreground text-center mb-2">
+            Cập nhật: {lastUpdated.toLocaleTimeString("vi-VN", {
               hour: "2-digit",
               minute: "2-digit",
-              second: "2-digit",
             })}
           </p>
         )}
 
         {loading && accountStats.length === 0 ? (
-          <div className="space-y-6">
+          <div className="space-y-2">
             {ACCOUNTS_TO_MONITOR.map((account) => (
-              <div key={account.apiKey} className="space-y-3 p-4 rounded-lg bg-muted/30 animate-pulse">
-                <div className="flex items-center gap-3">
-                  <div className="h-16 w-16 rounded-full bg-muted" />
-                  <div className="flex-1 space-y-2">
-                    <div className="h-4 bg-muted rounded w-1/2" />
-                    <div className="h-3 bg-muted rounded w-full" />
+              <div key={account.apiKey} className="space-y-2 p-2 rounded-lg bg-muted/30 animate-pulse">
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-full bg-muted" />
+                  <div className="flex-1 space-y-1">
+                    <div className="h-3 bg-muted rounded w-1/2" />
+                    <div className="h-2 bg-muted rounded w-3/4" />
                   </div>
                 </div>
               </div>
@@ -172,7 +170,7 @@ export const AccountStatusPanel = forwardRef<{ refresh: () => void }>((props, re
             </Button>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-2">
             {accountStats.map((account) => {
               const accountConfig = ACCOUNTS_TO_MONITOR.find((a) => a.displayName === account.displayName)
               const percentage = (account.sentToday / account.dailyLimit) * 100
@@ -180,43 +178,38 @@ export const AccountStatusPanel = forwardRef<{ refresh: () => void }>((props, re
               return (
                 <div
                   key={account.displayName}
-                  className="space-y-4 p-4 rounded-lg bg-gradient-to-br from-muted/30 to-muted/10 border border-border/50"
+                  className="space-y-2 p-2 rounded-lg bg-gradient-to-br from-muted/30 to-muted/10 border border-border/50"
                 >
                   {/* Profile Header */}
-                  <div className="flex items-start gap-4">
-                    <Avatar className="h-16 w-16 border-2 border-primary/20">
+                  <div className="flex items-center gap-2">
+                    <Avatar className="h-8 w-8 border border-primary/20">
                       <AvatarImage src={accountConfig?.avatar || "/placeholder.svg"} alt={account.displayName} />
-                      <AvatarFallback className="text-lg font-semibold">
+                      <AvatarFallback className="text-xs font-semibold">
                         {account.displayName
                           .split(" ")
                           .map((n) => n[0])
                           .join("")}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="flex-1 space-y-1">
-                      <h3 className="font-bold text-lg">{account.displayName}</h3>
-                      <p className="text-xs text-muted-foreground leading-relaxed">{accountConfig?.description}</p>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-sm truncate">{account.displayName}</h3>
                     </div>
                   </div>
 
                   {/* Progress Bar */}
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">Hôm nay</span>
-                      <span className="text-lg font-bold text-primary">
-                        {account.sentToday}
-                        <span className="text-sm text-muted-foreground font-normal"> / {account.dailyLimit}</span>
+                      <span className="text-xs text-muted-foreground">Hôm nay</span>
+                      <span className="text-xs font-semibold text-primary">
+                        {account.sentToday}/{account.dailyLimit}
                       </span>
                     </div>
-                    <Progress value={percentage} className="h-2.5" />
+                    <Progress value={percentage} className="h-1.5" />
                   </div>
 
                   {/* Total Sent Metric */}
-                  <div className="pt-2 border-t border-border/50">
-                    <p className="text-sm text-muted-foreground">
-                      Tổng số tin đã gửi:{" "}
-                      <span className="font-semibold text-foreground">{account.totalSent.toLocaleString()}</span>
-                    </p>
+                  <div className="text-[10px] text-muted-foreground">
+                    Tổng: <span className="font-medium text-foreground">{account.totalSent.toLocaleString()}</span>
                   </div>
                 </div>
               )

@@ -21,7 +21,7 @@ function MainPageContent() {
       // Redirect to E2E management page
       const selectedAccount = localStorage.getItem('e2e-selectedAccount')
       const picId = selectedAccount || 'placeholder'
-      router.replace(`/e2e/${picId}?tab=campaigns&page=1`)
+      router.replace(`/e2e/${picId}?tab=priority&page=1`)
     }
   }, [isCheckingAuth, isAuthenticated, router])
 

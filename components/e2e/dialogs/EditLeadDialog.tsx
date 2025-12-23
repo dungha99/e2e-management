@@ -485,9 +485,9 @@ Giá mong muốn: ${lead.price_customer ? formatPrice(lead.price_customer) : "N/
                         <SelectValue placeholder="Chọn khả năng..." />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="HARD">Thấp/Cứng giá</SelectItem>
                         <SelectItem value="MAYBE">Có thể</SelectItem>
-                        <SelectItem value="HARD">Cao</SelectItem>
-                        <SelectItem value="EASY">Thấp/Cứng giá</SelectItem>
+                        <SelectItem value="EASY">Cao</SelectItem>
                       </SelectContent>
                     </Select>
                   ) : (

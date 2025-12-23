@@ -1,7 +1,7 @@
 "use client"
 
 import { useSearchParams, useRouter } from "next/navigation"
-import { Suspense } from "react"
+import { Suspense, use } from "react"
 import { E2EManagement } from "@/components/e2e-management"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Toaster } from "@/components/ui/toaster"
@@ -56,10 +56,12 @@ function E2EPageContent({ userId }: { userId: string }) {
   )
 }
 
-export default function E2EPage({ params }: { params: { userId: string } }) {
+export default function E2EPage({ params }: { params: Promise<{ userId: string }> }) {
+  const { userId } = use(params)
+
   return (
     <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
-      <E2EPageContent userId={params.userId} />
+      <E2EPageContent userId={userId} />
     </Suspense>
   )
 }

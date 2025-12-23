@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SearchInput } from "@/components/ui/search-input"
-import { Loader2, User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star, Filter, X, SlidersHorizontal, Play, CheckCircle } from "lucide-react"
+import { User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star, X, SlidersHorizontal, Play, CheckCircle, Download, Loader2 } from "lucide-react"
 import { Lead } from "../types"
 import { formatCarInfo, formatPriceShort, calculateCampaignProgress, calculateRemainingTime } from "../utils"
 import { useToast } from "@/hooks/use-toast"
@@ -14,6 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Checkbox } from "@/components/ui/checkbox"
+import { ExportReportDialog } from "../dialogs/ExportReportDialog"
 
 interface LeadListSidebarProps {
   // Display props
@@ -87,6 +88,7 @@ export function LeadListSidebar({
 }: LeadListSidebarProps) {
   const { toast } = useToast()
   const [filterOpen, setFilterOpen] = useState(false)
+  const [exportDialogOpen, setExportDialogOpen] = useState(false)
 
   const handlePreviousPage = () => {
     if (currentPage > 1) {
@@ -130,17 +132,30 @@ export function LeadListSidebar({
       <div className="p-4 border-b bg-gray-100">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold">LeadOS</h2>
-          {onSummaryOpen && (
+          <div className="flex items-center gap-1">
+            {/* Export Report Button */}
             <Button
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={onSummaryOpen}
-              title="Xem báo cáo tổng hợp"
+              onClick={() => setExportDialogOpen(true)}
+              disabled={currentPageLeads.length === 0}
+              title="Xuất báo cáo"
             >
-              <FileText className="h-4 w-4" />
+              <Download className="h-4 w-4" />
             </Button>
-          )}
+            {onSummaryOpen && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={onSummaryOpen}
+                title="Xem báo cáo tổng hợp"
+              >
+                <FileText className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Search and Filter Row */}
@@ -485,6 +500,13 @@ export function LeadListSidebar({
           </div>
         </div>
       )}
+
+      {/* Export Report Dialog */}
+      <ExportReportDialog
+        open={exportDialogOpen}
+        onOpenChange={setExportDialogOpen}
+        leads={currentPageLeads}
+      />
     </div>
   )
 }

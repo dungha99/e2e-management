@@ -151,3 +151,76 @@ export const SEGMENT_TO_REASON_MAP: Record<string, string> = {
 }
 
 export const ITEMS_PER_PAGE = 10
+
+// E2E Workflow Tracking Types
+export type OutcomeType = "discount" | "original_price" | "lost"
+export type InstanceStatus = "running" | "completed" | "terminated"
+export type StepStatus = "pending" | "success" | "failed"
+
+export interface WorkflowStage {
+  id: string
+  name: string
+}
+
+export interface Workflow {
+  id: string
+  name: string
+  stage_id: string
+  sla_hours: number
+  is_active: boolean
+  description: string | null
+}
+
+export interface WorkflowStep {
+  id: string
+  workflow_id: string
+  step_name: string
+  step_order: number
+  is_automated: boolean
+}
+
+export interface WorkflowInstance {
+  id: string
+  car_id: string
+  workflow_id: string
+  parent_instance_id: string | null
+  current_step_id: string | null
+  status: InstanceStatus
+  final_outcome: OutcomeType | null
+  started_at: string
+  sla_deadline: string | null
+  completed_at: string | null
+  // Joined data
+  workflow_name?: string
+  workflow_description?: string
+  stage_name?: string
+}
+
+export interface StepExecution {
+  id: string
+  instance_id: string
+  step_id: string
+  status: StepStatus
+  error_message: string | null
+  executed_at: string
+  // Joined data
+  step_name?: string
+  step_order?: number
+  is_automated?: boolean
+}
+
+export interface WorkflowTransition {
+  id: string
+  from_workflow_id: string
+  to_workflow_id: string
+  condition_logic: any
+  priority: number
+  transition_sla_hours: number | null
+}
+
+export interface WorkflowInstanceWithDetails {
+  instance: WorkflowInstance
+  steps: (WorkflowStep & { execution?: StepExecution })[]
+  canActivateWF2: boolean
+  potentialNextWorkflows?: { id: string; name: string }[]
+}

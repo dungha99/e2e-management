@@ -28,6 +28,7 @@ import { DecoyHistoryTab } from "../tabs/DecoyHistoryTab"
 import { Workflow2Dialog } from "../dialogs/Workflow2Dialog"
 import { ImageGalleryModal } from "../dialogs/ImageGalleryModal"
 import { useToast } from "@/hooks/use-toast"
+import { useWorkflowInstances } from "@/hooks/use-leads"
 
 interface LeadDetailPanelProps {
   selectedAccount: string | null
@@ -79,8 +80,8 @@ interface LeadDetailPanelProps {
   onOpenCreateThread: () => void
 
   // Workflow View State
-  activeWorkflowView: "purchase" | "seeding"
-  onWorkflowViewChange: (view: "purchase" | "seeding") => void
+  activeWorkflowView: string // Can be "purchase", "seeding", or workflow ID
+  onWorkflowViewChange: (view: string) => void
 
 
   // Dealer Bidding Props
@@ -149,6 +150,9 @@ export function LeadDetailPanel({
 
   // Toast notifications
   const { toast } = useToast()
+
+  // Fetch workflow instances for beta tracking
+  const { data: workflowInstancesData } = useWorkflowInstances(selectedLead?.car_id)
 
   // ZNS notification state
   interface ZnsTemplate {
@@ -734,6 +738,9 @@ export function LeadDetailPanel({
 
               // Notes editing
               onUpdateNotes={onUpdateNotes}
+
+              // Beta Tracking Props
+              workflowInstancesData={workflowInstancesData}
             />
           </div>
         )}

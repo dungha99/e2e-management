@@ -28,6 +28,7 @@ import {
   useDealerBiddings,
   useLeadSources
 } from "@/hooks/use-leads"
+import { useQueryClient } from "@tanstack/react-query"
 
 // Dialog components
 import { SendToDealerGroupsDialog } from "./e2e/dialogs/SendToDealerGroupsDialog"
@@ -99,6 +100,7 @@ interface E2EManagementProps {
 export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
   const { toast } = useToast()
   const { accounts: ACCOUNTS } = useAccounts()
+  const queryClient = useQueryClient()
 
   // Phase 1: URL sync layer (non-breaking)
   const searchParams = useSearchParams()
@@ -296,7 +298,7 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
   })
 
   const [workflow2Activated, setWorkflow2Activated] = useState(false)
-  const [activeWorkflowView, setActiveWorkflowView] = useState<"purchase" | "seeding">("purchase")
+  const [activeWorkflowView, setActiveWorkflowView] = useState<string>("purchase")
 
   // Decoy trigger state
   const [decoyDialogOpen, setDecoyDialogOpen] = useState(false)
@@ -1186,6 +1188,11 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
 
       // Refetch leads to get updated data from server
       refetchLeads()
+
+      // Invalidate workflow instances query to refetch E2E database data
+      if (updatedLead.car_id) {
+        queryClient.invalidateQueries({ queryKey: ["workflow-instances", updatedLead.car_id] })
+      }
 
       toast({
         title: "Đã đồng bộ",

@@ -118,3 +118,19 @@ export function useDealerBiddings({ car_ids }: DealerBiddingsParams) {
     retry: false,
   })
 }
+
+// Hook for fetching workflow instances and their details (beta)
+export function useWorkflowInstances(carId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["workflow-instances", carId],
+    queryFn: async () => {
+      if (!carId) return null
+      const response = await fetch(`/api/e2e/workflow-instances?carId=${carId}`)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch workflow instances: ${response.status}`)
+      }
+      return response.json()
+    },
+    enabled: !!carId,
+  })
+}

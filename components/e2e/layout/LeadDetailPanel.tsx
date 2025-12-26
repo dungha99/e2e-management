@@ -94,6 +94,9 @@ interface LeadDetailPanelProps {
 
   // Decoy Web refresh
   decoyWebRefreshKey?: number
+
+  // Workflow activation callback
+  onWorkflowActivated?: () => void
 }
 
 export function LeadDetailPanel({
@@ -139,7 +142,9 @@ export function LeadDetailPanel({
   // Notes editing
   onUpdateNotes,
   // Decoy Web refresh
-  decoyWebRefreshKey
+  decoyWebRefreshKey,
+  // Workflow activation callback
+  onWorkflowActivated
 }: LeadDetailPanelProps) {
   // Debug log to track refreshKey
   console.log("[LeadDetailPanel] decoyWebRefreshKey:", decoyWebRefreshKey, "activeDetailView:", activeDetailView)
@@ -741,6 +746,7 @@ export function LeadDetailPanel({
 
               // Beta Tracking Props
               workflowInstancesData={workflowInstancesData}
+              onWorkflowActivated={onWorkflowActivated}
             />
           </div>
         )}

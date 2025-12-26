@@ -162,6 +162,18 @@ export interface WorkflowStage {
   name: string
 }
 
+export type CustomFieldType = "text" | "number" | "date" | "select" | "textarea"
+
+export interface CustomFieldDefinition {
+  name: string
+  label: string
+  type: CustomFieldType
+  required: boolean
+  placeholder?: string
+  options?: string[] // For select type
+  default_value?: any
+}
+
 export interface Workflow {
   id: string
   name: string
@@ -169,6 +181,7 @@ export interface Workflow {
   sla_hours: number
   is_active: boolean
   description: string | null
+  custom_fields_schema?: CustomFieldDefinition[]
 }
 
 export interface WorkflowStep {
@@ -190,6 +203,19 @@ export interface WorkflowInstance {
   started_at: string
   sla_deadline: string | null
   completed_at: string | null
+  transition_properties?: {
+    insight: string
+    car_snapshot: {
+      display_name: string | null
+      intention: string | null
+      sales_stage: string | null
+      qualified_status: string | null
+      price_customer: number | null
+      price_highest_bid: number | null
+      gap_price: number | null
+    }
+    custom_fields: Record<string, any>
+  } | null
   // Joined data
   workflow_name?: string
   workflow_description?: string

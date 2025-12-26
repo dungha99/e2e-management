@@ -5,8 +5,91 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp } from "lucide-react"
-import { Lead, BiddingHistory, WorkflowInstanceWithDetails } from "../types"
+import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
+import { ActivateWorkflowDialog } from "../dialogs/ActivateWorkflowDialog"
+
+// Custom fields configuration for each workflow
+const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] => {
+  switch (workflowName) {
+    case "WF2":
+      return [
+        {
+          name: "customer_response_quality",
+          label: "Chất lượng phản hồi khách",
+          type: "select",
+          required: true,
+          options: ["Tốt - Rất quan tâm", "Trung bình - Cân nhắc", "Kém - Không phản hồi"],
+          placeholder: "Chọn chất lượng phản hồi..."
+        },
+        {
+          name: "negotiation_progress",
+          label: "Tiến độ đàm phán",
+          type: "textarea",
+          required: true,
+          placeholder: "Mô tả chi tiết tiến độ đàm phán với khách..."
+        }
+      ]
+
+    case "WF2.1":
+      return [
+        {
+          name: "meeting_date",
+          label: "Ngày hẹn gặp khách",
+          type: "date",
+          required: true
+        },
+        {
+          name: "customer_urgency",
+          label: "Mức độ gấp của khách",
+          type: "select",
+          required: true,
+          options: ["Rất gấp (< 1 tuần)", "Gấp (1-2 tuần)", "Không gấp (> 2 tuần)"],
+          placeholder: "Chọn mức độ gấp..."
+        }
+      ]
+
+    case "WF3":
+      return [
+        {
+          name: "final_price_offered",
+          label: "Giá cuối cùng đề xuất (VNĐ)",
+          type: "number",
+          required: true,
+          placeholder: "Nhập giá cuối cùng..."
+        },
+        {
+          name: "competitor_info",
+          label: "Thông tin đối thủ cạnh tranh",
+          type: "textarea",
+          required: false,
+          placeholder: "Khách có nhận giá từ đâu khác không? Giá bao nhiêu?"
+        }
+      ]
+
+    case "WF3.1":
+      return [
+        {
+          name: "payment_method",
+          label: "Phương thức thanh toán",
+          type: "select",
+          required: true,
+          options: ["Tiền mặt toàn bộ", "Chuyển khoản toàn bộ", "Kết hợp tiền mặt & CK", "Trả góp"],
+          placeholder: "Chọn phương thức thanh toán..."
+        },
+        {
+          name: "handover_notes",
+          label: "Ghi chú bàn giao",
+          type: "textarea",
+          required: true,
+          placeholder: "Ghi chú về lịch bàn giao, giấy tờ cần chuẩn bị..."
+        }
+      ]
+
+    default:
+      return []
+  }
+}
 
 interface WorkflowStepProps {
   icon: React.ReactNode
@@ -79,6 +162,9 @@ interface WorkflowTrackerTabProps {
     allWorkflowSteps: Record<string, any[]>
     canActivateWF2: boolean
   }
+
+  // Workflow activation callback
+  onWorkflowActivated?: () => void
 }
 
 export function WorkflowTrackerTab({
@@ -100,7 +186,8 @@ export function WorkflowTrackerTab({
   biddingHistory = [],
   onUpdateBid,
   loadingBiddingHistory = false,
-  workflowInstancesData
+  workflowInstancesData,
+  onWorkflowActivated
 }: WorkflowTrackerTabProps) {
   // Local state for inline editing
   const [editingBidId, setEditingBidId] = useState<string | null>(null)
@@ -111,6 +198,14 @@ export function WorkflowTrackerTab({
   const [isExpanded, setIsExpanded] = useState(false)
   // State for copy feedback
   const [copied, setCopied] = useState(false)
+
+  // State for workflow activation dialog
+  const [activateDialogOpen, setActivateDialogOpen] = useState(false)
+  const [selectedTransition, setSelectedTransition] = useState<{
+    workflowId: string
+    workflowName: string
+    parentInstanceId: string
+  } | null>(null)
 
   // Get top 5 bids sorted by price (descending)
   const topBids = [...biddingHistory]
@@ -449,14 +544,14 @@ ${dealerBidsStr}`
                         variant="default"
                         size="sm"
                         onClick={() => {
-                          console.log("[Beta Tracking] Activating workflow:", {
-                            fromWorkflowId: activeWorkflowView,
-                            toWorkflowId: transition.to_workflow_id,
-                            toWorkflowName: transition.to_workflow_name,
-                            carId: selectedLead.car_id,
-                            parentInstanceId: currentInstance?.instance.id
-                          })
-                          // onOpenWorkflow2()
+                          if (currentInstance?.instance.id) {
+                            setSelectedTransition({
+                              workflowId: transition.to_workflow_id,
+                              workflowName: transition.to_workflow_name,
+                              parentInstanceId: currentInstance.instance.id
+                            })
+                            setActivateDialogOpen(true)
+                          }
                         }}
                         className="bg-emerald-600 hover:bg-emerald-700 text-xs sm:text-sm"
                       >
@@ -623,6 +718,24 @@ ${dealerBidsStr}`
           </div>
         </div>
       </div>
+
+      {/* Workflow Activation Dialog */}
+      {selectedTransition && (
+        <ActivateWorkflowDialog
+          open={activateDialogOpen}
+          onOpenChange={setActivateDialogOpen}
+          selectedLead={selectedLead}
+          targetWorkflowId={selectedTransition.workflowId}
+          targetWorkflowName={selectedTransition.workflowName}
+          parentInstanceId={selectedTransition.parentInstanceId}
+          customFields={getWorkflowCustomFields(selectedTransition.workflowName)}
+          onSuccess={() => {
+            if (onWorkflowActivated) {
+              onWorkflowActivated()
+            }
+          }}
+        />
+      )}
     </>
   )
 }

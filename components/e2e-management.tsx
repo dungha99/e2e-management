@@ -1210,7 +1210,17 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
     }
   }
 
+  async function handleWorkflowActivated() {
+    // Invalidate workflow instances query to refetch E2E database data
+    if (selectedLead?.car_id) {
+      queryClient.invalidateQueries({ queryKey: ["workflow-instances", selectedLead.car_id] })
+    }
 
+    toast({
+      title: "Thành công",
+      description: "Workflow đã được kích hoạt thành công",
+    })
+  }
 
   async function handleRenameLead() {
     if (!selectedLead) return
@@ -2378,6 +2388,9 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
 
             // Decoy Web refresh
             decoyWebRefreshKey={decoyWebRefreshKey}
+
+            // Workflow activation
+            onWorkflowActivated={handleWorkflowActivated}
           />
 
           {/* Sale Activities Panel - Right Side */}

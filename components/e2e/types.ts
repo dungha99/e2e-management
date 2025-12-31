@@ -132,13 +132,13 @@ export const DECOY_ACCOUNTS: DecoyAccount[] = [
   {
     name: "Minh Anh",
     account: "MA",
-    shop_id: "68f5f0f907039cf6ae4581e8",
+    shop_id: "68c11ae4-b7f5-3ee3-7614-5cc200000000",
     default_message: "em dc bên kết nối chào xe. xe nhà mình còn hong. gđ e xin thêm thông tin á anh",
   },
   {
     name: "Huy Hồ",
     account: "HH",
-    shop_id: "68c11ae4b7f53ee376145cc2",
+    shop_id: "68c11ae4-b7f5-3ee3-7614-5cc200000000",
     default_message:
       "Em được giới thiệu mình có nhu cầu bán xe em kết bạn để hỏi thêm ít thông tin được không ạ? Xe còn ko a",
   },

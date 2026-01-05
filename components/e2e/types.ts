@@ -250,3 +250,21 @@ export interface WorkflowInstanceWithDetails {
   canActivateWF2: boolean
   potentialNextWorkflows?: { id: string; name: string }[]
 }
+
+export interface AiInsightAnalysis {
+  current_intent_detected: string
+  price_gap_evaluation: string
+  fit_score: number
+}
+
+export interface AiInsight {
+  id: string
+  car_id: string
+  source_instance_id: string
+  ai_insight_summary: AiInsightAnalysis
+  selected_transition_id: string
+  target_workflow_id: string
+  created_at: string
+  // Joined data
+  target_workflow_name?: string
+}

@@ -4,7 +4,7 @@ import { e2eQuery } from "@/lib/db"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { carId, targetWorkflowId, parentInstanceId, finalOutcome, transitionProperties } = body
+    const { carId, targetWorkflowId, parentInstanceId, finalOutcome, transitionProperties, aiInsightId, isAlignedWithAi, phoneNumber, workflowPayload } = body
 
     // Validation
     if (!carId || !targetWorkflowId || !parentInstanceId || !finalOutcome || !transitionProperties) {
@@ -82,8 +82,10 @@ export async function POST(request: Request) {
         status,
         started_at,
         sla_deadline,
-        transition_properties
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        transition_properties,
+        ai_insight_id,
+        is_aligned_with_ai
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING id`,
       [
         carId,
@@ -93,10 +95,66 @@ export async function POST(request: Request) {
         startedAt,
         slaDeadline,
         JSON.stringify(transitionProperties),
+        aiInsightId || null,
+        isAlignedWithAi !== undefined ? isAlignedWithAi : null,
       ]
     )
 
     const newInstanceId = insertResult.rows[0].id
+
+    // Step 5: Call workflow webhook with instance ID
+    if (phoneNumber && workflowPayload) {
+      try {
+        // Get webhook URL based on workflow name
+        // For now, hardcoded for WF2 - will be made dynamic later
+        let webhookUrl = null
+        let transformedPayload = { ...workflowPayload }
+
+        if (workflow.name === "WF2") {
+          webhookUrl = "https://n8n.vucar.vn/webhook/8214cf7a-8c4f-1dc07b17c2ec-449d-83d5"
+
+          // Transform WF2 payload to match handleActivateWorkflow2 format
+          transformedPayload = {
+            duration: parseInt(workflowPayload.duration) || 0,
+            minPrice: workflowPayload.minPrice ? workflowPayload.minPrice * 1000000 : 0, // Convert triệu to VND
+            maxPrice: workflowPayload.maxPrice ? workflowPayload.maxPrice * 1000000 : 0,
+            comment: workflowPayload.comment === "true" || workflowPayload.comment === true,
+            numberOfComments: parseInt(workflowPayload.numberOfComments) || 0,
+            bid: workflowPayload.bid === "true" || workflowPayload.bid === true,
+          }
+        }
+        // Add more workflow webhooks here as needed
+        // else if (workflow.name === "WF2.1") {
+        //   webhookUrl = "https://n8n.vucar.vn/webhook/..."
+        // }
+
+        if (webhookUrl) {
+          const webhookPayload = {
+            workflowInstanceId: newInstanceId,
+            phone: phoneNumber,
+            ...transformedPayload, // Spread transformed workflow-specific fields
+          }
+
+          const webhookResponse = await fetch(webhookUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(webhookPayload),
+          })
+
+          if (!webhookResponse.ok) {
+            console.error("[Activate Workflow] Webhook call failed:", webhookResponse.status)
+            // Don't fail the entire request - instance is already created
+          } else {
+            console.log("[Activate Workflow] Webhook called successfully for", workflow.name)
+          }
+        }
+      } catch (webhookError) {
+        console.error("[Activate Workflow] Error calling webhook:", webhookError)
+        // Don't fail the entire request - instance is already created
+      }
+    }
 
     return NextResponse.json({
       success: true,

@@ -31,6 +31,8 @@ interface ActivateWorkflowDialogProps {
   targetWorkflowName: string
   parentInstanceId: string
   customFields?: CustomFieldDefinition[]
+  aiInsightId?: string | null
+  isAlignedWithAi?: boolean
   onSuccess?: () => void
 }
 
@@ -42,6 +44,8 @@ export function ActivateWorkflowDialog({
   targetWorkflowName,
   parentInstanceId,
   customFields = [],
+  aiInsightId,
+  isAlignedWithAi,
   onSuccess,
 }: ActivateWorkflowDialogProps) {
   const [insight, setInsight] = useState("")
@@ -93,6 +97,9 @@ export function ActivateWorkflowDialog({
         custom_fields: customFieldValues,
       }
 
+      // Get phone number for webhook
+      const phoneNumber = selectedLead.phone || selectedLead.additional_phone
+
       const response = await fetch("/api/e2e/activate-workflow", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -102,6 +109,10 @@ export function ActivateWorkflowDialog({
           parentInstanceId,
           finalOutcome,
           transitionProperties,
+          aiInsightId: aiInsightId || null,
+          isAlignedWithAi: isAlignedWithAi !== undefined ? isAlignedWithAi : null,
+          phoneNumber: phoneNumber || null,
+          workflowPayload: customFieldValues, // Workflow-specific fields for webhook
         }),
       })
 

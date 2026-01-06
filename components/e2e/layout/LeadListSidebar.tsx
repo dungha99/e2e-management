@@ -158,7 +158,7 @@ export function LeadListSidebar({
   }
 
   return (
-    <div className={`${isMobile ? 'flex-1 w-full' : 'w-60 lg:w-80'} min-w-0 border-r flex flex-col bg-white ${isMobile ? 'scroll-touch' : ''}`}>
+    <div className={`${isMobile ? 'flex-1 w-full min-h-0' : 'w-60 lg:w-80'} min-w-0 border-r flex flex-col bg-white ${isMobile ? 'overflow-hidden' : ''}`}>
       {/* Header */}
       <div className="p-4 border-b bg-gray-100">
         <div className="flex items-center justify-between mb-4">
@@ -193,7 +193,7 @@ export function LeadListSidebar({
         <div className="flex gap-2">
           <div className="flex-1">
             <SearchInput
-              placeholder="Tìm kiếm danh sách..."
+              placeholder="Tìm tên, SĐT, xe..."
               value={searchPhone}
               onChange={(e) => onSearchChange(e.target.value)}
               onKeyDown={(e) => {

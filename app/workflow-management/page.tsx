@@ -18,6 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, Trash2, Layers, CheckCircle, Search, Settings, Activity, AlertTriangle, Car, X, Eye, GitBranch, Save, ChevronRight, ArrowRight, MoreHorizontal, Workflow, LayoutGrid } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { CampaignKanbanView } from "@/components/e2e/kanban/CampaignKanbanView"
+import { MobileNavigationHeader } from "@/components/e2e/layout/MobileNavigationHeader"
 
 // Types
 interface WorkflowType { id: string; name: string; description: string; stage_id: string; sla_hours: number; is_active: boolean }
@@ -215,9 +216,18 @@ function WorkflowManagementContent() {
 
     return (
         <div className="w-full">
+            {/* Mobile Navigation Header */}
+            <MobileNavigationHeader
+                currentPage="workflow"
+                viewMode={mainTab === "flow" ? "list" : "kanban"}
+                onViewModeChange={(mode) => setMainTab(mode === "list" ? "flow" : "monitor")}
+                showViewToggle={true}
+            />
+
             {/* Navigation Header */}
             <Tabs value="workflow" onValueChange={handleNavTabChange}>
-                <div className="flex items-center justify-between px-4 py-2 bg-white border-b">
+                {/* Desktop Navigation - Hidden on mobile */}
+                <div className="hidden md:flex items-center justify-between px-4 py-2 bg-white border-b">
                     <TabsList>
                         <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
                         <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>
@@ -226,8 +236,8 @@ function WorkflowManagementContent() {
                     </TabsList>
                 </div>
 
-                {/* View Mode Toggle */}
-                <div className="flex items-center justify-between px-4 py-2 bg-white border-b">
+                {/* View Mode Toggle - Desktop only */}
+                <div className="hidden md:flex items-center justify-between px-4 py-2 bg-white border-b">
                     <div className="text-sm font-medium text-gray-700">Chế độ xem</div>
                     <div className="flex items-center gap-2">
                         <Button variant={mainTab === "flow" ? "default" : "outline"} size="sm" onClick={() => setMainTab("flow")} className="text-xs">

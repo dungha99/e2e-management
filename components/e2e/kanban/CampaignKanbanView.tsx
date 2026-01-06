@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
-import { Loader2, RefreshCw, Search, Layers } from "lucide-react"
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Loader2, RefreshCw, Search, Layers, ChevronLeft, ChevronRight, ChevronDown, Check } from "lucide-react"
 import { KanbanColumn } from "./KanbanColumn"
 import { NoteDialog } from "../dialogs/NoteDialog"
 import { EditLeadDialog } from "../dialogs/EditLeadDialog"
@@ -111,6 +112,10 @@ export function CampaignKanbanView({ picId }: CampaignKanbanViewProps) {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [searchQuery, setSearchQuery] = useState("")
+
+    // Mobile workflow navigation state
+    const [currentWorkflowIndex, setCurrentWorkflowIndex] = useState(0)
+    const [workflowSelectorOpen, setWorkflowSelectorOpen] = useState(false)
 
     // Note dialog state
     const [noteDialogOpen, setNoteDialogOpen] = useState(false)
@@ -514,9 +519,9 @@ export function CampaignKanbanView({ picId }: CampaignKanbanViewProps) {
 
     return (
         <div className="h-full space-y-4">
-            {/* Header with stats and search */}
-            <div className="flex items-center justify-between px-1">
-                <div className="flex items-center gap-4 text-sm">
+            {/* Header with stats and search - Responsive */}
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 px-1">
+                <div className="flex items-center gap-3 md:gap-4 text-sm">
                     <span className="flex items-center gap-1.5">
                         <Layers className="h-4 w-4 text-gray-400" />
                         Total: <strong>{stats.total}</strong>
@@ -526,16 +531,50 @@ export function CampaignKanbanView({ picId }: CampaignKanbanViewProps) {
                         Active: <strong className="text-green-600">{stats.active}</strong>
                     </span>
                 </div>
-                <div className="relative">
+                <div className="relative flex-1 md:flex-initial">
                     <Search className="absolute left-2.5 top-2 h-4 w-4 text-gray-400" />
                     <Input
                         placeholder="Tìm kiếm..."
-                        className="pl-8 h-9 w-64 text-sm"
+                        className="pl-8 h-9 w-full md:w-64 text-sm"
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
                     />
                 </div>
             </div>
+
+            {/* Mobile Workflow Navigation - Only visible on mobile */}
+            {workflows.length > 0 && (
+                <div className="md:hidden flex items-center justify-between gap-2 px-1">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 w-9 p-0"
+                        onClick={() => setCurrentWorkflowIndex(prev => Math.max(0, prev - 1))}
+                        disabled={currentWorkflowIndex === 0}
+                    >
+                        <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                        variant="outline"
+                        className="flex-1 h-9 justify-between"
+                        onClick={() => setWorkflowSelectorOpen(true)}
+                    >
+                        <span className="font-medium">
+                            {filteredWorkflows[currentWorkflowIndex]?.name || "Select Workflow"}
+                        </span>
+                        <ChevronDown className="h-4 w-4 ml-2" />
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 w-9 p-0"
+                        onClick={() => setCurrentWorkflowIndex(prev => Math.min(filteredWorkflows.length - 1, prev + 1))}
+                        disabled={currentWorkflowIndex === filteredWorkflows.length - 1}
+                    >
+                        <ChevronRight className="h-4 w-4" />
+                    </Button>
+                </div>
+            )}
 
             {/* Kanban Board */}
             {workflows.length === 0 ? (
@@ -545,22 +584,39 @@ export function CampaignKanbanView({ picId }: CampaignKanbanViewProps) {
                     </div>
                 </div>
             ) : (
-                <ScrollArea className="w-full h-[calc(100vh-200px)]">
-                    <div className="flex gap-6 pb-4">
-                        {filteredWorkflows.map(workflow => (
+                <>
+                    {/* Desktop view - Horizontal scroll */}
+                    <ScrollArea className="hidden md:block w-full h-[calc(100vh-200px)]">
+                        <div className="flex gap-6 pb-4">
+                            {filteredWorkflows.map(workflow => (
+                                <KanbanColumn
+                                    key={workflow.id}
+                                    workflow={workflow}
+                                    onInstanceClick={handleInstanceClick}
+                                    onTransition={handleTransition}
+                                    onNote={handleOpenNote}
+                                    onNoteUpdate={handleNoteUpdate}
+                                    onOpenTransitionDialog={handleOpenTransitionDialog}
+                                />
+                            ))}
+                        </div>
+                        <ScrollBar orientation="horizontal" />
+                    </ScrollArea>
+
+                    {/* Mobile view - Single column slider */}
+                    <div className="md:hidden w-full h-[calc(100vh-250px)]">
+                        {filteredWorkflows[currentWorkflowIndex] && (
                             <KanbanColumn
-                                key={workflow.id}
-                                workflow={workflow}
+                                workflow={filteredWorkflows[currentWorkflowIndex]}
                                 onInstanceClick={handleInstanceClick}
                                 onTransition={handleTransition}
                                 onNote={handleOpenNote}
                                 onNoteUpdate={handleNoteUpdate}
                                 onOpenTransitionDialog={handleOpenTransitionDialog}
                             />
-                        ))}
+                        )}
                     </div>
-                    <ScrollBar orientation="horizontal" />
-                </ScrollArea>
+                </>
             )}
 
             {/* Note Dialog */}
@@ -613,6 +669,41 @@ export function CampaignKanbanView({ picId }: CampaignKanbanViewProps) {
                 availableTransitions={selectedInstanceForTransition?.available_transitions || []}
                 onTransition={handleTransition}
             />
+
+            {/* Workflow Selector Bottom Sheet - Mobile only */}
+            <Sheet open={workflowSelectorOpen} onOpenChange={setWorkflowSelectorOpen}>
+                <SheetContent side="bottom" className="h-[60vh]">
+                    <SheetHeader>
+                        <SheetTitle>Select Workflow</SheetTitle>
+                    </SheetHeader>
+                    <div className="flex flex-col gap-2 mt-4 overflow-y-auto">
+                        {filteredWorkflows.map((workflow, index) => (
+                            <Button
+                                key={workflow.id}
+                                variant={currentWorkflowIndex === index ? "secondary" : "ghost"}
+                                className="w-full justify-between h-auto py-3 px-4"
+                                onClick={() => {
+                                    setCurrentWorkflowIndex(index)
+                                    setWorkflowSelectorOpen(false)
+                                }}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-3 h-3 rounded-full ${index % 4 === 0 ? "bg-orange-500" :
+                                            index % 4 === 1 ? "bg-blue-500" :
+                                                index % 4 === 2 ? "bg-green-500" :
+                                                    "bg-purple-500"
+                                        }`} />
+                                    <span className="font-medium">{workflow.name}</span>
+                                    <span className="text-sm text-gray-500">- {workflow.instances.length} items</span>
+                                </div>
+                                {currentWorkflowIndex === index && (
+                                    <Check className="h-5 w-5" />
+                                )}
+                            </Button>
+                        ))}
+                    </div>
+                </SheetContent>
+            </Sheet>
 
             {/* Loading overlay when fetching lead */}
             {loadingLead && (

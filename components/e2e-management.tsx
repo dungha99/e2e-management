@@ -96,9 +96,15 @@ interface E2EManagementProps {
   initialPage?: number
   initialSearch?: string
   initialSources?: string[]
+  initialViewMode?: "list" | "kanban"
+  onViewModeChange?: (mode: "list" | "kanban") => void
 }
 
-export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
+export function E2EManagement({
+  userId: propUserId,
+  initialViewMode,
+  onViewModeChange
+}: E2EManagementProps = {}) {
   const { toast } = useToast()
   const { accounts: ACCOUNTS } = useAccounts()
   const queryClient = useQueryClient()
@@ -281,8 +287,10 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
   const isMobile = useIsMobile()
   const [mobileView, setMobileView] = useState<"list" | "detail">("list")
 
-  // View mode state (list vs kanban)
-  const [viewMode, setViewMode] = useState<"list" | "kanban">("list")
+  // View mode state (list vs kanban) - can be controlled externally
+  const [internalViewMode, setInternalViewMode] = useState<"list" | "kanban">(initialViewMode || "list")
+  const viewMode = initialViewMode !== undefined ? initialViewMode : internalViewMode
+  const setViewMode = onViewModeChange || setInternalViewMode
 
   // Detail view tab state
   const [activeDetailView, setActiveDetailView] = useState<"workflow" | "decoy-web" | "recent-activity" | "decoy-history">("workflow")
@@ -2245,13 +2253,13 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
 
   return (
     <div className={`w-full ${isMobile ? 'h-dvh overflow-hidden' : ''}`}>
-      {/* Account Selector */}
+      {/* Account Selector - Mobile rendering disabled since MobileNavigationHeader handles it */}
       <AccountSelector
         selectedAccount={selectedAccount}
         onAccountChange={handleAccountChange}
         loading={loading}
         loadingCarIds={loadingCarIds}
-        isMobile={isMobile}
+        isMobile={false}
         mobileView={mobileView}
         onBackToList={() => {
           setMobileView('list')

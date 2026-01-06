@@ -55,9 +55,14 @@ async function fetchBatchData(
     ? "AND ss.is_hot_lead = true"
     : "AND (ss.is_hot_lead IS NULL OR ss.is_hot_lead = false)"
 
-  // Build search condition for phone
+  // Build search condition for phone, lead name, and car display name (brand + model)
   const searchCondition = search
-    ? `AND (l.phone LIKE '%${search}%' OR l.additional_phone LIKE '%${search}%')`
+    ? `AND (
+        l.phone LIKE '%${search}%' 
+        OR l.additional_phone LIKE '%${search}%'
+        OR l.name ILIKE '%${search}%'
+        OR CONCAT(c.brand, ' ', c.model) ILIKE '%${search}%'
+      )`
     : ""
 
   // Build source filter condition

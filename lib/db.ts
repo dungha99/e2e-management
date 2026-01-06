@@ -5,6 +5,7 @@ const globalForDb = globalThis as unknown as {
   drmPool: Pool | undefined
   vucarV2Pool: Pool | undefined
   tempInspectionPool: Pool | undefined
+  e2ePool: Pool | undefined
 }
 
 export function getDrmPool(): Pool {
@@ -146,6 +147,51 @@ export async function tempInspectionQuery(text: string, params?: any[]) {
     return res
   } catch (error) {
     console.error("temp-inspection query error", { text, error })
+    throw error
+  }
+}
+
+export function getE2ePool(): Pool {
+  if (!globalForDb.e2ePool) {
+    globalForDb.e2ePool = new Pool({
+      host: process.env.E2E_DB_HOST,
+      port: parseInt(process.env.E2E_DB_PORT || "5432"),
+      database: process.env.E2E_DB_NAME,
+      user: process.env.E2E_DB_USER,
+      password: process.env.E2E_DB_PASSWORD,
+      ssl: { rejectUnauthorized: false },
+      max: 15,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 20000,
+    })
+
+    globalForDb.e2ePool.on("error", (err) => {
+      console.error("Unexpected error on idle E2E client", err)
+    })
+  }
+
+  return globalForDb.e2ePool
+}
+
+export async function e2eQuery(text: string, params?: any[]) {
+  const pool = getE2ePool()
+  const start = Date.now()
+  try {
+    const res = await pool.query(text, params)
+    const duration = Date.now() - start
+
+    // Log slow queries (>500ms)
+    if (duration > 500) {
+      console.warn("Slow E2E query detected:", {
+        duration: `${duration}ms`,
+        query: text.substring(0, 100) + (text.length > 100 ? "..." : ""),
+        rowCount: res.rowCount,
+      })
+    }
+
+    return res
+  } catch (error) {
+    console.error("e2e query error", { text, error })
     throw error
   }
 }

@@ -164,3 +164,68 @@ export function getStageStyle(stage: string | null | undefined): string {
       return "bg-gray-100 text-gray-800 border-gray-200"
   }
 }
+
+/**
+ * Format a date as relative time in Vietnamese
+ * e.g., "2 giờ trước", "3 ngày trước", "1 tuần trước"
+ */
+export function formatRelativeTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return "Chưa có hoạt động"
+
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+
+  if (diffMs < 0) return "Vừa xong"
+
+  const diffMinutes = Math.floor(diffMs / (1000 * 60))
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  const diffWeeks = Math.floor(diffDays / 7)
+  const diffMonths = Math.floor(diffDays / 30)
+
+  if (diffMinutes < 1) return "Vừa xong"
+  if (diffMinutes < 60) return `${diffMinutes} phút trước`
+  if (diffHours < 24) return `${diffHours} giờ trước`
+  if (diffDays < 7) return `${diffDays} ngày trước`
+  if (diffWeeks < 4) return `${diffWeeks} tuần trước`
+  if (diffMonths < 12) return `${diffMonths} tháng trước`
+
+  return formatDate(dateStr)
+}
+
+/**
+ * Get activity freshness status based on last activity time
+ * Returns: 'fresh' (< 24h), 'recent' (1-3 days), 'stale' (> 3 days)
+ */
+export type ActivityFreshness = 'fresh' | 'recent' | 'stale' | 'none'
+
+export function getActivityFreshness(dateStr: string | null | undefined): ActivityFreshness {
+  if (!dateStr) return 'none'
+
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffHours = diffMs / (1000 * 60 * 60)
+
+  if (diffHours < 24) return 'fresh'
+  if (diffHours < 72) return 'recent' // 3 days
+  return 'stale'
+}
+
+/**
+ * Get CSS class for activity freshness color
+ */
+export function getActivityFreshnessClass(freshness: ActivityFreshness): string {
+  switch (freshness) {
+    case 'fresh':
+      return 'text-green-600'
+    case 'recent':
+      return 'text-yellow-600'
+    case 'stale':
+      return 'text-red-500'
+    case 'none':
+    default:
+      return 'text-gray-400'
+  }
+}

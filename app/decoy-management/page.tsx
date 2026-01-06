@@ -7,6 +7,8 @@ import { Toaster } from "@/components/ui/toaster"
 import { CampaignCreationPanel } from "@/components/campaign-creation-panel"
 import { JobsDashboard } from "@/components/jobs-dashboard"
 import { AccountStatusPanel } from "@/components/account-status-panel"
+import { MobileNavigationHeader } from "@/components/e2e/layout/MobileNavigationHeader"
+import { useAccounts } from "@/contexts/AccountsContext"
 import { createPortal } from "react-dom"
 import {
     Select,
@@ -16,16 +18,6 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 
-// Account list - should match the one in AccountSelector
-const ACCOUNTS = [
-    { uid: "0195a048-f43c-7e0c-80d7-65c6f7b10f3f", name: "Hoàng Anh" },
-    { uid: "01930fec-e9d8-7d39-b42c-87faaa5ca60f", name: "Tuấn Ngọc" },
-    { uid: "018f558d-81c6-79a7-858b-a53c22e823c7", name: "Thành Dương" },
-    { uid: "01952f77-7aaf-7ea0-a539-c5f03f1a74ab", name: "Đăng Nguyễn" },
-    { uid: "0192c5c4-6f16-729d-91e9-9f39f6cfac95", name: "Khoa Võ" },
-    { uid: "0193c432-b5a2-7a5d-b640-2d1a5eb5c7b7", name: "Anh Vũ" },
-]
-
 // Account Selector Component for Decoy Management
 function DecoyAccountSelector({
     selectedAccount,
@@ -34,6 +26,7 @@ function DecoyAccountSelector({
     selectedAccount: string
     onAccountChange: (value: string) => void
 }) {
+    const { accounts: ACCOUNTS } = useAccounts()
     const [mounted, setMounted] = useState(false)
 
     useEffect(() => {
@@ -65,9 +58,36 @@ function DecoyAccountSelector({
     )
 }
 
+// Compact mobile account selector
+function MobileAccountSelector({
+    selectedAccount,
+    onAccountChange,
+}: {
+    selectedAccount: string
+    onAccountChange: (value: string) => void
+}) {
+    const { accounts: ACCOUNTS } = useAccounts()
+
+    return (
+        <Select value={selectedAccount} onValueChange={onAccountChange}>
+            <SelectTrigger className="w-32 h-9 text-xs">
+                <SelectValue placeholder="Tài khoản" />
+            </SelectTrigger>
+            <SelectContent>
+                {ACCOUNTS.map((account) => (
+                    <SelectItem key={account.uid} value={account.uid}>
+                        {account.name}
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
+    )
+}
+
 // Separate component to use search params
 function DecoyManagementPageContent() {
     const router = useRouter()
+    const { accounts: ACCOUNTS } = useAccounts()
     const [selectedAccount, setSelectedAccount] = useState("")
 
     // Load account from localStorage on mount
@@ -78,7 +98,7 @@ function DecoyManagementPageContent() {
         } else if (ACCOUNTS.length > 0) {
             setSelectedAccount(ACCOUNTS[0].uid)
         }
-    }, [])
+    }, [ACCOUNTS])
 
     // Handle account change
     function handleAccountChange(value: string) {
@@ -92,19 +112,35 @@ function DecoyManagementPageContent() {
         } else if (value === "e2e") {
             const picId = selectedAccount || "placeholder"
             router.push(`/e2e/${picId}?tab=priority&page=1`)
+        } else if (value === "workflow") {
+            router.push("/workflow-management")
         }
         // If value is "campaigns", stay on current page
     }
 
     return (
         <div className="min-h-screen bg-background">
+            {/* Mobile Navigation Header */}
+            <MobileNavigationHeader
+                currentPage="campaigns"
+                selectedAccount={selectedAccount}
+                accountSelector={
+                    <MobileAccountSelector
+                        selectedAccount={selectedAccount}
+                        onAccountChange={handleAccountChange}
+                    />
+                }
+            />
+
             <main className="px-2 md:px-4 py-4">
                 <Tabs value="campaigns" onValueChange={handleTabChange} className="w-full">
-                    <div className="flex items-center justify-between mb-6">
+                    {/* Desktop Navigation - Hidden on mobile */}
+                    <div className="hidden md:flex items-center justify-between mb-6">
                         <TabsList>
                             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
                             <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>
                             <TabsTrigger value="e2e">Quản lý E2E</TabsTrigger>
+                            <TabsTrigger value="workflow">Quản lý Workflow</TabsTrigger>
                         </TabsList>
                         {/* Portal target for AccountSelector */}
                         <div id="header-account-selector"></div>

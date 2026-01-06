@@ -1,13 +1,172 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, ChevronRight, Check, X, Car, User, Phone, Copy, ChevronDown, ChevronUp } from "lucide-react"
-import { Lead, BiddingHistory } from "../types"
+import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp } from "lucide-react"
+import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
-import { maskPhone } from "@/lib/utils"
+import { ActivateWorkflowDialog } from "../dialogs/ActivateWorkflowDialog"
+import { fetchAiInsights } from "@/hooks/use-leads"
+
+// Custom fields configuration for each workflow
+const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] => {
+  switch (workflowName) {
+    case "WF2":
+      return [
+        {
+          name: "duration",
+          label: "Duration",
+          type: "number",
+          required: true,
+          placeholder: "Nhập thời lượng chiến dịch..."
+        },
+        {
+          name: "minPrice",
+          label: "Giá tối thiểu (triệu)",
+          type: "number",
+          required: true,
+          placeholder: "VD: 500 = 500 triệu"
+        },
+        {
+          name: "maxPrice",
+          label: "Giá tối đa (triệu)",
+          type: "number",
+          required: true,
+          placeholder: "VD: 600 = 600 triệu"
+        },
+        {
+          name: "comment",
+          label: "Bật comment",
+          type: "select",
+          required: false,
+          options: ["true", "false"],
+          default_value: "false",
+          placeholder: "Chọn..."
+        },
+        {
+          name: "numberOfComments",
+          label: "Số lượng comments",
+          type: "number",
+          required: false,
+          placeholder: "Nhập số lượng comments...",
+          default_value: 0
+        },
+        {
+          name: "bid",
+          label: "Bật bidding",
+          type: "select",
+          required: false,
+          options: ["true", "false"],
+          default_value: "false",
+          placeholder: "Chọn..."
+        }
+      ]
+
+    case "WF2.1":
+      return [
+        {
+          name: "meeting_date",
+          label: "Ngày hẹn gặp khách",
+          type: "date",
+          required: true
+        },
+        {
+          name: "customer_urgency",
+          label: "Mức độ gấp của khách",
+          type: "select",
+          required: true,
+          options: ["Rất gấp (< 1 tuần)", "Gấp (1-2 tuần)", "Không gấp (> 2 tuần)"],
+          placeholder: "Chọn mức độ gấp..."
+        }
+      ]
+
+    case "WF3":
+      return [
+        {
+          name: "final_price_offered",
+          label: "Giá cuối cùng đề xuất (VNĐ)",
+          type: "number",
+          required: true,
+          placeholder: "Nhập giá cuối cùng..."
+        },
+        {
+          name: "competitor_info",
+          label: "Thông tin đối thủ cạnh tranh",
+          type: "textarea",
+          required: false,
+          placeholder: "Khách có nhận giá từ đâu khác không? Giá bao nhiêu?"
+        }
+      ]
+
+    case "WF3.1":
+      return [
+        {
+          name: "payment_method",
+          label: "Phương thức thanh toán",
+          type: "select",
+          required: true,
+          options: ["Tiền mặt toàn bộ", "Chuyển khoản toàn bộ", "Kết hợp tiền mặt & CK", "Trả góp"],
+          placeholder: "Chọn phương thức thanh toán..."
+        },
+        {
+          name: "handover_notes",
+          label: "Ghi chú bàn giao",
+          type: "textarea",
+          required: true,
+          placeholder: "Ghi chú về lịch bàn giao, giấy tờ cần chuẩn bị..."
+        }
+      ]
+
+    case "WFD5":
+      return [
+        {
+          name: "minPrice",
+          label: "Giá tối thiểu (triệu)",
+          type: "number",
+          required: true,
+          placeholder: "VD: 500 = 500 triệu"
+        },
+        {
+          name: "maxPrice",
+          label: "Giá tối đa (triệu)",
+          type: "number",
+          required: true,
+          placeholder: "VD: 600 = 600 triệu"
+        },
+        {
+          name: "comment",
+          label: "Bật comment",
+          type: "select",
+          required: false,
+          options: ["true", "false"],
+          default_value: "false",
+          placeholder: "Chọn..."
+        },
+        {
+          name: "numberOfComments",
+          label: "Số lượng comments",
+          type: "number",
+          required: false,
+          placeholder: "Nhập số lượng comments...",
+          default_value: 0
+        },
+        {
+          name: "bid",
+          label: "Bật bidding",
+          type: "select",
+          required: false,
+          options: ["true", "false"],
+          default_value: "false",
+          placeholder: "Chọn..."
+        }
+      ]
+
+    default:
+      return []
+  }
+}
 
 interface WorkflowStepProps {
   icon: React.ReactNode
@@ -43,8 +202,8 @@ function WorkflowStep({ icon, title, status, isCompleted = false, onClick }: Wor
 
 interface WorkflowTrackerTabProps {
   selectedLead: Lead
-  activeWorkflowView: "purchase" | "seeding"
-  onWorkflowViewChange: (view: "purchase" | "seeding") => void
+  activeWorkflowView: string // Can be "purchase", "seeding", or workflow ID
+  onWorkflowViewChange: (view: string) => void
 
   // Purchase workflow handlers
   onSendFirstMessage: () => void
@@ -70,6 +229,19 @@ interface WorkflowTrackerTabProps {
 
   // Notes editing
   onUpdateNotes?: (notes: string) => Promise<void>
+
+  // Beta Tracking Props
+  workflowInstancesData?: {
+    success: boolean
+    data: WorkflowInstanceWithDetails[]
+    allWorkflows: { id: string, name: string, description?: string }[]
+    allTransitions: { from_workflow_id: string, to_workflow_id: string, to_workflow_name: string }[]
+    allWorkflowSteps: Record<string, any[]>
+    canActivateWF2: boolean
+  }
+
+  // Workflow activation callback
+  onWorkflowActivated?: () => void
 }
 
 export function WorkflowTrackerTab({
@@ -90,7 +262,9 @@ export function WorkflowTrackerTab({
   onOpenDecoyDialog,
   biddingHistory = [],
   onUpdateBid,
-  loadingBiddingHistory = false
+  loadingBiddingHistory = false,
+  workflowInstancesData,
+  onWorkflowActivated
 }: WorkflowTrackerTabProps) {
   // Local state for inline editing
   const [editingBidId, setEditingBidId] = useState<string | null>(null)
@@ -101,6 +275,64 @@ export function WorkflowTrackerTab({
   const [isExpanded, setIsExpanded] = useState(false)
   // State for copy feedback
   const [copied, setCopied] = useState(false)
+
+  // State for workflow activation dialog
+  const [activateDialogOpen, setActivateDialogOpen] = useState(false)
+  const [selectedTransition, setSelectedTransition] = useState<{
+    workflowId: string
+    workflowName: string
+    parentInstanceId: string
+  } | null>(null)
+
+  // State for AI insights
+  const [aiInsights, setAiInsights] = useState<any>(null)
+  const [fetchingAiInsights, setFetchingAiInsights] = useState(false)
+
+  // Fetch AI insights when accessing a completed workflow instance
+  useEffect(() => {
+    // Only fetch for dynamic workflows (not "purchase" or "seeding")
+    const isDynamicWorkflow = activeWorkflowView !== "purchase" && activeWorkflowView !== "seeding"
+    if (!isDynamicWorkflow || !workflowInstancesData || !selectedLead.car_id) {
+      return
+    }
+
+    // Find the current workflow instance being viewed
+    const currentInstance = workflowInstancesData.data?.find(i => i.instance.workflow_id === activeWorkflowView)
+
+    // Only fetch AI insights if this specific workflow instance is completed
+    if (!currentInstance || currentInstance.instance.status !== "completed") {
+      console.log(`[WorkflowTracker] Current workflow not completed, skipping AI insights`)
+      return
+    }
+
+    // Use the current completed instance ID as source for AI insights
+    const sourceInstanceId = currentInstance.instance.id
+
+    // Fetch AI insights in background for this specific source instance
+    const phoneNumber = selectedLead.phone || selectedLead.additional_phone
+    if (!phoneNumber) {
+      return
+    }
+
+    console.log(`[WorkflowTracker] Fetching AI insights for completed instance: ${sourceInstanceId}`)
+    setFetchingAiInsights(true)
+    fetchAiInsights(selectedLead.car_id, sourceInstanceId, phoneNumber)
+      .then((insights) => {
+        setAiInsights(insights)
+        console.log("[WorkflowTracker] AI Insights fetched:", insights)
+      })
+      .catch((error) => {
+        // Check if it's a 202 "still processing" response
+        if (error.message.includes("still being processed")) {
+          console.log("[WorkflowTracker] AI insights still processing, will retry on next render")
+        } else {
+          console.error("[WorkflowTracker] Failed to fetch AI insights:", error)
+        }
+      })
+      .finally(() => {
+        setFetchingAiInsights(false)
+      })
+  }, [activeWorkflowView, workflowInstancesData, selectedLead.car_id, selectedLead.phone, selectedLead.additional_phone])
 
   // Get top 5 bids sorted by price (descending)
   const topBids = [...biddingHistory]
@@ -171,7 +403,6 @@ ${dealerBidsStr}`
 
   const handleStartEdit = (bid: BiddingHistory) => {
     setEditingBidId(bid.id)
-    // Display as shorthand (e.g., 500000000 -> "500")
     setEditingPrice(formatPriceForEdit(bid.price))
   }
 
@@ -182,8 +413,6 @@ ${dealerBidsStr}`
 
   const handleSaveEdit = async (bidId: string) => {
     if (!onUpdateBid || !editingPrice) return
-
-    // Parse shorthand price (e.g., 500 -> 500000000)
     const newPrice = parseShorthandPrice(editingPrice)
     if (newPrice === undefined || newPrice < 1) return
 
@@ -197,8 +426,6 @@ ${dealerBidsStr}`
     }
   }
 
-
-
   return (
     <>
       {/* Workflow Tracker */}
@@ -207,29 +434,47 @@ ${dealerBidsStr}`
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
             <h3 className="text-sm font-semibold text-gray-900">Tiến độ quy trình</h3>
-            {(selectedLead.bidding_session_count || 0) > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs sm:text-sm text-gray-600 hidden sm:inline">Đang xem:</span>
-                <button
-                  onClick={() => onWorkflowViewChange("purchase")}
-                  className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors ${activeWorkflowView === "purchase"
-                    ? "bg-emerald-100 text-emerald-700"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
+              <span className="text-xs sm:text-sm text-gray-600 hidden sm:inline">Đang xem:</span>
+              <button
+                onClick={() => onWorkflowViewChange("purchase")}
+                className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap ${activeWorkflowView === "purchase"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+              >
+                Thu Mua
+              </button>
+              <button
+                onClick={() => onWorkflowViewChange("seeding")}
+                className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap ${activeWorkflowView === "seeding"
+                  ? "bg-purple-100 text-purple-700"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+              >
+                Seeding
+              </button>
+              {/* Dynamic Workflow Tabs */}
+              {workflowInstancesData?.allWorkflows?.map(workflow => {
+                const isActive = activeWorkflowView === workflow.id
+                const instance = workflowInstancesData.data?.find(i => i.instance.workflow_id === workflow.id)
+                return (
+                  <button
+                    key={workflow.id}
+                    onClick={() => onWorkflowViewChange(workflow.id)}
+                    className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap flex items-center gap-1 ${
+                      isActive
+                        ? "bg-blue-100 text-blue-700"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                     }`}
-                >
-                  Thu Mua
-                </button>
-                <button
-                  onClick={() => onWorkflowViewChange("seeding")}
-                  className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors ${activeWorkflowView === "seeding"
-                    ? "bg-purple-100 text-purple-700"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                >
-                  Seeding
-                </button>
-              </div>
-            )}
+                  >
+                    {instance?.instance.status === "completed" && <CheckCircle className="h-3 w-3 text-emerald-500" />}
+                    {instance?.instance.status === "running" && <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />}
+                    {workflow.name}
+                  </button>
+                )
+              })}
+            </div>
           </div>
           {selectedLead.session_created && selectedLead.workflow2_is_active === false && (
             <Button
@@ -243,12 +488,10 @@ ${dealerBidsStr}`
           )}
         </div>
 
-        {/* Workflow Steps */}
         {/* Workflow Steps - Horizontally scrollable on mobile */}
         {activeWorkflowView === "purchase" ? (
           <div className="overflow-x-auto pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-thin">
             <div className="flex items-start justify-between gap-3 sm:gap-4 mb-4 sm:mb-8 min-w-[500px] sm:min-w-0 px-1 sm:px-4">
-              {/* Tin nhắn đầu */}
               <div className="flex flex-col items-center gap-2 sm:gap-3 flex-1">
                 <WorkflowStep
                   icon={<CheckCircle className="w-6 h-6 sm:w-8 sm:h-8" />}
@@ -267,7 +510,6 @@ ${dealerBidsStr}`
                 </Button>
               </div>
 
-              {/* Chào Dealer */}
               <div className="flex flex-col items-center gap-2 sm:gap-3 flex-1">
                 <WorkflowStep
                   icon={<DollarSign className="w-6 h-6 sm:w-8 sm:h-8" />}
@@ -286,7 +528,6 @@ ${dealerBidsStr}`
                 </Button>
               </div>
 
-              {/* Tạo Phiên */}
               <div className="flex flex-col items-center gap-2 sm:gap-3 flex-1">
                 <WorkflowStep
                   icon={<Play className="w-6 h-6 sm:w-8 sm:h-8" />}
@@ -305,7 +546,6 @@ ${dealerBidsStr}`
                 </Button>
               </div>
 
-              {/* Decoy Web */}
               <div className="flex flex-col items-center gap-2 sm:gap-3">
                 <WorkflowStep
                   icon={<Search className="w-6 h-6 sm:w-8 sm:h-8" />}
@@ -317,9 +557,8 @@ ${dealerBidsStr}`
               </div>
             </div>
           </div>
-        ) : (
+        ) : activeWorkflowView === "seeding" ? (
           <div className="flex items-start justify-between gap-8 mb-8 px-4">
-            {/* Tạo Phiên 2 */}
             <div className="flex flex-col items-center gap-3">
               <WorkflowStep
                 icon={<Play className={`w-8 h-8 ${selectedLead.has_active_campaigns ? "text-green-600" : selectedLead.workflow2_is_active ? "text-green-600" : "text-gray-400"}`} />}
@@ -327,17 +566,8 @@ ${dealerBidsStr}`
                 status={selectedLead.has_active_campaigns ? "Có campaign đang chạy" : selectedLead.workflow2_is_active ? "Đã kích hoạt" : "Chưa kích hoạt"}
                 isCompleted={selectedLead.has_active_campaigns || selectedLead.workflow2_is_active === true}
               />
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                disabled
-              >
-                Chạy ngay
-              </Button>
+              <Button variant="outline" size="sm" className="text-xs" disabled>Chạy ngay</Button>
             </div>
-
-            {/* Decoy Zalo */}
             <div className="flex flex-col items-center gap-3">
               <WorkflowStep
                 icon={<MessageCircle className="w-8 h-8" />}
@@ -345,17 +575,123 @@ ${dealerBidsStr}`
                 status="Tương tác Zalo ảo"
                 isCompleted={false}
               />
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={onOpenDecoyDialog}
-              >
-                Mở Zalo Decoy
-              </Button>
+              <Button variant="outline" size="sm" className="text-xs" onClick={onOpenDecoyDialog}>Mở Zalo Decoy</Button>
             </div>
           </div>
-        )}
+        ) : workflowInstancesData?.allWorkflows?.find(w => w.id === activeWorkflowView) ? (
+          /* Dynamic Workflow View - Matching Thu Mua style */
+          (() => {
+            const currentWorkflow = workflowInstancesData.allWorkflows.find(w => w.id === activeWorkflowView)!
+            const currentInstance = workflowInstancesData.data?.find(i => i.instance.workflow_id === activeWorkflowView)
+            const workflowSteps = workflowInstancesData.allWorkflowSteps?.[activeWorkflowView] || []
+            const availableTransitions = currentInstance?.instance.status === "completed"
+              ? workflowInstancesData.allTransitions.filter(t => t.from_workflow_id === activeWorkflowView)
+              : []
+            const visibleTransitions = availableTransitions.filter(transition => {
+              const targetInstance = workflowInstancesData.data?.find(i => i.instance.workflow_id === transition.to_workflow_id)
+              return !targetInstance || (targetInstance.instance.status !== "running" && targetInstance.instance.status !== "completed")
+            })
+
+            // Get step execution status
+            const getStepStatus = (step: any) => {
+              const execution = currentInstance?.steps?.find((s: any) => s.id === step.id)?.execution
+              return {
+                isCompleted: execution?.status === "success",
+                isFailed: execution?.status === "failed",
+                executedAt: execution?.executed_at,
+                errorMessage: execution?.error_message
+              }
+            }
+
+            return (
+              <div className="overflow-x-auto pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-thin">
+                <div className="flex items-start justify-between gap-3 sm:gap-4 mb-4 sm:mb-8 min-w-[500px] sm:min-w-0 px-1 sm:px-4">
+                  {workflowSteps.length > 0 ? (
+                    workflowSteps.map((step: any, idx: number) => {
+                      const status = getStepStatus(step)
+                      return (
+                        <div key={step.id} className="flex flex-col items-center gap-2 sm:gap-3 flex-1">
+                          <WorkflowStep
+                            icon={
+                              status.isCompleted ? (
+                                <CheckCircle className="w-6 h-6 sm:w-8 sm:h-8" />
+                              ) : status.isFailed ? (
+                                <X className="w-6 h-6 sm:w-8 sm:h-8" />
+                              ) : (
+                                <Play className="w-6 h-6 sm:w-8 sm:h-8" />
+                              )
+                            }
+                            title={step.step_name}
+                            status={
+                              status.isCompleted
+                                ? "Hoàn thành"
+                                : status.isFailed
+                                ? "Thất bại"
+                                : currentInstance
+                                ? "Chưa thực hiện"
+                                : "Chưa chạy"
+                            }
+                            isCompleted={status.isCompleted}
+                          />
+                          {step.is_automated && (
+                            <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-blue-50 text-blue-600 border-blue-200">
+                              <Zap className="h-3 w-3 mr-0.5" />
+                              Auto
+                            </Badge>
+                          )}
+                          {status.executedAt && (
+                            <span className="text-[10px] text-gray-400">
+                              {new Date(status.executedAt).toLocaleTimeString("vi-VN", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          )}
+                          {status.isFailed && status.errorMessage && (
+                            <p className="text-[10px] text-red-500 text-center italic max-w-[120px]">
+                              {status.errorMessage}
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })
+                  ) : (
+                    <div className="w-full text-center py-8 text-gray-400">
+                      <p className="text-sm">Workflow này chưa có bước nào được cấu hình</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Activation Buttons - Same position as "Kích hoạt WF 2" */}
+                {visibleTransitions.length > 0 && (
+                  <div className="flex items-center gap-2 mt-4">
+                    {visibleTransitions.map(transition => (
+                      <Button
+                        key={transition.to_workflow_id}
+                        variant="default"
+                        size="sm"
+                        onClick={() => {
+                          if (currentInstance?.instance.id) {
+                            setSelectedTransition({
+                              workflowId: transition.to_workflow_id,
+                              workflowName: transition.to_workflow_name,
+                              parentInstanceId: currentInstance.instance.id
+                            })
+                            setActivateDialogOpen(true)
+                          }
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-xs sm:text-sm"
+                      >
+                        <Zap className="h-3.5 w-3.5 mr-1.5" />
+                        Kích hoạt {transition.to_workflow_name}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })()
+        ) : null}
 
         {/* Other Action Buttons - Only for purchase workflow */}
         {activeWorkflowView === "purchase" && (
@@ -375,7 +711,6 @@ ${dealerBidsStr}`
 
       {/* Additional Info Cards */}
       <div className="mt-4 sm:mt-6">
-        {/* Price Info - Minimal Style with Subtle Decorations */}
         <div className="bg-white rounded-lg p-3 sm:p-5 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-3 sm:mb-4">
             <div className="flex items-center gap-2">
@@ -392,7 +727,6 @@ ${dealerBidsStr}`
             </Button>
           </div>
 
-          {/* Stats Row - 2 cols on mobile, 4 cols on larger screens */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-4 sm:mb-5 pb-4 sm:pb-5 border-b border-gray-100">
             <div>
               <div className="flex items-center gap-1 sm:gap-1.5 mb-0.5 sm:mb-1">
@@ -432,111 +766,55 @@ ${dealerBidsStr}`
                 <p className="text-lg sm:text-xl font-semibold text-blue-700">
                   {selectedLead.dealer_bidding?.maxPrice ? formatPrice(selectedLead.dealer_bidding.maxPrice) : "—"}
                 </p>
-                {selectedLead.dealer_bidding?.status === "got_price" &&
-                  selectedLead.price_customer &&
-                  selectedLead.dealer_bidding?.maxPrice &&
-                  selectedLead.dealer_bidding.maxPrice > selectedLead.price_customer && (
-                    <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1 rounded">↑</span>
-                  )}
               </div>
             </div>
           </div>
 
-          {/* Two Column Layout - Stack on mobile */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-            {/* Top Bids */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h5 className="text-xs font-medium text-gray-500 flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
                   Top Dealer Bids
-                  {allValidBids.length > 5 && (
-                    <span className="text-[10px] text-gray-400">({allValidBids.length})</span>
-                  )}
                 </h5>
                 <div className="flex items-center gap-1">
-                  {/* Copy button */}
                   <button
                     onClick={handleCopy}
-                    className={`p-1 rounded transition-colors ${copied
-                      ? "text-emerald-600 bg-emerald-50"
-                      : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-                      }`}
-                    title={copied ? "Đã copy!" : "Copy thông tin"}
-                    disabled={allValidBids.length === 0}
+                    className={`p-1 rounded transition-colors ${copied ? "text-emerald-600 bg-emerald-50" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"}`}
                   >
                     {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                   </button>
-                  {/* Expand/Collapse button */}
                   {allValidBids.length > 5 && (
-                    <button
-                      onClick={() => setIsExpanded(!isExpanded)}
-                      className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-                      title={isExpanded ? "Thu gọn" : "Xem tất cả"}
-                    >
+                    <button onClick={() => setIsExpanded(!isExpanded)} className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100">
                       {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                     </button>
                   )}
                 </div>
               </div>
               {loadingBiddingHistory ? (
-                <div className="flex items-center py-4 text-gray-400">
-                  <Loader2 className="h-3 w-3 animate-spin mr-2" />
-                  <span className="text-xs">Loading...</span>
-                </div>
+                <div className="flex items-center py-4 text-gray-400"><Loader2 className="h-3 w-3 animate-spin mr-2" /><span className="text-xs">Loading...</span></div>
               ) : displayBids.length === 0 ? (
                 <p className="text-xs text-gray-400 py-2">Chưa có giá</p>
               ) : (
                 <div className={`space-y-0.5 ${isExpanded ? "max-h-[300px] overflow-y-auto scrollbar-thin" : ""}`}>
                   {displayBids.map((bid, index) => (
-                    <div
-                      key={bid.id}
-                      className={`flex items-center justify-between py-1.5 px-2 rounded group transition-colors ${index === 0 ? "bg-blue-50/50" : "hover:bg-gray-50"
-                        }`}
-                    >
+                    <div key={bid.id} className={`flex items-center justify-between py-1.5 px-2 rounded group transition-colors ${index === 0 ? "bg-blue-50/50" : "hover:bg-gray-50"}`}>
                       <div className="flex items-center gap-2">
-                        <span className={`text-[10px] w-4 h-4 flex items-center justify-center rounded-full ${index === 0 ? "bg-blue-100 text-blue-600 font-medium" : "text-gray-400"
-                          }`}>
-                          {index + 1}
-                        </span>
+                        <span className={`text-[10px] w-4 h-4 flex items-center justify-center rounded-full ${index === 0 ? "bg-blue-100 text-blue-600 font-medium" : "text-gray-400"}`}>{index + 1}</span>
                         <span className="text-xs text-gray-700 truncate max-w-[100px]">{bid.dealer_name}</span>
                       </div>
                       {editingBidId === bid.id ? (
                         <div className="flex items-center gap-1">
-                          <Input
-                            type="text"
-                            value={editingPrice}
-                            onChange={(e) => setEditingPrice(e.target.value)}
-                            className="h-5 w-16 text-[10px] text-right border-gray-200"
-                            autoFocus
-                          />
-                          <button
-                            className="text-gray-400 hover:text-emerald-600 transition-colors"
-                            onClick={() => handleSaveEdit(bid.id)}
-                            disabled={savingBid}
-                          >
+                          <Input type="text" value={editingPrice} onChange={(e) => setEditingPrice(e.target.value)} className="h-5 w-16 text-[10px] text-right" autoFocus />
+                          <button onClick={() => handleSaveEdit(bid.id)} disabled={savingBid}>
                             {savingBid ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                           </button>
-                          <button
-                            className="text-gray-400 hover:text-red-500 transition-colors"
-                            onClick={handleCancelEdit}
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
+                          <button onClick={handleCancelEdit}><X className="h-3 w-3" /></button>
                         </div>
                       ) : (
                         <div className="flex items-center gap-1">
-                          <span className={`text-xs font-medium ${index === 0 ? "text-blue-600" : "text-gray-600"}`}>
-                            {formatPrice(bid.price)}
-                          </span>
-                          {onUpdateBid && (
-                            <button
-                              className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-gray-500 transition-all"
-                              onClick={() => handleStartEdit(bid)}
-                            >
-                              <span className="text-[10px]">✎</span>
-                            </button>
-                          )}
+                          <span className={`text-xs font-medium ${index === 0 ? "text-blue-600" : "text-gray-600"}`}>{formatPrice(bid.price)}</span>
+                          {onUpdateBid && <button className="opacity-0 group-hover:opacity-100 text-gray-300" onClick={() => handleStartEdit(bid)}><span className="text-[10px]">✎</span></button>}
                         </div>
                       )}
                     </div>
@@ -545,52 +823,48 @@ ${dealerBidsStr}`
               )}
             </div>
 
-            {/* Suggested Dealers */}
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <h5 className="text-xs font-medium text-gray-500 flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>
                   Đề xuất Dealer
                 </h5>
-                <span className="text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1">beta</span>
               </div>
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between py-2 px-2.5 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors cursor-pointer group">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-medium text-gray-600 group-hover:bg-gray-300 transition-colors">A</div>
-                    <div>
-                      <p className="text-xs text-gray-700">Auto Dealer Hà Nội</p>
-                      <p className="text-[10px] text-gray-400">Thường mua dòng này</p>
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="flex items-center justify-between py-2 px-2.5 bg-gray-50 rounded-md">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px]">?</div>
+                      <p className="text-xs text-gray-700">Dealer {i}</p>
                     </div>
+                    <span className="text-xs font-medium text-emerald-600">--</span>
                   </div>
-                  <span className="text-xs font-medium text-emerald-600">+5-10%</span>
-                </div>
-                <div className="flex items-center justify-between py-2 px-2.5 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors cursor-pointer group">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-medium text-gray-600 group-hover:bg-gray-300 transition-colors">B</div>
-                    <div>
-                      <p className="text-xs text-gray-700">Bình Minh Motors</p>
-                      <p className="text-[10px] text-gray-400">Đang tìm xe tương tự</p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-medium text-emerald-600">+3-8%</span>
-                </div>
-                <div className="flex items-center justify-between py-2 px-2.5 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors cursor-pointer group">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-medium text-gray-600 group-hover:bg-gray-300 transition-colors">C</div>
-                    <div>
-                      <p className="text-xs text-gray-700">Car Center Q7</p>
-                      <p className="text-[10px] text-gray-400">Mới hoạt động mạnh</p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-medium text-emerald-600">+2-5%</span>
-                </div>
+                ))}
               </div>
-              <p className="text-[9px] text-gray-300 mt-2 italic">* Dựa trên lịch sử giao dịch</p>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Workflow Activation Dialog */}
+      {selectedTransition && (
+        <ActivateWorkflowDialog
+          open={activateDialogOpen}
+          onOpenChange={setActivateDialogOpen}
+          selectedLead={selectedLead}
+          targetWorkflowId={selectedTransition.workflowId}
+          targetWorkflowName={selectedTransition.workflowName}
+          parentInstanceId={selectedTransition.parentInstanceId}
+          customFields={getWorkflowCustomFields(selectedTransition.workflowName)}
+          aiInsightId={aiInsights?.aiInsightId || null}
+          isAlignedWithAi={aiInsights?.targetWorkflowId === selectedTransition.workflowId}
+          onSuccess={() => {
+            if (onWorkflowActivated) {
+              onWorkflowActivated()
+            }
+          }}
+        />
+      )}
     </>
   )
 }

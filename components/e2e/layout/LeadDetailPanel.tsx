@@ -18,9 +18,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car, Images, MapPin, Send } from "lucide-react"
+import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car, Images, MapPin, Send, Activity } from "lucide-react"
 import { Lead } from "../types"
-import { formatCarInfo, formatPrice, formatDate } from "../utils"
+import { formatCarInfo, formatPrice, formatDate, formatRelativeTime, getActivityFreshness, getActivityFreshnessClass } from "../utils"
 import { WorkflowTrackerTab } from "../tabs/WorkflowTrackerTab"
 import { DecoyWebTab } from "../tabs/DecoyWebTab"
 import { RecentActivityTab } from "../tabs/RecentActivityTab"
@@ -28,6 +28,8 @@ import { DecoyHistoryTab } from "../tabs/DecoyHistoryTab"
 import { Workflow2Dialog } from "../dialogs/Workflow2Dialog"
 import { ImageGalleryModal } from "../dialogs/ImageGalleryModal"
 import { useToast } from "@/hooks/use-toast"
+import { useWorkflowInstances } from "@/hooks/use-leads"
+import { useDecoySignals } from "@/hooks/use-decoy-signals"
 
 interface LeadDetailPanelProps {
   selectedAccount: string | null
@@ -79,8 +81,8 @@ interface LeadDetailPanelProps {
   onOpenCreateThread: () => void
 
   // Workflow View State
-  activeWorkflowView: "purchase" | "seeding"
-  onWorkflowViewChange: (view: "purchase" | "seeding") => void
+  activeWorkflowView: string // Can be "purchase", "seeding", or workflow ID
+  onWorkflowViewChange: (view: string) => void
 
 
   // Dealer Bidding Props
@@ -93,6 +95,9 @@ interface LeadDetailPanelProps {
 
   // Decoy Web refresh
   decoyWebRefreshKey?: number
+
+  // Workflow activation callback
+  onWorkflowActivated?: () => void
 }
 
 export function LeadDetailPanel({
@@ -138,7 +143,9 @@ export function LeadDetailPanel({
   // Notes editing
   onUpdateNotes,
   // Decoy Web refresh
-  decoyWebRefreshKey
+  decoyWebRefreshKey,
+  // Workflow activation callback
+  onWorkflowActivated
 }: LeadDetailPanelProps) {
   // Debug log to track refreshKey
   console.log("[LeadDetailPanel] decoyWebRefreshKey:", decoyWebRefreshKey, "activeDetailView:", activeDetailView)
@@ -149,6 +156,13 @@ export function LeadDetailPanel({
 
   // Toast notifications
   const { toast } = useToast()
+
+  // Fetch workflow instances for beta tracking
+  const { data: workflowInstancesData } = useWorkflowInstances(selectedLead?.car_id)
+
+  // Decoy signals for new reply detection
+  const { hasNewReplies, markAsRead } = useDecoySignals()
+  const hasNewDecoyReplies = selectedLead ? hasNewReplies(selectedLead.id, selectedLead.total_decoy_messages) : false
 
   // ZNS notification state
   interface ZnsTemplate {
@@ -452,6 +466,13 @@ export function LeadDetailPanel({
                         {formatDate(selectedLead.created_at)}
                       </span>
                     </div>
+                    {/* Last Activity Time */}
+                    <div className={`flex items-center gap-1 ${getActivityFreshnessClass(getActivityFreshness(selectedLead.last_activity_at))}`}>
+                      <Activity className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
+                      <span className="text-xs sm:text-sm">
+                        {formatRelativeTime(selectedLead.last_activity_at)}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -663,7 +684,13 @@ export function LeadDetailPanel({
               onClick={() => onActiveDetailViewChange("decoy-web")}
             >
               <div className="flex items-center gap-1.5 sm:gap-2">
-                <MessageSquare className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
+                {/* Icon with new reply indicator */}
+                <span className="relative">
+                  <MessageSquare className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
+                  {hasNewDecoyReplies && activeDetailView !== "decoy-web" && (
+                    <span className="absolute -top-0.5 -right-0.5 h-2 w-2 bg-red-500 rounded-full animate-pulse" />
+                  )}
+                </span>
                 <span className="hidden sm:inline">Decoy Web Chat</span>
                 <span className="sm:hidden">Decoy</span>
                 {(selectedLead.decoy_thread_count || 0) > 0 && (
@@ -734,6 +761,10 @@ export function LeadDetailPanel({
 
               // Notes editing
               onUpdateNotes={onUpdateNotes}
+
+              // Beta Tracking Props
+              workflowInstancesData={workflowInstancesData}
+              onWorkflowActivated={onWorkflowActivated}
             />
           </div>
         )}
@@ -757,7 +788,7 @@ export function LeadDetailPanel({
 
         {activeDetailView === "decoy-history" && (
           <div className="h-[calc(100vh-250px)] bg-gray-50/50 overflow-y-auto scrollbar-hide">
-            <DecoyHistoryTab phone={selectedLead?.phone || selectedLead?.additional_phone || null} />
+            <DecoyHistoryTab phone={selectedLead?.phone || selectedLead?.additional_phone || null} leadId={selectedLead?.id} />
           </div>
         )}
 

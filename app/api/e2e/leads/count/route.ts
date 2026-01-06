@@ -10,9 +10,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "UID is required" }, { status: 400 })
     }
 
-    // Build search condition for phone
+    // Build search condition for phone, lead name, and car display name (brand + model)
     const searchCondition = search
-      ? `AND (l.phone LIKE '%${search}%' OR l.additional_phone LIKE '%${search}%')`
+      ? `AND (
+          l.phone LIKE '%${search}%' 
+          OR l.additional_phone LIKE '%${search}%'
+          OR l.name ILIKE '%${search}%'
+          OR CONCAT(c.brand, ' ', c.model) ILIKE '%${search}%'
+        )`
       : ""
 
     // Build source filter condition

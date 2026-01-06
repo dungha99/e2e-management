@@ -144,10 +144,16 @@ export async function fetchAiInsights(carId: string, sourceInstanceId: string, p
     body: JSON.stringify({ carId, sourceInstanceId, phoneNumber }),
   })
 
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || "Failed to fetch AI insights")
+  const data = await response.json()
+
+  // Handle 202 "still processing" status
+  if (response.status === 202) {
+    throw new Error(data.message || "AI insights are still being processed")
   }
 
-  return response.json()
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to fetch AI insights")
+  }
+
+  return data
 }

@@ -22,6 +22,7 @@ import {
 import { Loader2, AlertCircle } from "lucide-react"
 import { Lead, CustomFieldDefinition } from "../types"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 
 interface ActivateWorkflowDialogProps {
   open: boolean
@@ -158,6 +159,28 @@ export function ActivateWorkflowDialog({
   const renderCustomField = (field: CustomFieldDefinition) => {
     const value = customFieldValues[field.name] ?? field.default_value ?? ""
 
+    // Special handling for checkbox fields (true/false options)
+    const isCheckboxField = field.type === "select" &&
+      field.options?.length === 2 &&
+      field.options.includes("true") &&
+      field.options.includes("false")
+
+    if (isCheckboxField) {
+      const isChecked = value === "true" || value === true
+      return (
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id={field.name}
+            checked={isChecked}
+            onCheckedChange={(checked) => handleCustomFieldChange(field.name, checked === true)}
+          />
+          <Label htmlFor={field.name} className="text-sm font-normal cursor-pointer">
+            {field.label}
+          </Label>
+        </div>
+      )
+    }
+
     switch (field.type) {
       case "text":
         return (
@@ -171,6 +194,18 @@ export function ActivateWorkflowDialog({
         )
 
       case "number":
+        // Use text input for price fields to match Workflow2Dialog style
+        if (field.name.includes("Price") || field.name.includes("price")) {
+          return (
+            <Input
+              id={field.name}
+              type="text"
+              placeholder={field.placeholder}
+              value={value}
+              onChange={(e) => handleCustomFieldChange(field.name, e.target.value)}
+            />
+          )
+        }
         return (
           <Input
             id={field.name}

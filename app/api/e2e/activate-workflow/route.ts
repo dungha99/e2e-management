@@ -122,6 +122,18 @@ export async function POST(request: Request) {
             numberOfComments: parseInt(workflowPayload.numberOfComments) || 0,
             bid: workflowPayload.bid === "true" || workflowPayload.bid === true,
           }
+        } else if (workflow.name === "WFD5") {
+          webhookUrl = "https://n8n.vucar.vn/webhook/f3568461-bf9f-4cf1-9709-8644e0d9c291"
+
+          // Transform WFD5 payload (same format as WF2)
+          transformedPayload = {
+            duration: parseInt(workflowPayload.duration) || 0,
+            minPrice: workflowPayload.minPrice ? workflowPayload.minPrice * 1000000 : 0, // Convert triệu to VND
+            maxPrice: workflowPayload.maxPrice ? workflowPayload.maxPrice * 1000000 : 0,
+            comment: workflowPayload.comment === "true" || workflowPayload.comment === true,
+            numberOfComments: parseInt(workflowPayload.numberOfComments) || 0,
+            bid: workflowPayload.bid === "true" || workflowPayload.bid === true,
+          }
         }
         // Add more workflow webhooks here as needed
         // else if (workflow.name === "WF2.1") {

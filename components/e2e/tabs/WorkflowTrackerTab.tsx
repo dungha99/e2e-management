@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp } from "lucide-react"
-import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition, AiInsight } from "../types"
+import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { ActivateWorkflowDialog } from "../dialogs/ActivateWorkflowDialog"
 import { fetchAiInsights } from "@/hooks/use-leads"
@@ -17,7 +17,7 @@ const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] 
       return [
         {
           name: "duration",
-          label: "Thời lượng (giờ)",
+          label: "Duration",
           type: "number",
           required: true,
           placeholder: "Nhập thời lượng chiến dịch..."
@@ -40,7 +40,7 @@ const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] 
           name: "comment",
           label: "Bật comment",
           type: "select",
-          required: true,
+          required: false,
           options: ["true", "false"],
           default_value: "false",
           placeholder: "Chọn..."
@@ -57,7 +57,7 @@ const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] 
           name: "bid",
           label: "Bật bidding",
           type: "select",
-          required: true,
+          required: false,
           options: ["true", "false"],
           default_value: "false",
           placeholder: "Chọn..."
@@ -116,6 +116,50 @@ const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] 
           type: "textarea",
           required: true,
           placeholder: "Ghi chú về lịch bàn giao, giấy tờ cần chuẩn bị..."
+        }
+      ]
+
+    case "WFD5":
+      return [
+        {
+          name: "minPrice",
+          label: "Giá tối thiểu (triệu)",
+          type: "number",
+          required: true,
+          placeholder: "VD: 500 = 500 triệu"
+        },
+        {
+          name: "maxPrice",
+          label: "Giá tối đa (triệu)",
+          type: "number",
+          required: true,
+          placeholder: "VD: 600 = 600 triệu"
+        },
+        {
+          name: "comment",
+          label: "Bật comment",
+          type: "select",
+          required: false,
+          options: ["true", "false"],
+          default_value: "false",
+          placeholder: "Chọn..."
+        },
+        {
+          name: "numberOfComments",
+          label: "Số lượng comments",
+          type: "number",
+          required: false,
+          placeholder: "Nhập số lượng comments...",
+          default_value: 0
+        },
+        {
+          name: "bid",
+          label: "Bật bidding",
+          type: "select",
+          required: false,
+          options: ["true", "false"],
+          default_value: "false",
+          placeholder: "Chọn..."
         }
       ]
 
@@ -244,7 +288,7 @@ export function WorkflowTrackerTab({
   const [aiInsights, setAiInsights] = useState<any>(null)
   const [fetchingAiInsights, setFetchingAiInsights] = useState(false)
 
-  // Fetch AI insights when accessing dynamic workflow views
+  // Fetch AI insights when accessing a completed workflow instance
   useEffect(() => {
     // Only fetch for dynamic workflows (not "purchase" or "seeding")
     const isDynamicWorkflow = activeWorkflowView !== "purchase" && activeWorkflowView !== "seeding"
@@ -252,36 +296,38 @@ export function WorkflowTrackerTab({
       return
     }
 
-    // Find the current workflow instance to get parent instance ID
+    // Find the current workflow instance being viewed
     const currentInstance = workflowInstancesData.data?.find(i => i.instance.workflow_id === activeWorkflowView)
 
-    // We need a completed parent instance to get AI insights for the transition
-    // Find all completed instances that could be parents
-    const completedInstances = workflowInstancesData.data?.filter(i => i.instance.status === "completed")
-
-    if (!completedInstances || completedInstances.length === 0) {
+    // Only fetch AI insights if this specific workflow instance is completed
+    if (!currentInstance || currentInstance.instance.status !== "completed") {
+      console.log(`[WorkflowTracker] Current workflow not completed, skipping AI insights`)
       return
     }
 
-    // Get the most recent completed instance (likely the parent for next workflow)
-    const latestCompletedInstance = completedInstances.sort((a, b) =>
-      new Date(b.instance.started_at).getTime() - new Date(a.instance.started_at).getTime()
-    )[0]
+    // Use the current completed instance ID as source for AI insights
+    const sourceInstanceId = currentInstance.instance.id
 
-    // Fetch AI insights in background
+    // Fetch AI insights in background for this specific source instance
     const phoneNumber = selectedLead.phone || selectedLead.additional_phone
     if (!phoneNumber) {
       return
     }
 
+    console.log(`[WorkflowTracker] Fetching AI insights for completed instance: ${sourceInstanceId}`)
     setFetchingAiInsights(true)
-    fetchAiInsights(selectedLead.car_id, latestCompletedInstance.instance.id, phoneNumber)
+    fetchAiInsights(selectedLead.car_id, sourceInstanceId, phoneNumber)
       .then((insights) => {
         setAiInsights(insights)
         console.log("[WorkflowTracker] AI Insights fetched:", insights)
       })
       .catch((error) => {
-        console.error("[WorkflowTracker] Failed to fetch AI insights:", error)
+        // Check if it's a 202 "still processing" response
+        if (error.message.includes("still being processed")) {
+          console.log("[WorkflowTracker] AI insights still processing, will retry on next render")
+        } else {
+          console.error("[WorkflowTracker] Failed to fetch AI insights:", error)
+        }
       })
       .finally(() => {
         setFetchingAiInsights(false)

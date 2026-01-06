@@ -157,6 +157,20 @@ export function LeadListSidebar({
     }
   }
 
+  // Calculate the exact done date for a campaign
+  const calculateDoneDate = (publishedAt: string, duration: number): string => {
+    const startDate = new Date(publishedAt)
+    const durationMs = duration * 60 * 60 * 1000 // duration is in HOURS to ms
+    const doneDate = new Date(startDate.getTime() + durationMs)
+
+    return doneDate.toLocaleString("vi-VN", {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
   return (
     <div className={`${isMobile ? 'flex-1 w-full min-h-0' : 'w-60 lg:w-80'} min-w-0 border-r flex flex-col bg-white ${isMobile ? 'overflow-hidden' : ''}`}>
       {/* Header */}
@@ -488,9 +502,14 @@ export function LeadListSidebar({
                                 />
                               </div>
                             </div>
-                            <span className="text-[9px] text-purple-600 font-medium whitespace-nowrap">
-                              {calculateRemainingTime(lead.latest_campaign.published_at, lead.latest_campaign.duration)}
-                            </span>
+                            <div className="flex flex-col items-end">
+                              <span className="text-[9px] text-purple-600 font-medium whitespace-nowrap">
+                                {calculateRemainingTime(lead.latest_campaign.published_at, lead.latest_campaign.duration)}
+                              </span>
+                              <span className="text-[9px] text-gray-500 whitespace-nowrap">
+                                {calculateDoneDate(lead.latest_campaign.published_at, lead.latest_campaign.duration)}
+                              </span>
+                            </div>
                           </>
                         )}
                       </div>

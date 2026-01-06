@@ -92,6 +92,8 @@ function DecoyManagementPageContent() {
         } else if (value === "e2e") {
             const picId = selectedAccount || "placeholder"
             router.push(`/e2e/${picId}?tab=priority&page=1`)
+        } else if (value === "workflow") {
+            router.push("/workflow-management")
         }
         // If value is "campaigns", stay on current page
     }
@@ -105,6 +107,7 @@ function DecoyManagementPageContent() {
                             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
                             <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>
                             <TabsTrigger value="e2e">Quản lý E2E</TabsTrigger>
+                            <TabsTrigger value="workflow">Quản lý Workflow</TabsTrigger>
                         </TabsList>
                         {/* Portal target for AccountSelector */}
                         <div id="header-account-selector"></div>

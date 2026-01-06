@@ -48,7 +48,8 @@ import { SaleActivitiesPanel } from "./e2e/layout/SaleActivitiesPanel"
 // Layout components
 import { AccountSelector } from "./e2e/layout/AccountSelector"
 import { LeadListSidebar } from "./e2e/layout/LeadListSidebar"
-import { CampaignKanbanView } from "./e2e/kanban"
+import { ViewModeToggle } from "./e2e/layout/ViewModeToggle"
+import { CampaignKanbanView } from "./e2e/kanban/CampaignKanbanView"
 
 // Local interfaces for component-specific types not in shared types
 interface DealerGroup {
@@ -2258,30 +2259,12 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         }}
       />
 
-      {/* View Mode Toggle - Hidden on mobile for cleaner app-like experience */}
-      {!isMobile && (
-        <div className="flex items-center justify-between px-4 py-2 bg-white border-b">
-          <div className="text-sm font-medium text-gray-700">Chế độ xem</div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant={viewMode === "list" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setViewMode("list")}
-              className="text-xs"
-            >
-              📋 Danh sách
-            </Button>
-            <Button
-              variant={viewMode === "kanban" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setViewMode("kanban")}
-              className="text-xs"
-            >
-              📊 Kanban
-            </Button>
-          </div>
-        </div>
-      )}
+      {/* View Mode Toggle - Uses portal to render in header beside AccountSelector */}
+      <ViewModeToggle
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        isMobile={isMobile}
+      />
 
       {/* Main Content - Conditional based on view mode */}
       {viewMode === "kanban" ? (

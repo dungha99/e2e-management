@@ -22,6 +22,8 @@ function E2EPageContent({ userId }: { userId: string }) {
       router.push("/")
     } else if (value === "campaigns") {
       router.push(`/decoy-management`)
+    } else if (value === "workflow") {
+      router.push("/workflow-management")
     }
     // If value is "e2e", stay on current page
   }
@@ -35,9 +37,13 @@ function E2EPageContent({ userId }: { userId: string }) {
               <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
               <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>
               <TabsTrigger value="e2e">Quản lý E2E</TabsTrigger>
+              <TabsTrigger value="workflow">Quản lý Workflow</TabsTrigger>
             </TabsList>
-            {/* Portal target for AccountSelector */}
-            <div id="header-account-selector"></div>
+            {/* Portal targets for AccountSelector and View Mode Toggle */}
+            <div className="flex items-center gap-4">
+              <div id="header-account-selector"></div>
+              <div id="header-view-toggle"></div>
+            </div>
           </div>
 
           <TabsContent value="e2e" className="mt-0">

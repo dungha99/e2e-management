@@ -2,36 +2,25 @@
 
 import { KanbanCard } from "./KanbanCard"
 import { ScrollArea } from "@/components/ui/scroll-area"
-
-interface CampaignForKanban {
-    id: string
-    car_auction_id: string
-    created_at: string
-    duration: number | null
-    is_active: boolean
-    car_brand: string | null
-    car_model: string | null
-    car_year: number | null
-    car_plate: string | null
-    lead_name: string | null
-    lead_phone: string | null
-    workflow_order: number
-}
-
-interface KanbanWorkflow {
-    order: number
-    name: string
-    campaigns: CampaignForKanban[]
-}
+import { WorkflowInstanceForKanban, KanbanWorkflow } from "./CampaignKanbanView"
 
 interface KanbanColumnProps {
     workflow: KanbanWorkflow
-    onCampaignClick?: (campaign: CampaignForKanban) => void
+    onInstanceClick?: (instance: WorkflowInstanceForKanban) => void
+    onTransition?: (instanceId: string, transitionId: string, toWorkflowId: string) => void
+    onNote?: (leadId: string, leadName: string) => void
+    onNoteUpdate?: (leadId: string, notes: string) => Promise<void>
+    onOpenTransitionDialog?: (instance: WorkflowInstanceForKanban) => void
 }
 
-export function KanbanColumn({ workflow, onCampaignClick }: KanbanColumnProps) {
+export function KanbanColumn({ workflow, onInstanceClick, onTransition, onNote, onNoteUpdate, onOpenTransitionDialog }: KanbanColumnProps) {
+    // Check if this is the "No Workflow" column
+    const isNoWorkflowColumn = workflow.id === 'no-workflow'
+
     // Get badge color based on order
     const getBadgeColor = (order: number) => {
+        if (isNoWorkflowColumn) return "bg-gray-400"
+
         const colors = [
             "bg-blue-500",      // Stage 1
             "bg-orange-500",    // Stage 2
@@ -44,33 +33,37 @@ export function KanbanColumn({ workflow, onCampaignClick }: KanbanColumnProps) {
     }
 
     return (
-        <div className="flex-shrink-0 w-[280px] min-w-[280px]">
+        <div className="flex-shrink-0 w-[340px] min-w-[340px] border-r border-gray-200 px-3">
             {/* Column Header */}
             <div className="flex items-center gap-2 mb-4">
                 <span className={`w-5 h-5 rounded flex items-center justify-center text-white text-xs font-bold ${getBadgeColor(workflow.order)}`}>
-                    {workflow.order}
+                    {isNoWorkflowColumn ? "—" : workflow.order}
                 </span>
-                <h3 className="font-semibold text-gray-700 text-sm">
-                    Stage {workflow.order}
+                <h3 className="font-semibold text-gray-700 text-sm truncate flex-1" title={workflow.name}>
+                    {workflow.name}
                 </h3>
                 <span className="ml-auto text-xs text-gray-400">
-                    {workflow.campaigns.length}
+                    {workflow.instances.length}
                 </span>
             </div>
 
             {/* Column Content */}
             <ScrollArea className="h-[calc(100vh-220px)]">
                 <div className="space-y-3 pr-1">
-                    {workflow.campaigns.length === 0 ? (
+                    {workflow.instances.length === 0 ? (
                         <div className="text-center py-12 text-gray-400 text-sm">
-                            <p className="italic">Chưa có campaign</p>
+                            <p className="italic">Chưa có instance</p>
                         </div>
                     ) : (
-                        workflow.campaigns.map(campaign => (
+                        workflow.instances.map(instance => (
                             <KanbanCard
-                                key={campaign.id}
-                                campaign={campaign}
-                                onClick={() => onCampaignClick?.(campaign)}
+                                key={instance.id}
+                                instance={instance}
+                                onClick={() => onInstanceClick?.(instance)}
+                                onTransition={onTransition}
+                                onNote={onNote}
+                                onNoteUpdate={onNoteUpdate}
+                                onOpenTransitionDialog={onOpenTransitionDialog}
                             />
                         ))
                     )}

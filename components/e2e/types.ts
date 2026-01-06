@@ -53,6 +53,7 @@ export interface Lead {
   first_message_sent?: boolean
   session_created?: boolean
   decoy_thread_count?: number
+  total_decoy_messages?: number  // Customer reply count for new reply detection
   notes?: string | null
   price_highest_bid?: number | null
   pic_name?: string | null
@@ -76,6 +77,7 @@ export interface Lead {
   intentionLead?: string | null
   negotiationAbility?: string | null
   latest_campaign?: LatestCampaignInfo | null
+  last_activity_at?: string | null  // ISO timestamp of most recent sale activity
 }
 
 export interface DecoyMessage {

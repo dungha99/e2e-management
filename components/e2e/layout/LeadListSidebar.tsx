@@ -4,10 +4,11 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SearchInput } from "@/components/ui/search-input"
-import { User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star, X, SlidersHorizontal, Play, CheckCircle, Download, Loader2 } from "lucide-react"
+import { User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star, X, SlidersHorizontal, Play, CheckCircle, Download, Loader2, Activity, Copy } from "lucide-react"
 import { Lead } from "../types"
-import { formatCarInfo, formatPriceShort, calculateCampaignProgress, calculateRemainingTime } from "../utils"
+import { formatCarInfo, formatPriceShort, calculateCampaignProgress, calculateRemainingTime, formatRelativeTime, getActivityFreshness, getActivityFreshnessClass } from "../utils"
 import { useToast } from "@/hooks/use-toast"
+import { useDecoySignals } from "@/hooks/use-decoy-signals"
 import {
   Popover,
   PopoverContent,
@@ -87,6 +88,7 @@ export function LeadListSidebar({
   updatingPrimary = false
 }: LeadListSidebarProps) {
   const { toast } = useToast()
+  const { hasNewReplies } = useDecoySignals()
   const [filterOpen, setFilterOpen] = useState(false)
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
 
@@ -121,6 +123,35 @@ export function LeadListSidebar({
       toast({
         title: "Lỗi",
         description: "Không thể cập nhật trạng thái Primary",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Truncate car ID: show first 8 chars + "..." if longer than 12
+  const truncateCarId = (carId: string | null | undefined): string => {
+    if (!carId) return "—"
+    if (carId.length > 12) {
+      return carId.substring(0, 8) + "..."
+    }
+    return carId
+  }
+
+  // Copy car ID to clipboard
+  const handleCopyCarId = async (e: React.MouseEvent, carId: string) => {
+    e.stopPropagation()
+    if (!carId) return
+
+    try {
+      await navigator.clipboard.writeText(carId)
+      toast({
+        title: "Đã sao chép",
+        description: "Car ID đã được sao chép vào clipboard",
+      })
+    } catch (error) {
+      toast({
+        title: "Lỗi",
+        description: "Không thể sao chép Car ID",
         variant: "destructive",
       })
     }
@@ -334,6 +365,13 @@ export function LeadListSidebar({
                   >
                     <div className="flex items-center gap-2 mb-1">
                       <p className="font-medium text-gray-900 truncate">{lead.name}</p>
+                      {/* New reply indicator dot */}
+                      {hasNewReplies(lead.id, lead.total_decoy_messages) && (
+                        <span
+                          className="h-2 w-2 bg-red-500 rounded-full animate-pulse shrink-0"
+                          title="Có tin nhắn mới từ khách hàng"
+                        />
+                      )}
                       {lead.source && (
                         <Badge variant="outline" className="text-xs shrink-0">
                           {lead.source === "zalo" ? "Zalo" : lead.source === "facebook" ? "Facebook" : lead.source}
@@ -359,20 +397,37 @@ export function LeadListSidebar({
                         )}
                       </Button>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm text-gray-700 truncate">
-                        {formatCarInfo(lead)}
-                      </p>
-                      {lead.car_created_at && (
-                        <p className="text-xs text-gray-500 shrink-0">
-                          {new Date(lead.car_created_at).toLocaleString("vi-VN", {
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-gray-700 truncate">
+                          {formatCarInfo(lead)}
                         </p>
+                        {lead.car_created_at && (
+                          <p className="text-xs text-gray-500 shrink-0">
+                            {new Date(lead.car_created_at).toLocaleString("vi-VN", {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        )}
+                      </div>
+                      {/* Car ID Display */}
+                      {lead.car_id && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">
+                            {truncateCarId(lead.car_id)}
+                          </span>
+                          <button
+                            onClick={(e) => handleCopyCarId(e, lead.car_id!)}
+                            className="p-0.5 hover:bg-gray-200 rounded transition-colors"
+                            title="Sao chép Car ID"
+                          >
+                            <Copy className="h-3 w-3 text-gray-500 hover:text-gray-700" />
+                          </button>
+                        </div>
                       )}
                     </div>
                     {/* Price Display Row */}
@@ -393,6 +448,13 @@ export function LeadListSidebar({
                           )}
                         </>
                       )}
+                    </div>
+                    {/* Last Activity Time */}
+                    <div className={`flex items-center gap-1 mt-1 ${getActivityFreshnessClass(getActivityFreshness(lead.last_activity_at))}`}>
+                      <Activity className="h-3 w-3" />
+                      <span className="text-[10px]">
+                        {formatRelativeTime(lead.last_activity_at)}
+                      </span>
                     </div>
                     {/* Workflow Status Badge */}
                     {lead.latest_campaign && (

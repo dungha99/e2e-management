@@ -1,13 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp } from "lucide-react"
-import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition } from "../types"
+import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition, AiInsight } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { ActivateWorkflowDialog } from "../dialogs/ActivateWorkflowDialog"
+import { fetchAiInsights } from "@/hooks/use-leads"
 
 // Custom fields configuration for each workflow
 const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] => {
@@ -15,19 +16,51 @@ const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] 
     case "WF2":
       return [
         {
-          name: "customer_response_quality",
-          label: "Chất lượng phản hồi khách",
-          type: "select",
+          name: "duration",
+          label: "Thời lượng (giờ)",
+          type: "number",
           required: true,
-          options: ["Tốt - Rất quan tâm", "Trung bình - Cân nhắc", "Kém - Không phản hồi"],
-          placeholder: "Chọn chất lượng phản hồi..."
+          placeholder: "Nhập thời lượng chiến dịch..."
         },
         {
-          name: "negotiation_progress",
-          label: "Tiến độ đàm phán",
-          type: "textarea",
+          name: "minPrice",
+          label: "Giá tối thiểu (triệu)",
+          type: "number",
           required: true,
-          placeholder: "Mô tả chi tiết tiến độ đàm phán với khách..."
+          placeholder: "VD: 500 = 500 triệu"
+        },
+        {
+          name: "maxPrice",
+          label: "Giá tối đa (triệu)",
+          type: "number",
+          required: true,
+          placeholder: "VD: 600 = 600 triệu"
+        },
+        {
+          name: "comment",
+          label: "Bật comment",
+          type: "select",
+          required: true,
+          options: ["true", "false"],
+          default_value: "false",
+          placeholder: "Chọn..."
+        },
+        {
+          name: "numberOfComments",
+          label: "Số lượng comments",
+          type: "number",
+          required: false,
+          placeholder: "Nhập số lượng comments...",
+          default_value: 0
+        },
+        {
+          name: "bid",
+          label: "Bật bidding",
+          type: "select",
+          required: true,
+          options: ["true", "false"],
+          default_value: "false",
+          placeholder: "Chọn..."
         }
       ]
 
@@ -206,6 +239,54 @@ export function WorkflowTrackerTab({
     workflowName: string
     parentInstanceId: string
   } | null>(null)
+
+  // State for AI insights
+  const [aiInsights, setAiInsights] = useState<any>(null)
+  const [fetchingAiInsights, setFetchingAiInsights] = useState(false)
+
+  // Fetch AI insights when accessing dynamic workflow views
+  useEffect(() => {
+    // Only fetch for dynamic workflows (not "purchase" or "seeding")
+    const isDynamicWorkflow = activeWorkflowView !== "purchase" && activeWorkflowView !== "seeding"
+    if (!isDynamicWorkflow || !workflowInstancesData || !selectedLead.car_id) {
+      return
+    }
+
+    // Find the current workflow instance to get parent instance ID
+    const currentInstance = workflowInstancesData.data?.find(i => i.instance.workflow_id === activeWorkflowView)
+
+    // We need a completed parent instance to get AI insights for the transition
+    // Find all completed instances that could be parents
+    const completedInstances = workflowInstancesData.data?.filter(i => i.instance.status === "completed")
+
+    if (!completedInstances || completedInstances.length === 0) {
+      return
+    }
+
+    // Get the most recent completed instance (likely the parent for next workflow)
+    const latestCompletedInstance = completedInstances.sort((a, b) =>
+      new Date(b.instance.started_at).getTime() - new Date(a.instance.started_at).getTime()
+    )[0]
+
+    // Fetch AI insights in background
+    const phoneNumber = selectedLead.phone || selectedLead.additional_phone
+    if (!phoneNumber) {
+      return
+    }
+
+    setFetchingAiInsights(true)
+    fetchAiInsights(selectedLead.car_id, latestCompletedInstance.instance.id, phoneNumber)
+      .then((insights) => {
+        setAiInsights(insights)
+        console.log("[WorkflowTracker] AI Insights fetched:", insights)
+      })
+      .catch((error) => {
+        console.error("[WorkflowTracker] Failed to fetch AI insights:", error)
+      })
+      .finally(() => {
+        setFetchingAiInsights(false)
+      })
+  }, [activeWorkflowView, workflowInstancesData, selectedLead.car_id, selectedLead.phone, selectedLead.additional_phone])
 
   // Get top 5 bids sorted by price (descending)
   const topBids = [...biddingHistory]
@@ -729,6 +810,8 @@ ${dealerBidsStr}`
           targetWorkflowName={selectedTransition.workflowName}
           parentInstanceId={selectedTransition.parentInstanceId}
           customFields={getWorkflowCustomFields(selectedTransition.workflowName)}
+          aiInsightId={aiInsights?.aiInsightId || null}
+          isAlignedWithAi={aiInsights?.targetWorkflowId === selectedTransition.workflowId}
           onSuccess={() => {
             if (onWorkflowActivated) {
               onWorkflowActivated()

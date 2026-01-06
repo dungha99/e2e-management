@@ -435,25 +435,6 @@ ${dealerBidsStr}`
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
             <h3 className="text-sm font-semibold text-gray-900">Tiến độ quy trình</h3>
             <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
-              <span className="text-xs sm:text-sm text-gray-600 hidden sm:inline">Đang xem:</span>
-              <button
-                onClick={() => onWorkflowViewChange("purchase")}
-                className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap ${activeWorkflowView === "purchase"
-                  ? "bg-emerald-100 text-emerald-700"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  }`}
-              >
-                Thu Mua
-              </button>
-              <button
-                onClick={() => onWorkflowViewChange("seeding")}
-                className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap ${activeWorkflowView === "seeding"
-                  ? "bg-purple-100 text-purple-700"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  }`}
-              >
-                Seeding
-              </button>
               {/* Dynamic Workflow Tabs */}
               {workflowInstancesData?.allWorkflows?.map(workflow => {
                 const isActive = activeWorkflowView === workflow.id
@@ -476,110 +457,11 @@ ${dealerBidsStr}`
               })}
             </div>
           </div>
-          {selectedLead.session_created && selectedLead.workflow2_is_active === false && (
-            <Button
-              variant="default"
-              size="sm"
-              onClick={onOpenWorkflow2}
-              className="bg-emerald-600 hover:bg-emerald-700 text-xs sm:text-sm w-full sm:w-auto"
-            >
-              Kích hoạt WF 2
-            </Button>
-          )}
         </div>
 
         {/* Workflow Steps - Horizontally scrollable on mobile */}
-        {activeWorkflowView === "purchase" ? (
-          <div className="overflow-x-auto pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-thin">
-            <div className="flex items-start justify-between gap-3 sm:gap-4 mb-4 sm:mb-8 min-w-[500px] sm:min-w-0 px-1 sm:px-4">
-              <div className="flex flex-col items-center gap-2 sm:gap-3 flex-1">
-                <WorkflowStep
-                  icon={<CheckCircle className="w-6 h-6 sm:w-8 sm:h-8" />}
-                  title="Tin nhắn đầu"
-                  status={selectedLead.has_enough_images ? "Đã có ảnh" : "Chưa có ảnh"}
-                  isCompleted={selectedLead.has_enough_images || false}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onSendFirstMessage}
-                  disabled={sendingMessage || selectedLead.first_message_sent}
-                  className="text-[10px] sm:text-xs h-7 sm:h-8 px-2 sm:px-3"
-                >
-                  {sendingMessage ? "Đang gửi..." : selectedLead.first_message_sent ? "Đã gửi" : "Gửi tin nhắn đầu"}
-                </Button>
-              </div>
-
-              <div className="flex flex-col items-center gap-2 sm:gap-3 flex-1">
-                <WorkflowStep
-                  icon={<DollarSign className="w-6 h-6 sm:w-8 sm:h-8" />}
-                  title="Chào Dealer"
-                  status={selectedLead.dealer_bidding?.status === "got_price" ? "Đã có giá" : "Chưa có giá"}
-                  isCompleted={selectedLead.dealer_bidding?.status === "got_price"}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onViewBiddingHistory}
-                  disabled={!selectedLead.car_id}
-                  className="text-[10px] sm:text-xs h-7 sm:h-8 px-2 sm:px-3"
-                >
-                  Xem lịch sử giá
-                </Button>
-              </div>
-
-              <div className="flex flex-col items-center gap-2 sm:gap-3 flex-1">
-                <WorkflowStep
-                  icon={<Play className="w-6 h-6 sm:w-8 sm:h-8" />}
-                  title="Tạo Phiên"
-                  status={selectedLead.session_created ? "Phiên đã tạo" : "Chưa tạo phiên"}
-                  isCompleted={selectedLead.session_created || false}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onCreateSession}
-                  disabled={creatingSession || selectedLead.session_created}
-                  className="text-[10px] sm:text-xs h-7 sm:h-8 px-2 sm:px-3"
-                >
-                  {creatingSession ? "Đang tạo..." : selectedLead.session_created ? "Đã tạo" : "Tạo Phiên"}
-                </Button>
-              </div>
-
-              <div className="flex flex-col items-center gap-2 sm:gap-3">
-                <WorkflowStep
-                  icon={<Search className="w-6 h-6 sm:w-8 sm:h-8" />}
-                  title="Decoy Web"
-                  status={`${selectedLead.decoy_thread_count || 0} threads`}
-                  isCompleted={(selectedLead.decoy_thread_count || 0) > 0}
-                  onClick={onViewDecoyWeb}
-                />
-              </div>
-            </div>
-          </div>
-        ) : activeWorkflowView === "seeding" ? (
-          <div className="flex items-start justify-between gap-8 mb-8 px-4">
-            <div className="flex flex-col items-center gap-3">
-              <WorkflowStep
-                icon={<Play className={`w-8 h-8 ${selectedLead.has_active_campaigns ? "text-green-600" : selectedLead.workflow2_is_active ? "text-green-600" : "text-gray-400"}`} />}
-                title="Tạo Phiên 2"
-                status={selectedLead.has_active_campaigns ? "Có campaign đang chạy" : selectedLead.workflow2_is_active ? "Đã kích hoạt" : "Chưa kích hoạt"}
-                isCompleted={selectedLead.has_active_campaigns || selectedLead.workflow2_is_active === true}
-              />
-              <Button variant="outline" size="sm" className="text-xs" disabled>Chạy ngay</Button>
-            </div>
-            <div className="flex flex-col items-center gap-3">
-              <WorkflowStep
-                icon={<MessageCircle className="w-8 h-8" />}
-                title="Decoy Zalo"
-                status="Tương tác Zalo ảo"
-                isCompleted={false}
-              />
-              <Button variant="outline" size="sm" className="text-xs" onClick={onOpenDecoyDialog}>Mở Zalo Decoy</Button>
-            </div>
-          </div>
-        ) : workflowInstancesData?.allWorkflows?.find(w => w.id === activeWorkflowView) ? (
-          /* Dynamic Workflow View - Matching Thu Mua style */
+        {workflowInstancesData?.allWorkflows?.find(w => w.id === activeWorkflowView) ? (
+          /* Dynamic Workflow View */
           (() => {
             const currentWorkflow = workflowInstancesData.allWorkflows.find(w => w.id === activeWorkflowView)!
             const currentInstance = workflowInstancesData.data?.find(i => i.instance.workflow_id === activeWorkflowView)
@@ -688,25 +570,33 @@ ${dealerBidsStr}`
                     ))}
                   </div>
                 )}
+
+                {/* Action Buttons - Send First Message & Rename Lead */}
+                <div className="flex items-center gap-3 mt-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onSendFirstMessage}
+                    disabled={sendingMessage || !selectedLead?.pic_id}
+                    className="text-gray-700 text-xs sm:text-sm"
+                  >
+                    <MessageCircle className="h-3.5 w-3.5 mr-1.5" />
+                    {sendingMessage ? "Đang gửi..." : "Send First Message"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onRenameLead}
+                    disabled={renamingLead || !selectedLead?.pic_id}
+                    className="text-gray-700 text-xs sm:text-sm"
+                  >
+                    {renamingLead ? "Đang đổi tên..." : "Đổi tên Lead"}
+                  </Button>
+                </div>
               </div>
             )
           })()
         ) : null}
-
-        {/* Other Action Buttons - Only for purchase workflow */}
-        {activeWorkflowView === "purchase" && (
-          <div className="flex items-center gap-3 mt-2 sm:mt-0">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onRenameLead}
-              disabled={renamingLead || !selectedLead?.pic_id}
-              className="text-gray-700 text-xs sm:text-sm w-full sm:w-auto"
-            >
-              {renamingLead ? "Đang đổi tên..." : "Đổi tên Lead"}
-            </Button>
-          </div>
-        )}
       </div>
 
       {/* Additional Info Cards */}

@@ -307,7 +307,7 @@ export function E2EManagement({
   })
 
   const [workflow2Activated, setWorkflow2Activated] = useState(false)
-  const [activeWorkflowView, setActiveWorkflowView] = useState<string>("purchase")
+  const [activeWorkflowView, setActiveWorkflowView] = useState<string>("WF1")
 
   // Decoy trigger state
   const [decoyDialogOpen, setDecoyDialogOpen] = useState(false)

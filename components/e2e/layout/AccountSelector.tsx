@@ -46,7 +46,6 @@ export function AccountSelector({
   // Account selector dropdown component
   const accountSelectorDropdown = (
     <div className="flex items-center gap-2">
-      <Label className="text-sm font-medium text-gray-700">Chọn tài khoản:</Label>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button

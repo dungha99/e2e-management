@@ -50,7 +50,7 @@ export function MobileNavigationHeader({
     }
 
     return (
-        <div className="md:hidden sticky top-0 z-40 bg-white border-b px-4 py-3">
+        <div className="sm:hidden sticky top-0 z-40 bg-white border-b px-4 py-3">
             <div className="flex items-center justify-between gap-3">
                 {/* Left: Burger Menu */}
                 <Button

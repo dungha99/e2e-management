@@ -289,6 +289,43 @@ export function WorkflowTrackerTab({
   const [aiInsights, setAiInsights] = useState<any>(null)
   const [fetchingAiInsights, setFetchingAiInsights] = useState(false)
 
+  // Auto-select first active/running workflow on load
+  useEffect(() => {
+    if (!workflowInstancesData?.data || workflowInstancesData.data.length === 0) {
+      return
+    }
+
+    // Check if current view is already showing a valid workflow
+    const currentWorkflow = workflowInstancesData.allWorkflows?.find(w => w.id === activeWorkflowView)
+    if (currentWorkflow) {
+      // Already viewing a valid workflow, don't override
+      return
+    }
+
+    // Find first running workflow
+    const runningWorkflow = workflowInstancesData.data.find(i => i.instance.status === "running")
+    if (runningWorkflow) {
+      console.log(`[WorkflowTracker] Auto-selecting running workflow: ${runningWorkflow.instance.workflow_id}`)
+      onWorkflowViewChange(runningWorkflow.instance.workflow_id)
+      return
+    }
+
+    // Fallback: Find first completed workflow
+    const completedWorkflow = workflowInstancesData.data.find(i => i.instance.status === "completed")
+    if (completedWorkflow) {
+      console.log(`[WorkflowTracker] Auto-selecting completed workflow: ${completedWorkflow.instance.workflow_id}`)
+      onWorkflowViewChange(completedWorkflow.instance.workflow_id)
+      return
+    }
+
+    // Fallback: Select first available workflow if no running/completed ones
+    if (workflowInstancesData.allWorkflows && workflowInstancesData.allWorkflows.length > 0) {
+      const firstWorkflow = workflowInstancesData.allWorkflows[0]
+      console.log(`[WorkflowTracker] Auto-selecting first available workflow: ${firstWorkflow.id}`)
+      onWorkflowViewChange(firstWorkflow.id)
+    }
+  }, [workflowInstancesData, activeWorkflowView, onWorkflowViewChange])
+
   // Fetch AI insights when accessing a completed workflow instance
   useEffect(() => {
     // Only fetch for dynamic workflows (not "purchase" or "seeding")
@@ -523,10 +560,10 @@ ${dealerBidsStr}`
                               status.isCompleted
                                 ? "Hoàn thành"
                                 : status.isFailed
-                                ? "Thất bại"
-                                : currentInstance
-                                ? "Chưa thực hiện"
-                                : "Chưa chạy"
+                                  ? "Thất bại"
+                                  : currentInstance
+                                    ? "Chưa thực hiện"
+                                    : "Chưa chạy"
                             }
                             isCompleted={status.isCompleted}
                           />

@@ -18,7 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car, Images, MapPin, Send, Activity } from "lucide-react"
+import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car, Images, MapPin, Send, Activity, ArrowLeft } from "lucide-react"
 import { Lead } from "../types"
 import { formatCarInfo, formatPrice, formatDate, formatRelativeTime, getActivityFreshness, getActivityFreshnessClass } from "../utils"
 import { WorkflowTrackerTab } from "../tabs/WorkflowTrackerTab"
@@ -55,6 +55,8 @@ interface LeadDetailPanelProps {
 
   onQuickEdit: (lead: Lead, e: React.MouseEvent) => void
   onOpenInspection: () => void
+
+  onBackToList?: () => void
 
   // Workflow Tab Props
   workflow2Data: any
@@ -116,6 +118,7 @@ export function LeadDetailPanel({
   onCallBot,
   callingBot,
   onOpenInspection,
+  onBackToList,
   workflow2Data,
   workflow2Open,
   setWorkflow2Open,
@@ -160,21 +163,42 @@ export function LeadDetailPanel({
   // Fetch workflow instances for beta tracking
   const { data: workflowInstancesData } = useWorkflowInstances(selectedLead?.car_id)
 
-  // Set default view to WF0 (or WF1 if WF0 doesn't exist) when workflow data loads
+  // Set default view: prioritize running workflow, then WF0, then WF1
   useEffect(() => {
-    if (workflowInstancesData?.allWorkflows && workflowInstancesData.allWorkflows.length > 0) {
-      // Try to find WF0 first, then fall back to WF1
-      const wf0 = workflowInstancesData.allWorkflows.find(w => w.name === "WF0")
-      const wf1 = workflowInstancesData.allWorkflows.find(w => w.name === "WF1")
-      const defaultWorkflow = wf0 || wf1
+    if (!workflowInstancesData?.allWorkflows || workflowInstancesData.allWorkflows.length === 0) {
+      return
+    }
 
-      if (defaultWorkflow && activeWorkflowView !== defaultWorkflow.id) {
-        // Only set if current view is not already a valid workflow ID
-        const isValidView = workflowInstancesData.allWorkflows.some(w => w.id === activeWorkflowView)
-        if (!isValidView) {
-          onWorkflowViewChange(defaultWorkflow.id)
-        }
-      }
+    // Check if current view is already valid
+    const isValidView = workflowInstancesData.allWorkflows.some(w => w.id === activeWorkflowView)
+    if (isValidView) {
+      return // Already viewing a valid workflow
+    }
+
+    // Priority 1: Find first running workflow
+    const runningWorkflow = workflowInstancesData.data?.find(i => i.instance.status === "running")
+    if (runningWorkflow) {
+      onWorkflowViewChange(runningWorkflow.instance.workflow_id)
+      return
+    }
+
+    // Priority 2: Find WF0
+    const wf0 = workflowInstancesData.allWorkflows.find(w => w.name === "WF0")
+    if (wf0) {
+      onWorkflowViewChange(wf0.id)
+      return
+    }
+
+    // Priority 3: Find WF1
+    const wf1 = workflowInstancesData.allWorkflows.find(w => w.name === "WF1")
+    if (wf1) {
+      onWorkflowViewChange(wf1.id)
+      return
+    }
+
+    // Fallback: First available workflow
+    if (workflowInstancesData.allWorkflows[0]) {
+      onWorkflowViewChange(workflowInstancesData.allWorkflows[0].id)
     }
   }, [workflowInstancesData, activeWorkflowView, onWorkflowViewChange])
 
@@ -359,6 +383,19 @@ export function LeadDetailPanel({
   return (
     <div className={`flex-1 overflow-hidden flex flex-col ${isMobile ? 'h-full' : ''}`}>
       <div className={`flex-1 overflow-y-auto scroll-touch scrollbar-hide ${isMobile ? 'has-bottom-bar' : ''}`}>
+        {/* Back Button - Only visible on mobile */}
+        {isMobile && onBackToList && (
+          <div className="sticky top-0 z-20 bg-white border-b">
+            <button
+              onClick={onBackToList}
+              className="flex items-center gap-2 px-4 py-3 text-blue-600 hover:bg-gray-50 transition-colors w-full"
+            >
+              <ArrowLeft className="h-5 w-5" />
+              <span className="font-medium">Trở về danh sách</span>
+            </button>
+          </div>
+        )}
+
         {/* Header - Optimized for mobile: reduced padding, NOT sticky on mobile to allow scroll */}
         <div className={`px-2 sm:px-4 md:px-6 lg:px-8 pt-2 sm:pt-4 md:pt-6 pb-2 sm:pb-4 md:pb-6 border-b bg-gray-50  ${isMobile ? 'bg-white' : 'sticky top-0 z-10'}`}>
           {/* Mobile: Stacked layout, Desktop: Side by side */}
@@ -752,7 +789,7 @@ export function LeadDetailPanel({
 
         {/* Tab Content */}
         {activeDetailView === "workflow" && (
-          <div className="p-6">
+          <div className="py-6">
             <WorkflowTrackerTab
               selectedLead={selectedLead}
               activeWorkflowView={activeWorkflowView}

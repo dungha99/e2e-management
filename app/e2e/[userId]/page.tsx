@@ -87,16 +87,18 @@ function E2EPageContent({ userId }: { userId: string }) {
         showViewToggle={true}
       />
 
-      <main className="px-2 md:px-4 py-4">
+      <main className="px-2 sm:px-4 py-4">
         <Tabs value="e2e" onValueChange={handleTabChange} className="w-full">
           {/* Desktop Navigation - Hidden on mobile */}
-          <div className="hidden md:flex items-center justify-between mb-6">
-            <TabsList>
-              <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-              <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>
-              <TabsTrigger value="e2e">Quản lý E2E</TabsTrigger>
-              <TabsTrigger value="workflow">Quản lý Workflow</TabsTrigger>
-            </TabsList>
+          <div className="hidden sm:flex items-center justify-between mb-6 gap-4">
+            <div className="overflow-x-auto flex-shrink min-w-0">
+              <TabsList>
+                <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+                <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>
+                <TabsTrigger value="e2e">Quản lý E2E</TabsTrigger>
+                <TabsTrigger value="workflow">Quản lý Workflow</TabsTrigger>
+              </TabsList>
+            </div>
             {/* Portal targets for AccountSelector and View Mode Toggle */}
             <div className="flex items-center gap-4">
               <div id="header-account-selector"></div>

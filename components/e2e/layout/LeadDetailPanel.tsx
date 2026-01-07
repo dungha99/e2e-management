@@ -160,6 +160,21 @@ export function LeadDetailPanel({
   // Fetch workflow instances for beta tracking
   const { data: workflowInstancesData } = useWorkflowInstances(selectedLead?.car_id)
 
+  // Set default view to WF1 when workflow data loads
+  useEffect(() => {
+    if (workflowInstancesData?.allWorkflows && workflowInstancesData.allWorkflows.length > 0) {
+      // Find WF1 workflow
+      const wf1 = workflowInstancesData.allWorkflows.find(w => w.name === "WF1")
+      if (wf1 && activeWorkflowView !== wf1.id) {
+        // Only set if current view is not already a valid workflow ID
+        const isValidView = workflowInstancesData.allWorkflows.some(w => w.id === activeWorkflowView)
+        if (!isValidView) {
+          onWorkflowViewChange(wf1.id)
+        }
+      }
+    }
+  }, [workflowInstancesData, activeWorkflowView, onWorkflowViewChange])
+
   // Decoy signals for new reply detection
   const { hasNewReplies, markAsRead } = useDecoySignals()
   const hasNewDecoyReplies = selectedLead ? hasNewReplies(selectedLead.id, selectedLead.total_decoy_messages) : false

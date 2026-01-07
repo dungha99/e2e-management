@@ -160,16 +160,19 @@ export function LeadDetailPanel({
   // Fetch workflow instances for beta tracking
   const { data: workflowInstancesData } = useWorkflowInstances(selectedLead?.car_id)
 
-  // Set default view to WF1 when workflow data loads
+  // Set default view to WF0 (or WF1 if WF0 doesn't exist) when workflow data loads
   useEffect(() => {
     if (workflowInstancesData?.allWorkflows && workflowInstancesData.allWorkflows.length > 0) {
-      // Find WF1 workflow
+      // Try to find WF0 first, then fall back to WF1
+      const wf0 = workflowInstancesData.allWorkflows.find(w => w.name === "WF0")
       const wf1 = workflowInstancesData.allWorkflows.find(w => w.name === "WF1")
-      if (wf1 && activeWorkflowView !== wf1.id) {
+      const defaultWorkflow = wf0 || wf1
+
+      if (defaultWorkflow && activeWorkflowView !== defaultWorkflow.id) {
         // Only set if current view is not already a valid workflow ID
         const isValidView = workflowInstancesData.allWorkflows.some(w => w.id === activeWorkflowView)
         if (!isValidView) {
-          onWorkflowViewChange(wf1.id)
+          onWorkflowViewChange(defaultWorkflow.id)
         }
       }
     }

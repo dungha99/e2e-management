@@ -6,35 +6,37 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { carId, targetWorkflowId, parentInstanceId, finalOutcome, transitionProperties, aiInsightId, isAlignedWithAi, phoneNumber, workflowPayload } = body
 
-    // Validation
-    if (!carId || !targetWorkflowId || !parentInstanceId || !finalOutcome || !transitionProperties) {
+    // Validation - parentInstanceId and finalOutcome can be null for WF0
+    if (!carId || !targetWorkflowId || !transitionProperties) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
       )
     }
 
-    // Validate finalOutcome
-    if (!["discount", "original_price", "lost"].includes(finalOutcome)) {
+    // Validate finalOutcome only if parentInstanceId exists
+    if (parentInstanceId && finalOutcome && !["discount", "original_price", "lost"].includes(finalOutcome)) {
       return NextResponse.json(
         { error: "Invalid final_outcome value" },
         { status: 400 }
       )
     }
 
-    // Validate transitionProperties structure
-    if (!transitionProperties.insight || typeof transitionProperties.insight !== "string") {
-      return NextResponse.json(
-        { error: "transitionProperties.insight is required and must be a string" },
-        { status: 400 }
-      )
-    }
+    // Validate transitionProperties structure - only require these if parentInstanceId exists
+    if (parentInstanceId) {
+      if (!transitionProperties.insight || typeof transitionProperties.insight !== "string") {
+        return NextResponse.json(
+          { error: "transitionProperties.insight is required and must be a string" },
+          { status: 400 }
+        )
+      }
 
-    if (!transitionProperties.car_snapshot || typeof transitionProperties.car_snapshot !== "object") {
-      return NextResponse.json(
-        { error: "transitionProperties.car_snapshot is required and must be an object" },
-        { status: 400 }
-      )
+      if (!transitionProperties.car_snapshot || typeof transitionProperties.car_snapshot !== "object") {
+        return NextResponse.json(
+          { error: "transitionProperties.car_snapshot is required and must be an object" },
+          { status: 400 }
+        )
+      }
     }
 
     if (!transitionProperties.custom_fields || typeof transitionProperties.custom_fields !== "object") {
@@ -44,13 +46,15 @@ export async function POST(request: Request) {
       )
     }
 
-    // Step 1: Update parent workflow instance with final_outcome
-    await e2eQuery(
-      `UPDATE workflow_instances
-       SET final_outcome = $1
-       WHERE id = $2`,
-      [finalOutcome, parentInstanceId]
-    )
+    // Step 1: Update parent workflow instance with final_outcome (only if parent exists)
+    if (parentInstanceId && finalOutcome) {
+      await e2eQuery(
+        `UPDATE workflow_instances
+         SET final_outcome = $1
+         WHERE id = $2`,
+        [finalOutcome, parentInstanceId]
+      )
+    }
 
     // Step 2: Fetch target workflow to get SLA hours
     const workflowResult = await e2eQuery(
@@ -90,7 +94,7 @@ export async function POST(request: Request) {
       [
         carId,
         targetWorkflowId,
-        parentInstanceId,
+        parentInstanceId || null, // Allow null for WF0
         "running",
         startedAt,
         slaDeadline,

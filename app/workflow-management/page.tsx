@@ -227,17 +227,19 @@ function WorkflowManagementContent() {
             {/* Navigation Header */}
             <Tabs value="workflow" onValueChange={handleNavTabChange}>
                 {/* Desktop Navigation - Hidden on mobile */}
-                <div className="hidden md:flex items-center justify-between px-4 py-2 bg-white border-b">
-                    <TabsList>
-                        <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-                        <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>
-                        <TabsTrigger value="e2e">Quản lý E2E</TabsTrigger>
-                        <TabsTrigger value="workflow">Quản lý Workflow</TabsTrigger>
-                    </TabsList>
+                <div className="hidden sm:flex items-center justify-between px-4 py-2 bg-white border-b">
+                    <div className="overflow-x-auto flex-shrink min-w-0">
+                        <TabsList>
+                            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+                            <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>
+                            <TabsTrigger value="e2e">Quản lý E2E</TabsTrigger>
+                            <TabsTrigger value="workflow">Quản lý Workflow</TabsTrigger>
+                        </TabsList>
+                    </div>
                 </div>
 
                 {/* View Mode Toggle - Desktop only */}
-                <div className="hidden md:flex items-center justify-between px-4 py-2 bg-white border-b">
+                <div className="hidden sm:flex items-center justify-between px-4 py-2 bg-white border-b">
                     <div className="text-sm font-medium text-gray-700">Chế độ xem</div>
                     <div className="flex items-center gap-2">
                         <Button variant={mainTab === "flow" ? "default" : "outline"} size="sm" onClick={() => setMainTab("flow")} className="text-xs">

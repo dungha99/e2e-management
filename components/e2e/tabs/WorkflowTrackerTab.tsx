@@ -282,6 +282,7 @@ export function WorkflowTrackerTab({
     workflowId: string
     workflowName: string
     parentInstanceId: string
+    isFromWF0?: boolean
   } | null>(null)
 
   // State for AI insights
@@ -473,24 +474,35 @@ ${dealerBidsStr}`
             <h3 className="text-sm font-semibold text-gray-900">Tiến độ quy trình</h3>
             <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
               {/* Dynamic Workflow Tabs */}
-              {workflowInstancesData?.allWorkflows?.map(workflow => {
-                const isActive = activeWorkflowView === workflow.id
-                const instance = workflowInstancesData.data?.find(i => i.instance.workflow_id === workflow.id)
-                return (
-                  <button
-                    key={workflow.id}
-                    onClick={() => onWorkflowViewChange(workflow.id)}
-                    className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap flex items-center gap-1 ${isActive
-                      ? "bg-blue-100 text-blue-700"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              {workflowInstancesData?.allWorkflows
+                ?.slice()
+                .sort((a, b) => {
+                  // WF0 always first
+                  if (a.name === "WF0") return -1
+                  if (b.name === "WF0") return 1
+                  // Then sort by name
+                  return a.name.localeCompare(b.name)
+                })
+                .map(workflow => {
+                  const isActive = activeWorkflowView === workflow.id
+                  const instance = workflowInstancesData.data?.find(i => i.instance.workflow_id === workflow.id)
+                  return (
+                    <button
+                      key={workflow.id}
+                      onClick={() => onWorkflowViewChange(workflow.id)}
+                      className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap flex items-center gap-1 ${
+                        isActive
+                          ? "bg-blue-100 text-blue-700"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                       }`}
-                  >
-                    {instance?.instance.status === "completed" && <CheckCircle className="h-3 w-3 text-emerald-500" />}
-                    {instance?.instance.status === "running" && <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />}
-                    {workflow.name}
-                  </button>
-                )
-              })}
+                    >
+                      {instance?.instance.status === "completed" && <CheckCircle className="h-3 w-3 text-emerald-500" />}
+                      {instance?.instance.status === "running" && <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />}
+                      {workflow.name}
+                    </button>
+                  )
+                })
+              }
             </div>
           </div>
         </div>
@@ -502,9 +514,13 @@ ${dealerBidsStr}`
             const currentWorkflow = workflowInstancesData.allWorkflows.find(w => w.id === activeWorkflowView)!
             const currentInstance = workflowInstancesData.data?.find(i => i.instance.workflow_id === activeWorkflowView)
             const workflowSteps = workflowInstancesData.allWorkflowSteps?.[activeWorkflowView] || []
-            const availableTransitions = currentInstance?.instance.status === "completed"
+
+            // For WF0, allow transitions even without instance; for others, require completed status
+            const isWF0 = currentWorkflow.name === "WF0"
+            const availableTransitions = (isWF0 || currentInstance?.instance.status === "completed")
               ? workflowInstancesData.allTransitions.filter(t => t.from_workflow_id === activeWorkflowView)
               : []
+
             const visibleTransitions = availableTransitions.filter(transition => {
               const targetInstance = workflowInstancesData.data?.find(i => i.instance.workflow_id === transition.to_workflow_id)
               return !targetInstance || (targetInstance.instance.status !== "running" && targetInstance.instance.status !== "completed")
@@ -589,11 +605,14 @@ ${dealerBidsStr}`
                         variant="default"
                         size="sm"
                         onClick={() => {
-                          if (currentInstance?.instance.id) {
+                          // For WF0, use null as parentInstanceId since there's no instance
+                          const parentId = isWF0 ? null : currentInstance?.instance.id
+                          if (isWF0 || currentInstance?.instance.id) {
                             setSelectedTransition({
                               workflowId: transition.to_workflow_id,
                               workflowName: transition.to_workflow_name,
-                              parentInstanceId: currentInstance.instance.id
+                              parentInstanceId: parentId || "",
+                              isFromWF0: isWF0
                             })
                             setActivateDialogOpen(true)
                           }
@@ -784,6 +803,7 @@ ${dealerBidsStr}`
           customFields={getWorkflowCustomFields(selectedTransition.workflowName)}
           aiInsightId={aiInsights?.aiInsightId || null}
           isAlignedWithAi={aiInsights?.targetWorkflowId === selectedTransition.workflowId}
+          hideDefaultFields={selectedTransition.isFromWF0}
           onSuccess={() => {
             if (onWorkflowActivated) {
               onWorkflowActivated()

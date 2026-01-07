@@ -163,18 +163,42 @@ export function LeadDetailPanel({
   // Fetch workflow instances for beta tracking
   const { data: workflowInstancesData } = useWorkflowInstances(selectedLead?.car_id)
 
-  // Set default view to WF1 when workflow data loads
+  // Set default view: prioritize running workflow, then WF0, then WF1
   useEffect(() => {
-    if (workflowInstancesData?.allWorkflows && workflowInstancesData.allWorkflows.length > 0) {
-      // Find WF1 workflow
-      const wf1 = workflowInstancesData.allWorkflows.find(w => w.name === "WF1")
-      if (wf1 && activeWorkflowView !== wf1.id) {
-        // Only set if current view is not already a valid workflow ID
-        const isValidView = workflowInstancesData.allWorkflows.some(w => w.id === activeWorkflowView)
-        if (!isValidView) {
-          onWorkflowViewChange(wf1.id)
-        }
-      }
+    if (!workflowInstancesData?.allWorkflows || workflowInstancesData.allWorkflows.length === 0) {
+      return
+    }
+
+    // Check if current view is already valid
+    const isValidView = workflowInstancesData.allWorkflows.some(w => w.id === activeWorkflowView)
+    if (isValidView) {
+      return // Already viewing a valid workflow
+    }
+
+    // Priority 1: Find first running workflow
+    const runningWorkflow = workflowInstancesData.data?.find(i => i.instance.status === "running")
+    if (runningWorkflow) {
+      onWorkflowViewChange(runningWorkflow.instance.workflow_id)
+      return
+    }
+
+    // Priority 2: Find WF0
+    const wf0 = workflowInstancesData.allWorkflows.find(w => w.name === "WF0")
+    if (wf0) {
+      onWorkflowViewChange(wf0.id)
+      return
+    }
+
+    // Priority 3: Find WF1
+    const wf1 = workflowInstancesData.allWorkflows.find(w => w.name === "WF1")
+    if (wf1) {
+      onWorkflowViewChange(wf1.id)
+      return
+    }
+
+    // Fallback: First available workflow
+    if (workflowInstancesData.allWorkflows[0]) {
+      onWorkflowViewChange(workflowInstancesData.allWorkflows[0].id)
     }
   }, [workflowInstancesData, activeWorkflowView, onWorkflowViewChange])
 

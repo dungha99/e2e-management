@@ -260,8 +260,8 @@ export function ActivateWorkflowDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[500px] md:max-w-[600px] max-h-[90vh] flex flex-col">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>Kích hoạt {targetWorkflowName}</DialogTitle>
           <DialogDescription>
             Vui lòng cung cấp thông tin để kích hoạt workflow mới cho xe{" "}
@@ -271,7 +271,7 @@ export function ActivateWorkflowDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 py-4 overflow-y-auto flex-1 px-1">
           {/* Final Outcome */}
           <div className="space-y-2">
             <Label htmlFor="final-outcome">
@@ -356,7 +356,7 @@ export function ActivateWorkflowDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-shrink-0">
           <Button variant="outline" onClick={handleCancel} disabled={isSubmitting}>
             Hủy
           </Button>

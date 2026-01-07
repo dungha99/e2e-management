@@ -2343,6 +2343,11 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
 
             onOpenInspection={() => setInspectionSystemOpen(true)}
 
+            onBackToList={() => {
+              setMobileView('list')
+              setSelectedLead(null)
+            }}
+
             workflow2Data={workflow2Data}
             workflow2Open={workflow2Open}
             setWorkflow2Open={setWorkflow2Open}

@@ -103,6 +103,25 @@ export interface BiddingHistory {
   comment: string | null
 }
 
+export interface WinCaseHistory {
+  id: string
+  car_id: string
+  dealer_id: string | null
+  dealer_name: string
+  sold_date: string
+  price_sold: number | null
+  negotiation_ability: string | null
+  car_condition: string | null
+  phone: string | null
+  car_info: {
+    brand: string
+    model: string
+    variant: string | null
+    year: number | null
+    mileage?: number | null
+  }
+}
+
 export interface Dealer {
   id: string
   name: string

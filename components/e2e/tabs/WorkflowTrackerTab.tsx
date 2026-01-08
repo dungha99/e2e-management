@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp } from "lucide-react"
-import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition } from "../types"
+import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition, WinCaseHistory } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { ActivateWorkflowDialog } from "../dialogs/ActivateWorkflowDialog"
 import { fetchAiInsights } from "@/hooks/use-leads"
@@ -276,6 +276,18 @@ export function WorkflowTrackerTab({
   // State for copy feedback
   const [copied, setCopied] = useState(false)
 
+  // State for win case history
+  const [winCaseHistory, setWinCaseHistory] = useState<WinCaseHistory[]>([])
+  const [loadingWinHistory, setLoadingWinHistory] = useState(false)
+  const [winHistoryError, setWinHistoryError] = useState<string | null>(null)
+  const [winHistoryStats, setWinHistoryStats] = useState<{
+    completedCount: number
+    totalCount: number
+    avgPrice: number | null
+    winRate: string | null
+  } | null>(null)
+  const [activeHistoryTab, setActiveHistoryTab] = useState<'sales' | 'bids'>('sales')
+
   // State for workflow activation dialog
   const [activateDialogOpen, setActivateDialogOpen] = useState(false)
   const [selectedTransition, setSelectedTransition] = useState<{
@@ -371,6 +383,56 @@ export function WorkflowTrackerTab({
         setFetchingAiInsights(false)
       })
   }, [activeWorkflowView, workflowInstancesData, selectedLead.car_id, selectedLead.phone, selectedLead.additional_phone])
+
+  // Fetch win case history when car model is available
+  useEffect(() => {
+    // Only fetch if we have the required car model information
+    if (!selectedLead.brand || !selectedLead.model) {
+      setWinCaseHistory([])
+      return
+    }
+
+    const fetchWinHistory = async () => {
+      setLoadingWinHistory(true)
+      setWinHistoryError(null)
+
+      try {
+        const response = await fetch('/api/e2e/win-history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            brand: selectedLead.brand,
+            model: selectedLead.model,
+            variant: selectedLead.variant || null,
+            type: activeHistoryTab
+          })
+        })
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch win history')
+        }
+
+        const data = await response.json()
+
+        if (data.success) {
+          console.log(`[WorkflowTracker] Loaded ${data.count} ${activeHistoryTab} for ${selectedLead.brand} ${selectedLead.model}`)
+          setWinCaseHistory(data.data || [])
+          setWinHistoryStats(data.stats || null)
+        } else {
+          throw new Error(data.error || 'Unknown error')
+        }
+      } catch (error) {
+        console.error('[WorkflowTracker] Failed to fetch win history:', error)
+        setWinHistoryError(error instanceof Error ? error.message : 'Failed to load win history')
+        setWinCaseHistory([])
+        setWinHistoryStats(null)
+      } finally {
+        setLoadingWinHistory(false)
+      }
+    }
+
+    fetchWinHistory()
+  }, [selectedLead.brand, selectedLead.model, selectedLead.variant, activeHistoryTab])
 
   // Get top 5 bids sorted by price (descending)
   const topBids = [...biddingHistory]
@@ -787,6 +849,154 @@ ${dealerBidsStr}`
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* Win Case History Section - New */}
+          <div className="mt-4 sm:mt-6">
+            <div className="flex items-center gap-4 mb-3 border-b border-gray-100 pb-2">
+              <button
+                onClick={() => setActiveHistoryTab('sales')}
+                className={`text-xs font-medium pb-1 relative transition-colors ${activeHistoryTab === 'sales' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Giá chốt
+                {activeHistoryTab === 'sales' && <span className="absolute bottom-[-9px] left-0 w-full h-0.5 bg-blue-600 rounded-full"></span>}
+              </button>
+              <button
+                onClick={() => setActiveHistoryTab('bids')}
+                className={`text-xs font-medium pb-1 relative transition-colors ${activeHistoryTab === 'bids' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Lịch sử trả giá
+                {activeHistoryTab === 'bids' && <span className="absolute bottom-[-9px] left-0 w-full h-0.5 bg-blue-600 rounded-full"></span>}
+              </button>
+            </div>
+
+            {/* Aggregate Stats */}
+            {winHistoryStats && !loadingWinHistory && (
+              <div className="grid grid-cols-2 gap-3 mb-4 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-100">
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-gray-500 flex items-center gap-1">
+                    <DollarSign className="w-3 h-3" />
+                    {activeHistoryTab === 'sales' ? 'GIÁ TB QUÁ KHỨ' : 'GIÁ BID TRUNG BÌNH'}
+                  </span>
+                  <span className="text-sm font-bold text-blue-700">
+                    {winHistoryStats.avgPrice ? formatPrice(winHistoryStats.avgPrice) : '—'}
+                  </span>
+                </div>
+                {activeHistoryTab === 'sales' && (
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-gray-500 flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" />
+                      TỶ LỆ CHỐT (CVR)
+                    </span>
+                    <span className="text-sm font-bold text-emerald-600">
+                      {winHistoryStats.completedCount}/{winHistoryStats.totalCount} xe
+                      {winHistoryStats.winRate && <span className="ml-1 text-xs font-medium text-gray-500">{winHistoryStats.winRate}%</span>}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {loadingWinHistory ? (
+              <div className="flex items-center py-4 text-gray-400">
+                <Loader2 className="h-3 w-3 animate-spin mr-2" />
+                <span className="text-xs">Đang tải lịch sử giao dịch...</span>
+              </div>
+            ) : winHistoryError ? (
+              <p className="text-xs text-red-500 py-2">{winHistoryError}</p>
+            ) : winCaseHistory.length === 0 ? (
+              <p className="text-xs text-gray-400 py-2">Chưa có lịch sử giao dịch cho mẫu xe này</p>
+            ) : (
+              <div className="space-y-2 max-h-[400px] overflow-y-auto scrollbar-thin">
+                {winCaseHistory.map((winCase) => {
+                  const soldDate = new Date(winCase.sold_date)
+                  const formattedDate = soldDate.toLocaleDateString('vi-VN', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric'
+                  })
+
+                  // Get negotiation ability badge color
+                  const getNegotiationBadge = (ability: string | null) => {
+                    if (!ability || ability === 'BID') return null
+                    const lower = ability.toLowerCase()
+                    if (lower === 'easy') return { bg: 'bg-red-100', text: 'text-red-700', label: 'EASY' }
+                    if (lower === 'maybe') return { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'MAYBE' }
+                    if (lower === 'hard') return { bg: 'bg-green-100', text: 'text-green-700', label: 'HARD' }
+                    return { bg: 'bg-gray-100', text: 'text-gray-700', label: ability }
+                  }
+
+                  // Get car condition badge color
+                  const getConditionBadge = (condition: string | null) => {
+                    if (!condition) return null
+                    const lower = condition.toLowerCase()
+                    if (lower === 'good' || lower === 'excellent') return { bg: 'bg-green-100', text: 'text-green-700', label: condition }
+                    if (lower === 'bad' || lower === 'poor') return { bg: 'bg-red-100', text: 'text-red-700', label: condition }
+                    return { bg: 'bg-gray-100', text: 'text-gray-700', label: condition }
+                  }
+
+                  const negotiationBadge = getNegotiationBadge(winCase.negotiation_ability)
+                  const conditionBadge = getConditionBadge(winCase.car_condition)
+
+                  const handleCrmClick = () => {
+                    const phone = selectedLead.phone || selectedLead.additional_phone
+                    if (phone) {
+                      const crmUrl = `https://dashboard.vucar.vn/crm-v2?search=${encodeURIComponent(phone)}`
+                      window.open(crmUrl, '_blank')
+                    }
+                  }
+
+                  const leadPhone = selectedLead.phone || selectedLead.additional_phone
+
+                  return (
+                    <div
+                      key={winCase.id}
+                      onClick={handleCrmClick}
+                      className={`grid grid-cols-2 gap-3 py-2.5 px-3 bg-gray-50 rounded-md ${leadPhone ? 'cursor-pointer hover:bg-gray-100 transition-colors' : ''}`}
+                      title={leadPhone ? `Click để xem trong CRM: ${leadPhone}` : undefined}
+                    >
+                      {/* Left side: Dealer info + sold date + car info */}
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0">
+                            {winCase.dealer_name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex flex-col">
+                            <p className="text-xs font-medium text-gray-800 truncate">{winCase.dealer_name}</p>
+                            <p className="text-[10px] text-gray-500">
+                              {formattedDate}
+                            </p>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-blue-600 ml-8 truncate">
+                          {winCase.car_info.brand} {winCase.car_info.model} {winCase.car_info.variant || ''} {winCase.car_info.year || ''}
+                          {winCase.car_info.mileage ? ` - ${winCase.car_info.mileage.toLocaleString()}km` : ''}
+                        </p>
+                      </div>
+
+                      {/* Right side: Price + badges */}
+                      <div className="flex flex-col gap-1 items-end">
+                        <p className={`text-xs font-semibold ${activeHistoryTab === 'bids' ? 'text-orange-600' : 'text-emerald-600'}`}>
+                          {winCase.price_sold ? formatPrice(winCase.price_sold) : '—'}
+                        </p>
+                        <div className="flex items-center gap-1">
+                          {negotiationBadge && (
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${negotiationBadge.bg} ${negotiationBadge.text}`}>
+                              {negotiationBadge.label}
+                            </span>
+                          )}
+                          {conditionBadge && (
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${conditionBadge.bg} ${conditionBadge.text}`}>
+                              {conditionBadge.label}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>

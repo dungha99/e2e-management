@@ -1868,6 +1868,14 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     router.push(buildUrl(params), { scroll: false })
   }
 
+  const handleClearSearch = () => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete("search")
+    params.set("page", "1") // Reset to first page when clearing search
+    setSearchPhone("") // Clear the search input as well
+    router.push(buildUrl(params), { scroll: false })
+  }
+
   const handlePreviousPage = () => {
     if (currentPage > 1) {
       handlePageChange(currentPage - 1)
@@ -2291,8 +2299,10 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
               loading={loading}
               loadingCarIds={loadingCarIds}
               searchPhone={searchPhone}
+              appliedSearch={search}
               onSearchChange={setSearchPhone}
               onSearch={searchLeadByPhone}
+              onClearSearch={handleClearSearch}
               activeTab={activeTab}
               onTabChange={handleTabChange}
               priorityCount={priorityCount}

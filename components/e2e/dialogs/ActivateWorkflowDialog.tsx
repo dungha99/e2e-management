@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -23,6 +23,7 @@ import { Loader2, AlertCircle } from "lucide-react"
 import { Lead, CustomFieldDefinition } from "../types"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
+import { PriceInput } from "../common/PriceInput"
 
 interface ActivateWorkflowDialogProps {
   open: boolean
@@ -56,6 +57,18 @@ export function ActivateWorkflowDialog({
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, any>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Prefill minPrice with price_customer when dialog opens
+  useEffect(() => {
+    if (open && selectedLead?.price_customer) {
+      // Convert price_customer to millions (shorthand format)
+      const priceInMillions = Math.round(selectedLead.price_customer / 1000000).toString()
+      setCustomFieldValues(prev => ({
+        ...prev,
+        minPrice: priceInMillions
+      }))
+    }
+  }, [open, selectedLead?.price_customer])
 
   const handleSubmit = async () => {
     // Validation - skip default fields if hideDefaultFields is true
@@ -201,15 +214,14 @@ export function ActivateWorkflowDialog({
         )
 
       case "number":
-        // Use text input for price fields to match Workflow2Dialog style
+        // Use PriceInput for price fields to show description and validation
         if (field.name.includes("Price") || field.name.includes("price")) {
           return (
-            <Input
+            <PriceInput
               id={field.name}
-              type="text"
               placeholder={field.placeholder}
               value={value}
-              onChange={(e) => handleCustomFieldChange(field.name, e.target.value)}
+              onChange={(val) => handleCustomFieldChange(field.name, val)}
             />
           )
         }

@@ -11,6 +11,7 @@ import { Loader2, Plus, Check, ChevronsUpDown, CheckCircle } from "lucide-react"
 import { BiddingHistory, Dealer, Lead } from "../types"
 import { formatPrice, formatDate, formatCarInfo, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { cn } from "@/lib/utils"
+import { PriceInput } from "../common/PriceInput"
 
 interface BiddingHistoryDialogProps {
   open: boolean
@@ -164,13 +165,12 @@ export function BiddingHistoryDialog({
                 </PopoverContent>
               </Popover>
             </div>
-            <div className="grid gap-2 w-32">
+            <div className="grid gap-2 w-48">
               <Label>Giá (triệu)</Label>
-              <Input
-                type="text"
+              <PriceInput
                 placeholder="VD: 500"
                 value={newBidPrice}
-                onChange={(e) => setNewBidPrice(e.target.value)}
+                onChange={(value) => setNewBidPrice(value)}
               />
             </div>
             <div className="grid gap-2 flex-1">
@@ -221,13 +221,13 @@ export function BiddingHistoryDialog({
                       <td className="px-4 py-3">
                         {editingBiddingId === bid.id ? (
                           <div className="flex items-center gap-2">
-                            <Input
-                              type="text"
+                            <PriceInput
                               placeholder="VD: 500"
-                              value={editingPrice}
-                              onChange={(e) => setEditingPrice?.(e.target.value)}
-                              className="h-8 w-32"
+                              value={editingPrice || ""}
+                              onChange={(value) => setEditingPrice?.(value)}
+                              className="h-8 w-40"
                               autoFocus
+                              showDescription={false}
                             />
                             <Button
                               size="sm"

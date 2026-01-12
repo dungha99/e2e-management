@@ -9,6 +9,7 @@ import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinitio
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { ActivateWorkflowDialog } from "../dialogs/ActivateWorkflowDialog"
 import { fetchAiInsights } from "@/hooks/use-leads"
+import { PriceInput } from "../common/PriceInput"
 
 // Custom fields configuration for each workflow
 const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] => {
@@ -24,14 +25,14 @@ const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] 
         },
         {
           name: "minPrice",
-          label: "Giá tối thiểu (triệu)",
+          label: "Giá khách mong muốn (triệu)",
           type: "number",
           required: true,
           placeholder: "VD: 500 = 500 triệu"
         },
         {
           name: "maxPrice",
-          label: "Giá tối đa (triệu)",
+          label: "Giá bạn muốn trả khách khi kết phiên (triệu)",
           type: "number",
           required: true,
           placeholder: "VD: 600 = 600 triệu"
@@ -123,14 +124,14 @@ const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] 
       return [
         {
           name: "minPrice",
-          label: "Giá tối thiểu (triệu)",
+          label: "Giá khách mong muốn (triệu)",
           type: "number",
           required: true,
           placeholder: "VD: 500 = 500 triệu"
         },
         {
           name: "maxPrice",
-          label: "Giá tối đa (triệu)",
+          label: "Giá bạn muốn trả khách khi kết phiên (triệu)",
           type: "number",
           required: true,
           placeholder: "VD: 600 = 600 triệu"
@@ -794,6 +795,7 @@ ${dealerBidsStr}`
                       {editingBidId === bid.id ? (
                         <div className="flex items-center gap-1">
                           <Input type="text" value={editingPrice} onChange={(e) => setEditingPrice(e.target.value)} className="h-5 w-16 text-[10px] text-right" autoFocus />
+                          <p className="text-[9px] text-gray-400 whitespace-nowrap">Nhập 3-4 số</p>
                           <button onClick={() => handleSaveEdit(bid.id)} disabled={savingBid}>
                             {savingBid ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                           </button>

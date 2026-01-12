@@ -10,6 +10,7 @@ import { Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Lead } from "../types"
 import { formatCarInfo, parseShorthandPrice } from "../utils"
+import { PriceInput } from "../common/PriceInput"
 
 interface Workflow2DialogProps {
   open: boolean
@@ -137,22 +138,20 @@ export function Workflow2Dialog({
           </div>
           <div className="grid gap-2">
             <Label htmlFor="minPrice">Min Price (triệu)</Label>
-            <Input
+            <PriceInput
               id="minPrice"
-              type="text"
               placeholder="VD: 500 = 500 triệu"
               value={workflow2Data.minPrice}
-              onChange={(e) => setWorkflow2Data({ ...workflow2Data, minPrice: e.target.value })}
+              onChange={(value) => setWorkflow2Data({ ...workflow2Data, minPrice: value })}
             />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="maxPrice">Max Price (triệu)</Label>
-            <Input
+            <PriceInput
               id="maxPrice"
-              type="text"
               placeholder="VD: 600 = 600 triệu"
               value={workflow2Data.maxPrice}
-              onChange={(e) => setWorkflow2Data({ ...workflow2Data, maxPrice: e.target.value })}
+              onChange={(value) => setWorkflow2Data({ ...workflow2Data, maxPrice: value })}
             />
           </div>
           <div className="grid gap-2">

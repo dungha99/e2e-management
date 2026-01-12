@@ -164,6 +164,24 @@ const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] 
         }
       ]
 
+    case "WFD1":
+      return [
+        {
+          name: "phone",
+          label: "Số điện thoại",
+          type: "text",
+          required: true,
+          placeholder: "Nhập số điện thoại khách hàng..."
+        },
+        {
+          name: "first_message",
+          label: "Tin nhắn đầu tiên",
+          type: "textarea",
+          required: true,
+          placeholder: "Nhập tin nhắn đầu tiên gửi cho khách..."
+        }
+      ]
+
     default:
       return []
   }

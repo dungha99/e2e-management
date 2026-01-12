@@ -166,9 +166,17 @@ export function ActivateWorkflowDialog({
   const [copied, setCopied] = useState(false)
 
   // Check workflow type and get appropriate templates
-  const isWFD5 = targetWorkflowId === "WFD5" || targetWorkflowName.includes("D5") || targetWorkflowName.includes("5 ngày")
-  const isWFB2 = targetWorkflowId === "WFB2" || targetWorkflowName.includes("B2")
-  const isWF2 = targetWorkflowId === "WF2" || (targetWorkflowName.includes("WF2") && !targetWorkflowName.includes("B2"))
+  // Workflow IDs:
+  // WF0: 3fc82631-68e9-469a-95d7-c249fe682ced
+  // WF1: 36af24d3-6e60-43b8-b198-cfec8b5d0e0e
+  // WF2: 3b78a161-116e-43a2-8b7f-61fcf9ba9930
+  // WFD1: 9f130676-a416-418f-bae9-a581096f6426
+  // WFD5: e06d0d0b-be03-45f9-97f1-38964ee7e231
+  // WFB2: fc43e876-0948-4d5a-b16d-a717e891fd57
+  const isWFD1 = targetWorkflowId === "9f130676-a416-418f-bae9-a581096f6426"
+  const isWFD5 = targetWorkflowId === "e06d0d0b-be03-45f9-97f1-38964ee7e231"
+  const isWFB2 = targetWorkflowId === "fc43e876-0948-4d5a-b16d-a717e891fd57"
+  const isWF2 = targetWorkflowId === "3b78a161-116e-43a2-8b7f-61fcf9ba9930"
   const hasPreview = isWFD5 || isWFB2 || isWF2
 
   // Get the appropriate template set based on workflow type
@@ -299,6 +307,14 @@ export function ActivateWorkflowDialog({
         prefillValues.maxPrice = Math.round(selectedLead.price_highest_bid / 1000000).toString()
       }
 
+      // Prefill WFD1 fields
+      if (isWFD1) {
+        // Phone: priority is additional_phone, fallback to phone
+        prefillValues.phone = selectedLead?.additional_phone || selectedLead?.phone || ""
+        // Default first_message
+        prefillValues.first_message = "Em được giới thiệu mình có nhu cầu bán xe em kết bạn để hỏi thêm ít thông tin được không ạ? Xe còn ko a"
+      }
+
       if (Object.keys(prefillValues).length > 0) {
         setCustomFieldValues(prev => ({
           ...prev,
@@ -306,7 +322,7 @@ export function ActivateWorkflowDialog({
         }))
       }
     }
-  }, [open, selectedLead?.price_customer, selectedLead?.price_highest_bid])
+  }, [open, selectedLead?.price_customer, selectedLead?.price_highest_bid, selectedLead?.phone, selectedLead?.additional_phone, isWFD1])
 
   const handleSubmit = async () => {
     // Validation - skip default fields if hideDefaultFields is true

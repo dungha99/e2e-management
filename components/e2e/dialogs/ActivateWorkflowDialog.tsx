@@ -137,6 +137,7 @@ interface ActivateWorkflowDialogProps {
   customFields?: CustomFieldDefinition[]
   aiInsightId?: string | null
   isAlignedWithAi?: boolean
+  hideDefaultFields?: boolean
   onSuccess?: () => void
 }
 
@@ -150,6 +151,7 @@ export function ActivateWorkflowDialog({
   customFields = [],
   aiInsightId,
   isAlignedWithAi,
+  hideDefaultFields = false,
   onSuccess,
 }: ActivateWorkflowDialogProps) {
   const [insight, setInsight] = useState("")
@@ -307,14 +309,16 @@ export function ActivateWorkflowDialog({
   }, [open, selectedLead?.price_customer, selectedLead?.price_highest_bid])
 
   const handleSubmit = async () => {
-    // Validation
-    if (!insight.trim()) {
-      setError("Vui lòng nhập lý do kích hoạt workflow")
-      return
-    }
-    if (!finalOutcome) {
-      setError("Vui lòng chọn kết quả của workflow trước đó")
-      return
+    // Validation - skip default fields if hideDefaultFields is true
+    if (!hideDefaultFields) {
+      if (!insight.trim()) {
+        setError("Vui lòng nhập lý do kích hoạt workflow")
+        return
+      }
+      if (!finalOutcome) {
+        setError("Vui lòng chọn kết quả của workflow trước đó")
+        return
+      }
     }
 
     // Validate required custom fields
@@ -333,7 +337,10 @@ export function ActivateWorkflowDialog({
 
     try {
       // Prepare transition properties with hybrid structure
-      const transitionProperties = {
+      // For WF0, insight can be empty and we don't store car_snapshot
+      const transitionProperties = hideDefaultFields ? {
+        custom_fields: customFieldValues,
+      } : {
         insight: insight.trim(),
         car_snapshot: {
           display_name: selectedLead.display_name || `${selectedLead.brand} ${selectedLead.model} ${selectedLead.year}`.trim() || null,
@@ -358,8 +365,8 @@ export function ActivateWorkflowDialog({
         body: JSON.stringify({
           carId: selectedLead.car_id,
           targetWorkflowId,
-          parentInstanceId,
-          finalOutcome,
+          parentInstanceId: parentInstanceId || null,
+          finalOutcome: hideDefaultFields ? null : finalOutcome,
           transitionProperties,
           aiInsightId: aiInsightId || null,
           isAlignedWithAi: isAlignedWithAi !== undefined ? isAlignedWithAi : null,
@@ -510,8 +517,8 @@ export function ActivateWorkflowDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={hasPreview ? "sm:max-w-[900px]" : "sm:max-w-[500px]"}>
-        <DialogHeader>
+      <DialogContent className={`max-h-[90vh] flex flex-col ${hasPreview ? "sm:max-w-[900px]" : "sm:max-w-[500px] md:max-w-[600px]"}`}>
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>Kích hoạt {targetWorkflowName}</DialogTitle>
           <DialogDescription>
             Vui lòng cung cấp thông tin để kích hoạt workflow mới cho xe{" "}
@@ -521,40 +528,44 @@ export function ActivateWorkflowDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className={`${hasPreview ? "flex gap-6" : ""}`}>
+        <div className={`overflow-y-auto flex-1 ${hasPreview ? "flex gap-6" : "space-y-4 py-4 px-1"}`}>
           {/* Left Side - Form */}
-          <div className={`space-y-4 py-4 ${hasPreview ? "flex-1 min-w-0" : ""}`}>
-            {/* Final Outcome */}
-            <div className="space-y-2">
-              <Label htmlFor="final-outcome">
-                Kết quả workflow trước <span className="text-red-500">*</span>
-              </Label>
-              <Select value={finalOutcome} onValueChange={(value: any) => setFinalOutcome(value)}>
-                <SelectTrigger id="final-outcome">
-                  <SelectValue placeholder="Chọn kết quả..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="discount">Discount (Khách chấp nhận giảm giá)</SelectItem>
-                  <SelectItem value="original_price">Original Price (Giữ giá gốc)</SelectItem>
-                  <SelectItem value="lost">Lost (Mất deal)</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-gray-500">Kết quả này sẽ được lưu vào workflow instance trước đó</p>
-            </div>
+          <div className={`space-y-4 py-4 ${hasPreview ? "flex-1 min-w-0 pr-2" : ""}`}>
+            {/* Final Outcome - Hidden for WF0 */}
+            {!hideDefaultFields && (
+              <div className="space-y-2">
+                <Label htmlFor="final-outcome">
+                  Kết quả workflow trước <span className="text-red-500">*</span>
+                </Label>
+                <Select value={finalOutcome} onValueChange={(value: any) => setFinalOutcome(value)}>
+                  <SelectTrigger id="final-outcome">
+                    <SelectValue placeholder="Chọn kết quả..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="discount">Discount (Khách chấp nhận giảm giá)</SelectItem>
+                    <SelectItem value="original_price">Original Price (Giữ giá gốc)</SelectItem>
+                    <SelectItem value="lost">Lost (Mất deal)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">Kết quả này sẽ được lưu vào workflow instance trước đó</p>
+              </div>
+            )}
 
-            {/* Insight */}
-            <div className="space-y-2">
-              <Label htmlFor="insight">
-                Lý do kích hoạt <span className="text-red-500">*</span>
-              </Label>
-              <Textarea
-                id="insight"
-                placeholder="Tại sao bạn muốn kích hoạt workflow này?"
-                value={insight}
-                onChange={(e) => setInsight(e.target.value)}
-                className="min-h-[100px]"
-              />
-            </div>
+            {/* Insight - Hidden for WF0 */}
+            {!hideDefaultFields && (
+              <div className="space-y-2">
+                <Label htmlFor="insight">
+                  Lý do kích hoạt <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  id="insight"
+                  placeholder="Tại sao bạn muốn kích hoạt workflow này?"
+                  value={insight}
+                  onChange={(e) => setInsight(e.target.value)}
+                  className="min-h-[100px]"
+                />
+              </div>
+            )}
 
             {/* Custom Fields */}
             {customFields.map((field) => (
@@ -566,38 +577,40 @@ export function ActivateWorkflowDialog({
               </div>
             ))}
 
-            {/* Transition Properties Preview */}
-            <div className="rounded-lg bg-gray-50 p-3 space-y-1">
-              <p className="text-xs font-medium text-gray-700 mb-2">Thông tin được lưu:</p>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <span className="text-gray-500">Giá khách:</span>{" "}
-                  <span className="font-medium">
-                    {selectedLead.price_customer ? `${(selectedLead.price_customer / 1000000).toFixed(0)}tr` : "—"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Giá cao nhất:</span>{" "}
-                  <span className="font-medium">
-                    {selectedLead.dealer_bidding?.maxPrice
-                      ? `${(selectedLead.dealer_bidding.maxPrice / 1000000).toFixed(0)}tr`
-                      : "—"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Gap:</span>{" "}
-                  <span className="font-medium">
-                    {selectedLead.price_customer && selectedLead.dealer_bidding?.maxPrice
-                      ? `${((selectedLead.price_customer - selectedLead.dealer_bidding.maxPrice) / 1000000).toFixed(0)}tr`
-                      : "—"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Stage:</span>{" "}
-                  <span className="font-medium">{selectedLead.stage || "—"}</span>
+            {/* Transition Properties Preview - Hidden for WF0 */}
+            {!hideDefaultFields && (
+              <div className="rounded-lg bg-gray-50 p-3 space-y-1">
+                <p className="text-xs font-medium text-gray-700 mb-2">Thông tin được lưu:</p>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-gray-500">Giá khách:</span>{" "}
+                    <span className="font-medium">
+                      {selectedLead.price_customer ? `${(selectedLead.price_customer / 1000000).toFixed(0)}tr` : "—"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Giá cao nhất:</span>{" "}
+                    <span className="font-medium">
+                      {selectedLead.dealer_bidding?.maxPrice
+                        ? `${(selectedLead.dealer_bidding.maxPrice / 1000000).toFixed(0)}tr`
+                        : "—"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Gap:</span>{" "}
+                    <span className="font-medium">
+                      {selectedLead.price_customer && selectedLead.dealer_bidding?.maxPrice
+                        ? `${((selectedLead.price_customer - selectedLead.dealer_bidding.maxPrice) / 1000000).toFixed(0)}tr`
+                        : "—"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Stage:</span>{" "}
+                    <span className="font-medium">{selectedLead.stage || "—"}</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Error Message */}
             {error && (
@@ -661,7 +674,7 @@ export function ActivateWorkflowDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-shrink-0">
           <Button variant="outline" onClick={handleCancel} disabled={isSubmitting}>
             Hủy
           </Button>

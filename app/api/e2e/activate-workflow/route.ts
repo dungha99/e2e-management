@@ -114,7 +114,7 @@ export async function POST(request: Request) {
         let webhookUrl = null
         let transformedPayload = { ...workflowPayload }
 
-        if (workflow.name === "WF2") {
+        if (workflow.id === "3b78a161-116e-43a2-8b7f-61fcf9ba9930") { //WF2
           webhookUrl = "https://n8n.vucar.vn/webhook/8214cf7a-8c4f-1dc07b17c2ec-449d-83d5"
 
           // Transform WF2 payload to match handleActivateWorkflow2 format
@@ -126,7 +126,7 @@ export async function POST(request: Request) {
             numberOfComments: parseInt(workflowPayload.numberOfComments) || 0,
             bid: workflowPayload.bid === "true" || workflowPayload.bid === true,
           }
-        } else if (workflow.name === "WFD5") {
+        } else if (workflow.id === "e06d0d0b-be03-45f9-97f1-38964ee7e231") { //WFD5
           webhookUrl = "https://n8n.vucar.vn/webhook/f3568461-bf9f-4cf1-9709-8644e0d9c291"
 
           // Transform WFD5 payload (same format as WF2)

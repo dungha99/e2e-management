@@ -18,7 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, Trash2, Layers, CheckCircle, Search, Settings, Activity, AlertTriangle, Car, X, Eye, GitBranch, Save, ChevronRight, ArrowRight, MoreHorizontal, Workflow, LayoutGrid } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { CampaignKanbanView } from "@/components/e2e/kanban/CampaignKanbanView"
-import { MobileNavigationHeader } from "@/components/e2e/layout/MobileNavigationHeader"
+import { NavigationHeader } from "@/components/e2e/layout/NavigationHeader"
 
 // Types
 interface WorkflowType { id: string; name: string; description: string; stage_id: string; sla_hours: number; is_active: boolean }
@@ -216,40 +216,14 @@ function WorkflowManagementContent() {
 
     return (
         <div className="w-full">
-            {/* Mobile Navigation Header */}
-            <MobileNavigationHeader
-                currentPage="workflow"
-                viewMode={mainTab === "flow" ? "list" : "kanban"}
-                onViewModeChange={(mode) => setMainTab(mode === "list" ? "flow" : "monitor")}
-                showViewToggle={true}
-            />
-
             {/* Navigation Header */}
             <Tabs value="workflow" onValueChange={handleNavTabChange}>
-                {/* Desktop Navigation - Hidden on mobile */}
-                <div className="hidden sm:flex items-center justify-between px-4 py-2 bg-white border-b">
-                    <div className="overflow-x-auto flex-shrink min-w-0">
-                        <TabsList>
-                            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-                            <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>
-                            <TabsTrigger value="e2e">Quản lý E2E</TabsTrigger>
-                            <TabsTrigger value="workflow">Quản lý Workflow</TabsTrigger>
-                        </TabsList>
-                    </div>
-                </div>
-
-                {/* View Mode Toggle - Desktop only */}
-                <div className="hidden sm:flex items-center justify-between px-4 py-2 bg-white border-b">
-                    <div className="text-sm font-medium text-gray-700">Chế độ xem</div>
-                    <div className="flex items-center gap-2">
-                        <Button variant={mainTab === "flow" ? "default" : "outline"} size="sm" onClick={() => setMainTab("flow")} className="text-xs">
-                            <Workflow className="h-3 w-3 mr-1" /> Sơ đồ
-                        </Button>
-                        <Button variant={mainTab === "monitor" ? "default" : "outline"} size="sm" onClick={() => setMainTab("monitor")} className="text-xs">
-                            <Eye className="h-3 w-3 mr-1" /> Giám sát
-                        </Button>
-                    </div>
-                </div>
+                <NavigationHeader
+                    currentPage="workflow"
+                    viewMode={mainTab === "flow" ? "list" : "kanban"}
+                    onViewModeChange={(mode) => setMainTab(mode === "list" ? "flow" : "monitor")}
+                    showViewToggle={true}
+                />
 
                 <TabsContent value="workflow" className="mt-0">
                     <div className="flex h-[calc(100vh-100px)] bg-gray-50">

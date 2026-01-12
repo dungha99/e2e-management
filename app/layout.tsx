@@ -42,6 +42,45 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `
+              (function() {
+                var APP_VERSION = '2026-01-08-v2';
+                var CACHE_KEY = 'e2e-app-version';
+                var storedVersion = localStorage.getItem(CACHE_KEY);
+                
+                if (storedVersion !== APP_VERSION) {
+                  console.log('[CacheBuster] Version mismatch. Clearing caches...');
+                  localStorage.setItem(CACHE_KEY, APP_VERSION);
+                  
+                  // Clear service worker caches
+                  if ('caches' in window) {
+                    caches.keys().then(function(names) {
+                      names.forEach(function(name) {
+                        console.log('[CacheBuster] Deleting cache:', name);
+                        caches.delete(name);
+                      });
+                    });
+                  }
+                  
+                  // Unregister service workers
+                  if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                      registrations.forEach(function(registration) {
+                        console.log('[CacheBuster] Unregistering service worker');
+                        registration.unregister();
+                      });
+                    });
+                  }
+                  
+                  // Only reload if this wasn't the first load (avoid infinite loop)
+                  if (storedVersion !== null) {
+                    console.log('[CacheBuster] Reloading page...');
+                    setTimeout(function() {
+                      window.location.reload(true);
+                    }, 500);
+                  }
+                }
+              })();
+
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
                   navigator.serviceWorker.register('/sw.js').then(

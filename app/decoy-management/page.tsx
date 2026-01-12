@@ -7,7 +7,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { CampaignCreationPanel } from "@/components/campaign-creation-panel"
 import { JobsDashboard } from "@/components/jobs-dashboard"
 import { AccountStatusPanel } from "@/components/account-status-panel"
-import { MobileNavigationHeader } from "@/components/e2e/layout/MobileNavigationHeader"
+import { NavigationHeader } from "@/components/e2e/layout/NavigationHeader"
 import { useAccounts } from "@/contexts/AccountsContext"
 import { createPortal } from "react-dom"
 import {
@@ -120,35 +120,21 @@ function DecoyManagementPageContent() {
 
     return (
         <div className="min-h-screen bg-background">
-            {/* Mobile Navigation Header */}
-            <MobileNavigationHeader
-                currentPage="campaigns"
-                selectedAccount={selectedAccount}
-                accountSelector={
-                    <MobileAccountSelector
-                        selectedAccount={selectedAccount}
-                        onAccountChange={handleAccountChange}
-                    />
-                }
-            />
+            <Tabs value="campaigns" onValueChange={handleTabChange} className="w-full">
+                {/* Unified Navigation Header */}
+                <NavigationHeader
+                    currentPage="campaigns"
+                    selectedAccount={selectedAccount}
+                    accountSelector={
+                        <MobileAccountSelector
+                            selectedAccount={selectedAccount}
+                            onAccountChange={handleAccountChange}
+                        />
+                    }
+                />
 
-            <main className="px-2 sm:px-4 py-4">
-                <Tabs value="campaigns" onValueChange={handleTabChange} className="w-full">
-                    {/* Desktop Navigation - Hidden on mobile */}
-                    <div className="hidden sm:flex items-center justify-between mb-6 gap-4">
-                        <div className="overflow-x-auto flex-shrink min-w-0">
-                            <TabsList>
-                                <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-                                <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>
-                                <TabsTrigger value="e2e">Quản lý E2E</TabsTrigger>
-                                <TabsTrigger value="workflow">Quản lý Workflow</TabsTrigger>
-                            </TabsList>
-                        </div>
-                        {/* Portal target for AccountSelector */}
-                        <div id="header-account-selector"></div>
-                    </div>
-
-                    {/* Account Selector */}
+                <main className="px-2 sm:px-4 py-4">
+                    {/* Account Selector (Portaled) */}
                     <DecoyAccountSelector
                         selectedAccount={selectedAccount}
                         onAccountChange={handleAccountChange}
@@ -173,8 +159,8 @@ function DecoyManagementPageContent() {
                             </div>
                         </div>
                     </TabsContent>
-                </Tabs>
-            </main>
+                </main>
+            </Tabs>
             <Toaster />
         </div >
     )

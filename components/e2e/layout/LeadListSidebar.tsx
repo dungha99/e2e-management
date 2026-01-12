@@ -29,8 +29,10 @@ interface LeadListSidebarProps {
 
   // Search
   searchPhone: string
+  appliedSearch?: string
   onSearchChange: (value: string) => void
   onSearch: () => void
+  onClearSearch?: () => void
 
   // Source filter
   sourceFilter: string[]
@@ -68,8 +70,10 @@ export function LeadListSidebar({
   loading,
   loadingCarIds = false,
   searchPhone,
+  appliedSearch = "",
   onSearchChange,
   onSearch,
+  onClearSearch,
   sourceFilter,
   onSourceFilterChange,
   availableSources,
@@ -155,6 +159,20 @@ export function LeadListSidebar({
         variant: "destructive",
       })
     }
+  }
+
+  // Calculate the exact done date for a campaign
+  const calculateDoneDate = (publishedAt: string, duration: number): string => {
+    const startDate = new Date(publishedAt)
+    const durationMs = duration * 60 * 60 * 1000 // duration is in HOURS to ms
+    const doneDate = new Date(startDate.getTime() + durationMs)
+
+    return doneDate.toLocaleString("vi-VN", {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
   }
 
   return (
@@ -256,15 +274,32 @@ export function LeadListSidebar({
         </div>
 
         {/* Active Filter Pills */}
-        {sourceFilter.length > 0 && (
+        {(appliedSearch || sourceFilter.length > 0) && (
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <button
-              onClick={() => onSourceFilterChange([])}
+              onClick={() => {
+                if (onClearSearch) onClearSearch()
+                onSourceFilterChange([])
+              }}
               className="flex items-center gap-1 text-xs text-red-600 hover:text-red-700 font-medium"
             >
               <X className="h-3 w-3" />
               Bỏ lọc tất cả
             </button>
+            {appliedSearch && (
+              <div
+                className="flex items-center gap-1 bg-white border border-gray-200 rounded-full px-2.5 py-1 text-xs"
+              >
+                <span className="text-gray-600">search:</span>
+                <span className="font-medium text-gray-900">{appliedSearch}</span>
+                <button
+                  onClick={onClearSearch}
+                  className="ml-0.5 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
             {sourceFilter.map((source) => {
               const displayName = source === "zalo" ? "Zalo" : source === "facebook" ? "Facebook" : source
               return (
@@ -488,9 +523,14 @@ export function LeadListSidebar({
                                 />
                               </div>
                             </div>
-                            <span className="text-[9px] text-purple-600 font-medium whitespace-nowrap">
-                              {calculateRemainingTime(lead.latest_campaign.published_at, lead.latest_campaign.duration)}
-                            </span>
+                            <div className="flex flex-col items-end">
+                              <span className="text-[9px] text-purple-600 font-medium whitespace-nowrap">
+                                {calculateRemainingTime(lead.latest_campaign.published_at, lead.latest_campaign.duration)}
+                              </span>
+                              <span className="text-[9px] text-gray-500 whitespace-nowrap">
+                                {calculateDoneDate(lead.latest_campaign.published_at, lead.latest_campaign.duration)}
+                              </span>
+                            </div>
                           </>
                         )}
                       </div>

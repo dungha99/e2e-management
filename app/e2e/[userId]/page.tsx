@@ -5,7 +5,7 @@ import { Suspense, use, useState } from "react"
 import { E2EManagement } from "@/components/e2e-management"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Toaster } from "@/components/ui/toaster"
-import { MobileNavigationHeader } from "@/components/e2e/layout/MobileNavigationHeader"
+import { NavigationHeader } from "@/components/e2e/layout/NavigationHeader"
 import { useAccounts } from "@/contexts/AccountsContext"
 import {
   Select,
@@ -68,44 +68,31 @@ function E2EPageContent({ userId }: { userId: string }) {
 
   function handleAccountChange(newUserId: string) {
     router.push(`/e2e/${newUserId}?tab=priority&page=1`)
+    // Also update localStorage for backward compatibility if needed, though E2EManagement seems to handle it too.
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('e2e-selectedAccount', newUserId);
+    }
   }
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Mobile Navigation Header */}
-      <MobileNavigationHeader
-        currentPage="e2e"
-        selectedAccount={userId}
-        accountSelector={
-          <MobileAccountSelector
-            selectedAccount={userId}
-            onAccountChange={handleAccountChange}
-          />
-        }
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        showViewToggle={true}
-      />
+      <Tabs value="e2e" onValueChange={handleTabChange} className="w-full">
+        {/* Unified Navigation Header (Mobile + Desktop) */}
+        <NavigationHeader
+          currentPage="e2e"
+          selectedAccount={userId}
+          accountSelector={
+            <MobileAccountSelector
+              selectedAccount={userId}
+              onAccountChange={handleAccountChange}
+            />
+          }
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          showViewToggle={true}
+        />
 
-      <main className="px-2 sm:px-4 py-4">
-        <Tabs value="e2e" onValueChange={handleTabChange} className="w-full">
-          {/* Desktop Navigation - Hidden on mobile */}
-          <div className="hidden sm:flex items-center justify-between mb-6 gap-4">
-            <div className="overflow-x-auto flex-shrink min-w-0">
-              <TabsList>
-                <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-                <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>
-                <TabsTrigger value="e2e">Quản lý E2E</TabsTrigger>
-                <TabsTrigger value="workflow">Quản lý Workflow</TabsTrigger>
-              </TabsList>
-            </div>
-            {/* Portal targets for AccountSelector and View Mode Toggle */}
-            <div className="flex items-center gap-4">
-              <div id="header-account-selector"></div>
-              <div id="header-view-toggle"></div>
-            </div>
-          </div>
-
+        <main className="px-2 sm:px-4 py-4">
           <TabsContent value="e2e" className="mt-0">
             <E2EManagement
               userId={userId}
@@ -117,8 +104,8 @@ function E2EPageContent({ userId }: { userId: string }) {
               onViewModeChange={setViewMode}
             />
           </TabsContent>
-        </Tabs>
-      </main>
+        </main>
+      </Tabs>
       <Toaster />
     </div>
   )

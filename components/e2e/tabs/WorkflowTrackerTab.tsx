@@ -4,13 +4,12 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp, Info } from "lucide-react"
+import { CheckCircle, DollarSign, Play, Zap, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition, WinCaseHistory } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { ActivateWorkflowDialog } from "../dialogs/ActivateWorkflowDialog"
 import { fetchAiInsights } from "@/hooks/use-leads"
-import { PriceInput } from "../common/PriceInput"
 
 // Custom fields configuration for each workflow
 const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] => {
@@ -573,11 +572,10 @@ ${dealerBidsStr}`
                     <button
                       key={workflow.id}
                       onClick={() => onWorkflowViewChange(workflow.id)}
-                      className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap flex items-center gap-1 ${
-                        isActive
+                      className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap flex items-center gap-1 ${isActive
                           ? "bg-blue-100 text-blue-700"
                           : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      }`}
+                        }`}
                     >
                       {instance?.instance.status === "completed" && <CheckCircle className="h-3 w-3 text-emerald-500" />}
                       {instance?.instance.status === "running" && <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />}
@@ -1047,6 +1045,7 @@ ${dealerBidsStr}`
           aiInsightId={aiInsights?.aiInsightId || null}
           isAlignedWithAi={aiInsights?.targetWorkflowId === selectedTransition.workflowId}
           hideDefaultFields={selectedTransition.isFromWF0}
+          workflowSteps={workflowInstancesData?.allWorkflowSteps?.[selectedTransition.workflowId] || []}
           onSuccess={() => {
             if (onWorkflowActivated) {
               onWorkflowActivated()

@@ -217,6 +217,7 @@ export interface WorkflowStep {
   step_name: string
   step_order: number
   is_automated: boolean
+  template: string | null
 }
 
 export interface WorkflowInstance {

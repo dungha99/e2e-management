@@ -29,7 +29,7 @@ const TABLE_FIELDS: Record<string, {
     },
     workflow_steps: {
         required: ["workflow_id", "step_name", "step_order"],
-        optional: ["is_automated"],
+        optional: ["is_automated", "template"],
         generated: ["id"],
     },
     workflow_instances: {

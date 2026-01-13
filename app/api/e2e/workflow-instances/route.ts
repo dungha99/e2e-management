@@ -58,7 +58,8 @@ export async function GET(request: Request) {
           workflow_id,
           step_name,
           step_order,
-          is_automated
+          is_automated,
+          template
         FROM workflow_steps
         WHERE workflow_id = $1
         ORDER BY step_order ASC`,
@@ -77,7 +78,8 @@ export async function GET(request: Request) {
             workflow_id,
             step_name,
             step_order,
-            is_automated
+            is_automated,
+            template
           FROM workflow_steps
           WHERE workflow_id = $1
           ORDER BY step_order ASC`,

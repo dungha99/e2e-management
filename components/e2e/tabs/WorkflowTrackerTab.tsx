@@ -4,7 +4,8 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp } from "lucide-react"
+import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp, Info } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition, WinCaseHistory } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { ActivateWorkflowDialog } from "../dialogs/ActivateWorkflowDialog"
@@ -253,7 +254,7 @@ interface WorkflowTrackerTabProps {
   workflowInstancesData?: {
     success: boolean
     data: WorkflowInstanceWithDetails[]
-    allWorkflows: { id: string, name: string, description?: string }[]
+    allWorkflows: { id: string, name: string, description?: string, tooltip?: string | null }[]
     allTransitions: { from_workflow_id: string, to_workflow_id: string, to_workflow_name: string }[]
     allWorkflowSteps: Record<string, any[]>
     canActivateWF2: boolean
@@ -567,7 +568,8 @@ ${dealerBidsStr}`
                 .map(workflow => {
                   const isActive = activeWorkflowView === workflow.id
                   const instance = workflowInstancesData.data?.find(i => i.instance.workflow_id === workflow.id)
-                  return (
+
+                  const buttonContent = (
                     <button
                       key={workflow.id}
                       onClick={() => onWorkflowViewChange(workflow.id)}
@@ -582,6 +584,17 @@ ${dealerBidsStr}`
                       {workflow.name}
                     </button>
                   )
+
+                  return workflow.tooltip ? (
+                    <Tooltip key={workflow.id}>
+                      <TooltipTrigger asChild>
+                        {buttonContent}
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs">
+                        <p className="whitespace-pre-wrap">{workflow.tooltip}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : buttonContent
                 })
               }
             </div>

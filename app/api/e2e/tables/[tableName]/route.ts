@@ -19,7 +19,7 @@ const TABLE_FIELDS: Record<string, {
 }> = {
     workflows: {
         required: ["name", "stage_id", "sla_hours"],
-        optional: ["description", "is_active"],
+        optional: ["description", "is_active", "tooltip"],
         generated: ["id"],
     },
     workflow_stages: {

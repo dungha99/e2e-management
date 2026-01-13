@@ -60,6 +60,7 @@ export interface KanbanWorkflow {
     name: string
     order: number
     sla_hours: number
+    tooltip: string | null
     instances: WorkflowInstanceForKanban[]
 }
 

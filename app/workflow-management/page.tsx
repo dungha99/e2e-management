@@ -24,7 +24,7 @@ import { NavigationHeader } from "@/components/e2e/layout/NavigationHeader"
 
 // Types
 interface WorkflowType { id: string; name: string; description: string; stage_id: string; sla_hours: number; is_active: boolean; tooltip: string | null }
-interface WorkflowStep { id: string; workflow_id: string; step_name: string; step_order: number; is_automated: boolean }
+interface WorkflowStep { id: string; workflow_id: string; step_name: string; step_order: number; is_automated: boolean; template: string | null }
 interface Stage { id: string; name: string }
 interface Transition { id: string; from_workflow_id: string; to_workflow_id: string; condition_logic: string; priority: number; transition_sla_hours?: number }
 interface WorkflowInstance { id: string; car_id: string; workflow_id: string; status: string; started_at: string; completed_at?: string }
@@ -66,6 +66,10 @@ function WorkflowManagementContent() {
 
     // Flow diagram node positions
     const [nodePositions, setNodePositions] = useState<Record<string, NodePosition>>({})
+
+    // Right panel resize state
+    const [panelWidth, setPanelWidth] = useState(450)
+    const [isResizing, setIsResizing] = useState(false)
 
     useEffect(() => { fetchAllData() }, [])
 
@@ -207,7 +211,7 @@ function WorkflowManagementContent() {
 
     function selectStepForEdit(step: WorkflowStep) {
         setSelectedStep(step)
-        setEditingStep({ step_name: step.step_name, step_order: step.step_order, is_automated: step.is_automated })
+        setEditingStep({ step_name: step.step_name, step_order: step.step_order, is_automated: step.is_automated, template: step.template })
     }
 
     function selectWorkflowInFlow(wf: WorkflowType) {
@@ -219,6 +223,35 @@ function WorkflowManagementContent() {
 
     const filteredInstances = useMemo(() => monitorSearch ? instances.filter(i => i.car_id.toLowerCase().includes(monitorSearch.toLowerCase())) : instances, [instances, monitorSearch])
     const stats = useMemo(() => ({ total: instances.length, active: instances.filter(i => i.status === 'running').length, completed: instances.filter(i => i.status === 'completed').length, failed: instances.filter(i => i.status === 'failed' || i.status === 'terminated').length }), [instances])
+
+    // Handle panel resize
+    const handleMouseDown = () => {
+        setIsResizing(true)
+    }
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isResizing) return
+            const newWidth = window.innerWidth - e.clientX
+            if (newWidth >= 350 && newWidth <= 800) {
+                setPanelWidth(newWidth)
+            }
+        }
+
+        const handleMouseUp = () => {
+            setIsResizing(false)
+        }
+
+        if (isResizing) {
+            document.addEventListener('mousemove', handleMouseMove)
+            document.addEventListener('mouseup', handleMouseUp)
+        }
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove)
+            document.removeEventListener('mouseup', handleMouseUp)
+        }
+    }, [isResizing])
 
     function handleNavTabChange(value: string) {
         if (value === "dashboard") router.push("/")
@@ -232,7 +265,7 @@ function WorkflowManagementContent() {
     if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="animate-spin h-6 w-6 border-2 border-gray-400 border-t-transparent rounded-full" /></div>
 
     return (
-        <div className="w-full">
+        <div className={`w-full ${isResizing ? 'cursor-col-resize select-none' : ''}`}>
             {/* Navigation Header */}
             <Tabs value="workflow" onValueChange={handleNavTabChange}>
                 <NavigationHeader
@@ -364,7 +397,18 @@ function WorkflowManagementContent() {
                                 </div>
 
                                 {/* RIGHT: Details Panel */}
-                                <div className="w-[450px] bg-white border-l flex flex-col overflow-hidden">
+                                <div
+                                    className="bg-white border-l flex flex-col overflow-hidden relative"
+                                    style={{ width: `${panelWidth}px`, minWidth: '350px', maxWidth: '800px' }}
+                                >
+                                    {/* Resize Handle */}
+                                    <div
+                                        className={`absolute left-0 top-0 bottom-0 w-1 hover:w-2 cursor-col-resize group z-10 ${isResizing ? 'bg-blue-500 w-2' : 'bg-gray-200 hover:bg-blue-400'} transition-all`}
+                                        onMouseDown={handleMouseDown}
+                                        style={{ marginLeft: '-1px' }}
+                                    >
+                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-16 bg-blue-500 rounded-r opacity-50 group-hover:opacity-100 transition-opacity shadow-sm"></div>
+                                    </div>
                                     <div className="p-4 border-b flex-shrink-0">
                                         <div className="flex items-center gap-2">
                                             {selectedWorkflow ? (
@@ -384,8 +428,8 @@ function WorkflowManagementContent() {
                                     </div>
 
                                     {selectedWorkflow && (
-                                        <ScrollArea className="flex-1 h-full">
-                                            <div className="p-4 space-y-6 pr-4">
+                                        <ScrollArea className="flex-1 overflow-y-auto">
+                                            <div className="p-4 space-y-6">
                                                 {/* Workflow Details */}
                                                 <div>
                                                     <div className="mb-3">
@@ -458,7 +502,10 @@ function WorkflowManagementContent() {
                                                             >
                                                                 <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium", selectedStep?.id === step.id ? "bg-purple-500 text-white" : "bg-gray-200 text-gray-600")}>{step.step_order}</div>
                                                                 <div className="flex-1 min-w-0">
-                                                                    <p className="text-sm font-medium text-gray-900 truncate">{step.step_name}</p>
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <p className="text-sm font-medium text-gray-900 truncate">{step.step_name}</p>
+                                                                        {step.template && <Badge variant="outline" className="text-[9px] h-4 px-1 bg-blue-50 text-blue-600 border-blue-200">T</Badge>}
+                                                                    </div>
                                                                     <p className="text-xs text-gray-400">{step.is_automated ? "Tự động" : "Thủ công"}</p>
                                                                 </div>
                                                             </div>
@@ -479,6 +526,50 @@ function WorkflowManagementContent() {
                                                             <div className="flex items-center gap-2">
                                                                 <Switch checked={editingStep.is_automated} onCheckedChange={c => setEditingStep({ ...editingStep, is_automated: c })} />
                                                                 <span className="text-sm text-gray-600">{editingStep.is_automated ? "Tự động" : "Thủ công"}</span>
+                                                            </div>
+                                                            <div>
+                                                                <Label className="text-xs text-gray-500">Template</Label>
+                                                                <div className="flex flex-wrap gap-1 mb-2 p-2 bg-gray-50 rounded border border-gray-200">
+                                                                    {[
+                                                                        { key: '{{display_name}}', label: 'Tên xe' },
+                                                                        { key: '{{year}}', label: 'Năm' },
+                                                                        { key: '{{similar_car}}', label: 'Xe tương tự' },
+                                                                        { key: '{{similar_year}}', label: 'Năm tương tự' },
+                                                                        { key: '{{price_reference}}', label: 'Giá tham khảo' },
+                                                                        { key: '{{price_range}}', label: 'Khoảng giá' },
+                                                                        { key: '{{session_url}}', label: 'Link phiên' },
+                                                                        { key: '{{mileage}}', label: 'Số km' }
+                                                                    ].map(item => (
+                                                                        <button
+                                                                            key={item.key}
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                const textarea = document.getElementById('edit-step-template') as HTMLTextAreaElement
+                                                                                if (textarea) {
+                                                                                    const start = textarea.selectionStart
+                                                                                    const end = textarea.selectionEnd
+                                                                                    const text = editingStep.template || ''
+                                                                                    const newText = text.substring(0, start) + item.key + text.substring(end)
+                                                                                    setEditingStep({ ...editingStep, template: newText })
+                                                                                    setTimeout(() => {
+                                                                                        textarea.focus()
+                                                                                        textarea.setSelectionRange(start + item.key.length, start + item.key.length)
+                                                                                    }, 0)
+                                                                                }
+                                                                            }}
+                                                                            className="px-2 py-1 text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-700 rounded border border-blue-300 cursor-pointer transition-colors"
+                                                                        >
+                                                                            {item.label}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                                <Textarea
+                                                                    id="edit-step-template"
+                                                                    value={editingStep.template || ""}
+                                                                    onChange={e => setEditingStep({ ...editingStep, template: e.target.value })}
+                                                                    className="mt-1 bg-white min-h-[80px]"
+                                                                    placeholder="Mẫu nội dung cho bước này (tuỳ chọn)"
+                                                                />
                                                             </div>
                                                             <div className="flex gap-2 pt-2">
                                                                 <Button size="sm" className="flex-1 h-8" onClick={handleSaveStep} disabled={saving}><Save className="h-3 w-3 mr-1" /> Lưu</Button>
@@ -540,8 +631,55 @@ function WorkflowManagementContent() {
             </Dialog>
 
             <Dialog open={createStepOpen} onOpenChange={setCreateStepOpen}>
-                <DialogContent><DialogHeader><DialogTitle>Thêm bước vào {selectedWorkflow?.name}</DialogTitle></DialogHeader>
-                    <div className="space-y-3 py-2"><div><Label className="text-xs">Tên bước</Label><Input value={stepForm.step_name || ""} onChange={e => setStepForm({ ...stepForm, step_name: e.target.value })} className="mt-1" /></div><div className="flex items-center gap-2"><Switch checked={stepForm.is_automated} onCheckedChange={c => setStepForm({ ...stepForm, is_automated: c })} /><Label className="text-xs">Tự động</Label></div></div>
+                <DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Thêm bước vào {selectedWorkflow?.name}</DialogTitle></DialogHeader>
+                    <div className="space-y-3 py-2">
+                        <div><Label className="text-xs">Tên bước</Label><Input value={stepForm.step_name || ""} onChange={e => setStepForm({ ...stepForm, step_name: e.target.value })} className="mt-1" /></div>
+                        <div className="flex items-center gap-2"><Switch checked={stepForm.is_automated} onCheckedChange={c => setStepForm({ ...stepForm, is_automated: c })} /><Label className="text-xs">Tự động</Label></div>
+                        <div>
+                            <Label className="text-xs">Template</Label>
+                            <div className="flex flex-wrap gap-1 mb-2 p-2 bg-gray-50 rounded border border-gray-200">
+                                {[
+                                    { key: '{{display_name}}', label: 'Tên xe' },
+                                    { key: '{{year}}', label: 'Năm' },
+                                    { key: '{{similar_car}}', label: 'Xe tương tự' },
+                                    { key: '{{similar_year}}', label: 'Năm tương tự' },
+                                    { key: '{{price_reference}}', label: 'Giá tham khảo' },
+                                    { key: '{{price_range}}', label: 'Khoảng giá' },
+                                    { key: '{{session_url}}', label: 'Link phiên' },
+                                    { key: '{{mileage}}', label: 'Số km' }
+                                ].map(item => (
+                                    <button
+                                        key={item.key}
+                                        type="button"
+                                        onClick={() => {
+                                            const textarea = document.getElementById('create-step-template') as HTMLTextAreaElement
+                                            if (textarea) {
+                                                const start = textarea.selectionStart
+                                                const end = textarea.selectionEnd
+                                                const text = stepForm.template || ''
+                                                const newText = text.substring(0, start) + item.key + text.substring(end)
+                                                setStepForm({ ...stepForm, template: newText })
+                                                setTimeout(() => {
+                                                    textarea.focus()
+                                                    textarea.setSelectionRange(start + item.key.length, start + item.key.length)
+                                                }, 0)
+                                            }
+                                        }}
+                                        className="px-2 py-1 text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-700 rounded border border-blue-300 cursor-pointer transition-colors"
+                                    >
+                                        {item.label}
+                                    </button>
+                                ))}
+                            </div>
+                            <Textarea
+                                id="create-step-template"
+                                value={stepForm.template || ""}
+                                onChange={e => setStepForm({ ...stepForm, template: e.target.value })}
+                                className="mt-1 min-h-[80px]"
+                                placeholder="Mẫu nội dung cho bước này (tuỳ chọn)"
+                            />
+                        </div>
+                    </div>
                     <DialogFooter><Button variant="outline" onClick={() => setCreateStepOpen(false)}>Hủy</Button><Button onClick={handleCreateStep} disabled={saving}>Thêm</Button></DialogFooter>
                 </DialogContent>
             </Dialog>

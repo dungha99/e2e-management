@@ -207,6 +207,7 @@ export interface Workflow {
   sla_hours: number
   is_active: boolean
   description: string | null
+  tooltip: string | null
   custom_fields_schema?: CustomFieldDefinition[]
 }
 

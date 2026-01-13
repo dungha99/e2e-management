@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -15,13 +16,14 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, Trash2, Layers, CheckCircle, Search, Settings, Activity, AlertTriangle, Car, X, Eye, GitBranch, Save, ChevronRight, ArrowRight, MoreHorizontal, Workflow, LayoutGrid } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Plus, Trash2, Layers, CheckCircle, Search, Settings, Activity, AlertTriangle, Car, X, Eye, GitBranch, Save, ChevronRight, ArrowRight, MoreHorizontal, Workflow, LayoutGrid, Info } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { CampaignKanbanView } from "@/components/e2e/kanban/CampaignKanbanView"
 import { NavigationHeader } from "@/components/e2e/layout/NavigationHeader"
 
 // Types
-interface WorkflowType { id: string; name: string; description: string; stage_id: string; sla_hours: number; is_active: boolean }
+interface WorkflowType { id: string; name: string; description: string; stage_id: string; sla_hours: number; is_active: boolean; tooltip: string | null }
 interface WorkflowStep { id: string; workflow_id: string; step_name: string; step_order: number; is_automated: boolean }
 interface Stage { id: string; name: string }
 interface Transition { id: string; from_workflow_id: string; to_workflow_id: string; condition_logic: string; priority: number; transition_sla_hours?: number }
@@ -57,6 +59,7 @@ function WorkflowManagementContent() {
 
     // Form states
     const [editingStep, setEditingStep] = useState<Partial<WorkflowStep> | null>(null)
+    const [editingWorkflow, setEditingWorkflow] = useState<Partial<WorkflowType> | null>(null)
     const [workflowForm, setWorkflowForm] = useState<Partial<WorkflowType>>({})
     const [stepForm, setStepForm] = useState<Partial<WorkflowStep>>({})
     const [transitionForm, setTransitionForm] = useState<Partial<Transition>>({})
@@ -79,7 +82,7 @@ function WorkflowManagementContent() {
 
     useEffect(() => {
         if (selectedWorkflow) fetchSteps(selectedWorkflow.id)
-        else { setSteps([]); setSelectedStep(null); setEditingStep(null) }
+        else { setSteps([]); setSelectedStep(null); setEditingStep(null); setEditingWorkflow(null) }
     }, [selectedWorkflow])
 
     // Calculate node positions for flow diagram - horizontal layout
@@ -175,6 +178,19 @@ function WorkflowManagementContent() {
         } finally { setSaving(false) }
     }
 
+    async function handleSaveWorkflow() {
+        if (!editingWorkflow || !selectedWorkflow) return
+        setSaving(true)
+        try {
+            const res = await fetch("/api/e2e/tables/workflows", { method: "PUT", body: JSON.stringify({ ...editingWorkflow, id: selectedWorkflow.id }), headers: { "Content-Type": "application/json" } })
+            if ((await res.json()).success) {
+                toast({ title: "Đã lưu workflow" })
+                setEditingWorkflow(null)
+                fetchAllData()
+            }
+        } finally { setSaving(false) }
+    }
+
     async function handleDelete() {
         if (!deleteTarget) return
         setSaving(true)
@@ -198,6 +214,7 @@ function WorkflowManagementContent() {
         setSelectedWorkflow(wf)
         setSelectedStep(null)
         setEditingStep(null)
+        setEditingWorkflow(null)
     }
 
     const filteredInstances = useMemo(() => monitorSearch ? instances.filter(i => i.car_id.toLowerCase().includes(monitorSearch.toLowerCase())) : instances, [instances, monitorSearch])
@@ -297,7 +314,19 @@ function WorkflowManagementContent() {
                                                                 </div>
                                                                 <div className="min-w-0 flex-1">
                                                                     <p className="text-xs text-gray-400 truncate">{getStageName(wf.stage_id)}</p>
-                                                                    <p className="text-sm font-semibold text-gray-900 truncate">{wf.name}</p>
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <p className="text-sm font-semibold text-gray-900 truncate">{wf.name}</p>
+                                                                        {wf.tooltip && (
+                                                                            <Tooltip>
+                                                                                <TooltipTrigger asChild>
+                                                                                    <Info className="h-3.5 w-3.5 text-gray-400 hover:text-gray-600 cursor-help flex-shrink-0" />
+                                                                                </TooltipTrigger>
+                                                                                <TooltipContent side="right" className="max-w-xs">
+                                                                                    <p className="whitespace-pre-wrap">{wf.tooltip}</p>
+                                                                                </TooltipContent>
+                                                                            </Tooltip>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                             <Badge variant={wf.is_active ? "default" : "secondary"} className={cn("text-xs flex-shrink-0 ml-2", wf.is_active && "bg-emerald-500")}>{wf.is_active ? "Bật" : "Tắt"}</Badge>
@@ -335,7 +364,7 @@ function WorkflowManagementContent() {
                                 </div>
 
                                 {/* RIGHT: Details Panel */}
-                                <div className="w-80 bg-white border-l flex flex-col overflow-hidden">
+                                <div className="w-[450px] bg-white border-l flex flex-col overflow-hidden">
                                     <div className="p-4 border-b flex-shrink-0">
                                         <div className="flex items-center gap-2">
                                             {selectedWorkflow ? (
@@ -355,21 +384,60 @@ function WorkflowManagementContent() {
                                     </div>
 
                                     {selectedWorkflow && (
-                                        <ScrollArea className="flex-1">
-                                            <div className="p-4 space-y-6">
+                                        <ScrollArea className="flex-1 h-full">
+                                            <div className="p-4 space-y-6 pr-4">
                                                 {/* Workflow Details */}
                                                 <div>
-                                                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Thông tin Workflow</p>
-                                                    <div className="space-y-3">
-                                                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                                            <span className="text-sm text-gray-600">Trạng thái</span>
-                                                            <Badge variant={selectedWorkflow.is_active ? "default" : "secondary"} className={cn("text-xs", selectedWorkflow.is_active && "bg-emerald-500")}>{selectedWorkflow.is_active ? "Bật" : "Tắt"}</Badge>
-                                                        </div>
-                                                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                                            <span className="text-sm text-gray-600">SLA</span>
-                                                            <span className="text-sm font-medium text-gray-900">{selectedWorkflow.sla_hours} giờ</span>
+                                                    <div className="mb-3">
+                                                        <div className="flex items-center justify-between gap-2 mb-2">
+                                                            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Thông tin Workflow</p>
+                                                            {!editingWorkflow ? (
+                                                                <Button size="sm" variant="outline" onClick={() => setEditingWorkflow({ name: selectedWorkflow.name, sla_hours: selectedWorkflow.sla_hours, is_active: selectedWorkflow.is_active, tooltip: selectedWorkflow.tooltip })} className="h-6 text-xs">Sửa</Button>
+                                                            ) : (
+                                                                <div className="flex gap-2">
+                                                                    <Button size="sm" variant="ghost" onClick={() => setEditingWorkflow(null)} className="h-6 text-xs">Hủy</Button>
+                                                                    <Button size="sm" onClick={handleSaveWorkflow} disabled={saving} className="h-6 text-xs">Lưu</Button>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </div>
+                                                    {!editingWorkflow ? (
+                                                        <div className="space-y-3">
+                                                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                                                <span className="text-sm text-gray-600">Trạng thái</span>
+                                                                <Badge variant={selectedWorkflow.is_active ? "default" : "secondary"} className={cn("text-xs", selectedWorkflow.is_active && "bg-emerald-500")}>{selectedWorkflow.is_active ? "Bật" : "Tắt"}</Badge>
+                                                            </div>
+                                                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                                                <span className="text-sm text-gray-600">SLA</span>
+                                                                <span className="text-sm font-medium text-gray-900">{selectedWorkflow.sla_hours} giờ</span>
+                                                            </div>
+                                                            {selectedWorkflow.tooltip && (
+                                                                <div className="p-3 bg-gray-50 rounded-lg">
+                                                                    <span className="text-sm text-gray-600 block mb-1">Tooltip</span>
+                                                                    <p className="text-sm text-gray-900 whitespace-pre-wrap">{selectedWorkflow.tooltip}</p>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-y-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                                                            <div>
+                                                                <Label className="text-xs text-gray-500">Tên workflow</Label>
+                                                                <Input value={editingWorkflow.name || ""} onChange={e => setEditingWorkflow({ ...editingWorkflow, name: e.target.value })} className="mt-1 h-9 bg-white" />
+                                                            </div>
+                                                            <div>
+                                                                <Label className="text-xs text-gray-500">Tooltip</Label>
+                                                                <Textarea value={editingWorkflow.tooltip || ""} onChange={e => setEditingWorkflow({ ...editingWorkflow, tooltip: e.target.value })} className="mt-1 bg-white min-h-[60px]" placeholder="Mô tả ngắn gọn (có thể xuống dòng)" />
+                                                            </div>
+                                                            <div>
+                                                                <Label className="text-xs text-gray-500">SLA (giờ)</Label>
+                                                                <Input type="number" value={editingWorkflow.sla_hours || 24} onChange={e => setEditingWorkflow({ ...editingWorkflow, sla_hours: parseInt(e.target.value) })} className="mt-1 h-9 bg-white" />
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <Switch checked={editingWorkflow.is_active} onCheckedChange={c => setEditingWorkflow({ ...editingWorkflow, is_active: c })} />
+                                                                <span className="text-sm text-gray-600">{editingWorkflow.is_active ? "Bật" : "Tắt"}</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 {/* Steps */}
@@ -464,6 +532,7 @@ function WorkflowManagementContent() {
                 <DialogContent><DialogHeader><DialogTitle>Tạo Workflow trong {selectedStage?.name}</DialogTitle></DialogHeader>
                     <div className="space-y-3 py-2">
                         <div><Label className="text-xs">Tên</Label><Input value={workflowForm.name || ""} onChange={e => setWorkflowForm({ ...workflowForm, name: e.target.value })} className="mt-1" /></div>
+                        <div><Label className="text-xs">Tooltip (mô tả ngắn gọn)</Label><Textarea value={workflowForm.tooltip || ""} onChange={e => setWorkflowForm({ ...workflowForm, tooltip: e.target.value })} className="mt-1 min-h-[60px]" placeholder="Thông tin hiển thị khi hover (có thể xuống dòng)" /></div>
                         <div className="grid grid-cols-2 gap-3"><div><Label className="text-xs">SLA (giờ)</Label><Input type="number" value={workflowForm.sla_hours || 24} onChange={e => setWorkflowForm({ ...workflowForm, sla_hours: parseInt(e.target.value) })} className="mt-1" /></div><div className="flex items-end pb-1"><div className="flex items-center gap-2"><Switch checked={workflowForm.is_active} onCheckedChange={c => setWorkflowForm({ ...workflowForm, is_active: c })} /><Label className="text-xs">Hoạt động</Label></div></div></div>
                     </div>
                     <DialogFooter><Button variant="outline" onClick={() => setCreateWorkflowOpen(false)}>Hủy</Button><Button onClick={handleCreateWorkflow} disabled={saving}>Tạo</Button></DialogFooter>

@@ -2,6 +2,8 @@
 
 import { KanbanCard } from "./KanbanCard"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Info } from "lucide-react"
 import { WorkflowInstanceForKanban, KanbanWorkflow } from "./CampaignKanbanView"
 
 interface KanbanColumnProps {
@@ -39,9 +41,21 @@ export function KanbanColumn({ workflow, onInstanceClick, onTransition, onNote, 
                 <span className={`w-5 h-5 rounded flex items-center justify-center text-white text-xs font-bold ${getBadgeColor(workflow.order)}`}>
                     {isNoWorkflowColumn ? "—" : workflow.order}
                 </span>
-                <h3 className="font-semibold text-gray-700 text-sm truncate flex-1" title={workflow.name}>
-                    {workflow.name}
-                </h3>
+                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                    <h3 className="font-semibold text-gray-700 text-sm truncate" title={workflow.name}>
+                        {workflow.name}
+                    </h3>
+                    {workflow.tooltip && (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Info className="h-3.5 w-3.5 text-gray-400 hover:text-gray-600 cursor-help flex-shrink-0" />
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-xs">
+                                <p className="whitespace-pre-wrap">{workflow.tooltip}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    )}
+                </div>
                 <span className="ml-auto text-xs text-gray-400">
                     {workflow.instances.length}
                 </span>

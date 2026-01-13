@@ -46,6 +46,7 @@ export interface KanbanWorkflow {
     name: string
     order: number
     sla_hours: number
+    tooltip: string | null
     instances: WorkflowInstanceForKanban[]
 }
 
@@ -56,10 +57,11 @@ export async function GET(request: Request) {
 
         // Fetch all active workflows ordered by their stage
         const workflowsResult = await e2eQuery(`
-            SELECT 
+            SELECT
                 w.id,
                 w.name,
                 w.sla_hours,
+                w.tooltip,
                 w.stage_id,
                 ws.name as stage_name,
                 ROW_NUMBER() OVER (ORDER BY ws.name, w.name) as order_num
@@ -308,6 +310,7 @@ export async function GET(request: Request) {
                 name: wf.name,
                 order: parseInt(wf.order_num),
                 sla_hours: wf.sla_hours,
+                tooltip: wf.tooltip || null,
                 instances: workflowInstances
             }
         })

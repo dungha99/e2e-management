@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SearchInput } from "@/components/ui/search-input"
-import { User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star, X, SlidersHorizontal, Play, CheckCircle, Download, Loader2, Activity, Copy } from "lucide-react"
+import { User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star, X, SlidersHorizontal, Play, CheckCircle, Download, Loader2, Activity, Copy, Calendar, MapPin, Clock } from "lucide-react"
 import { Lead } from "../types"
 import { formatCarInfo, formatPriceShort, calculateCampaignProgress, calculateRemainingTime, formatRelativeTime, getActivityFreshness, getActivityFreshnessClass } from "../utils"
 import { useToast } from "@/hooks/use-toast"
@@ -533,6 +533,52 @@ export function LeadListSidebar({
                             </div>
                           </>
                         )}
+                      </div>
+                    )}
+                    {/* Inspection Schedule Badge */}
+                    {lead.inspection_schedule && (
+                      <div className="flex items-center gap-2 mt-1">
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 border-amber-200 cursor-pointer hover:bg-amber-100 transition-colors"
+                            >
+                              <Calendar className="h-2.5 w-2.5 mr-0.5" />
+                              Lịch KĐ: {lead.inspection_schedule.location.split('-')[0].trim().substring(0, 15)} - {lead.inspection_schedule.inspector}
+                            </Badge>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-72 p-3" align="start">
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2 text-amber-700 font-medium">
+                                <Calendar className="h-4 w-4" />
+                                <span>Lịch kiểm định</span>
+                              </div>
+                              <div className="space-y-1.5 text-sm">
+                                <div className="flex items-start gap-2">
+                                  <MapPin className="h-3.5 w-3.5 text-gray-400 mt-0.5 shrink-0" />
+                                  <span className="text-gray-700">{lead.inspection_schedule.location}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <User className="h-3.5 w-3.5 text-gray-400" />
+                                  <span className="text-gray-700">{lead.inspection_schedule.inspector}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Clock className="h-3.5 w-3.5 text-gray-400" />
+                                  <span className="text-gray-500 text-xs">
+                                    {new Date(lead.inspection_schedule.scheduled_at).toLocaleString('vi-VN', {
+                                      day: '2-digit',
+                                      month: '2-digit',
+                                      year: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                       </div>
                     )}
                   </div>

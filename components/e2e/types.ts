@@ -3,6 +3,12 @@ export interface DealerBiddingStatus {
   maxPrice?: number
 }
 
+export interface InspectionSchedule {
+  location: string
+  inspector: string
+  scheduled_at: string  // ISO timestamp from sale_activities.created_at
+}
+
 export interface LatestCampaignInfo {
   id: string
   is_active: boolean
@@ -78,6 +84,7 @@ export interface Lead {
   negotiationAbility?: string | null
   latest_campaign?: LatestCampaignInfo | null
   last_activity_at?: string | null  // ISO timestamp of most recent sale activity
+  inspection_schedule?: InspectionSchedule | null  // Parsed from INSPECTION_COMPLETED activity
 }
 
 export interface DecoyMessage {

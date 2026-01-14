@@ -4,10 +4,11 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SearchInput } from "@/components/ui/search-input"
-import { User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star, X, SlidersHorizontal, Play, CheckCircle, Download, Loader2 } from "lucide-react"
+import { User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star, X, SlidersHorizontal, Play, CheckCircle, Download, Loader2, Activity, Copy } from "lucide-react"
 import { Lead } from "../types"
-import { formatCarInfo, formatPriceShort, calculateCampaignProgress, calculateRemainingTime } from "../utils"
+import { formatCarInfo, formatPriceShort, calculateCampaignProgress, calculateRemainingTime, formatRelativeTime, getActivityFreshness, getActivityFreshnessClass } from "../utils"
 import { useToast } from "@/hooks/use-toast"
+import { useDecoySignals } from "@/hooks/use-decoy-signals"
 import {
   Popover,
   PopoverContent,
@@ -28,8 +29,10 @@ interface LeadListSidebarProps {
 
   // Search
   searchPhone: string
+  appliedSearch?: string
   onSearchChange: (value: string) => void
   onSearch: () => void
+  onClearSearch?: () => void
 
   // Source filter
   sourceFilter: string[]
@@ -67,8 +70,10 @@ export function LeadListSidebar({
   loading,
   loadingCarIds = false,
   searchPhone,
+  appliedSearch = "",
   onSearchChange,
   onSearch,
+  onClearSearch,
   sourceFilter,
   onSourceFilterChange,
   availableSources,
@@ -87,6 +92,7 @@ export function LeadListSidebar({
   updatingPrimary = false
 }: LeadListSidebarProps) {
   const { toast } = useToast()
+  const { hasNewReplies } = useDecoySignals()
   const [filterOpen, setFilterOpen] = useState(false)
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
 
@@ -126,8 +132,51 @@ export function LeadListSidebar({
     }
   }
 
+  // Truncate car ID: show first 8 chars + "..." if longer than 12
+  const truncateCarId = (carId: string | null | undefined): string => {
+    if (!carId) return "—"
+    if (carId.length > 12) {
+      return carId.substring(0, 8) + "..."
+    }
+    return carId
+  }
+
+  // Copy car ID to clipboard
+  const handleCopyCarId = async (e: React.MouseEvent, carId: string) => {
+    e.stopPropagation()
+    if (!carId) return
+
+    try {
+      await navigator.clipboard.writeText(carId)
+      toast({
+        title: "Đã sao chép",
+        description: "Car ID đã được sao chép vào clipboard",
+      })
+    } catch (error) {
+      toast({
+        title: "Lỗi",
+        description: "Không thể sao chép Car ID",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Calculate the exact done date for a campaign
+  const calculateDoneDate = (publishedAt: string, duration: number): string => {
+    const startDate = new Date(publishedAt)
+    const durationMs = duration * 60 * 60 * 1000 // duration is in HOURS to ms
+    const doneDate = new Date(startDate.getTime() + durationMs)
+
+    return doneDate.toLocaleString("vi-VN", {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
   return (
-    <div className={`${isMobile ? 'flex-1 w-full' : 'w-60 lg:w-80'} min-w-0 border-r flex flex-col bg-white ${isMobile ? 'scroll-touch' : ''}`}>
+    <div className={`${isMobile ? 'flex-1 w-full min-h-0' : 'w-60 lg:w-80'} min-w-0 border-r flex flex-col bg-white ${isMobile ? 'overflow-hidden' : ''}`}>
       {/* Header */}
       <div className="p-4 border-b bg-gray-100">
         <div className="flex items-center justify-between mb-4">
@@ -162,7 +211,7 @@ export function LeadListSidebar({
         <div className="flex gap-2">
           <div className="flex-1">
             <SearchInput
-              placeholder="Tìm kiếm danh sách..."
+              placeholder="Tìm tên, SĐT, xe..."
               value={searchPhone}
               onChange={(e) => onSearchChange(e.target.value)}
               onKeyDown={(e) => {
@@ -225,15 +274,32 @@ export function LeadListSidebar({
         </div>
 
         {/* Active Filter Pills */}
-        {sourceFilter.length > 0 && (
+        {(appliedSearch || sourceFilter.length > 0) && (
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <button
-              onClick={() => onSourceFilterChange([])}
+              onClick={() => {
+                if (onClearSearch) onClearSearch()
+                onSourceFilterChange([])
+              }}
               className="flex items-center gap-1 text-xs text-red-600 hover:text-red-700 font-medium"
             >
               <X className="h-3 w-3" />
               Bỏ lọc tất cả
             </button>
+            {appliedSearch && (
+              <div
+                className="flex items-center gap-1 bg-white border border-gray-200 rounded-full px-2.5 py-1 text-xs"
+              >
+                <span className="text-gray-600">search:</span>
+                <span className="font-medium text-gray-900">{appliedSearch}</span>
+                <button
+                  onClick={onClearSearch}
+                  className="ml-0.5 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
             {sourceFilter.map((source) => {
               const displayName = source === "zalo" ? "Zalo" : source === "facebook" ? "Facebook" : source
               return (
@@ -334,6 +400,13 @@ export function LeadListSidebar({
                   >
                     <div className="flex items-center gap-2 mb-1">
                       <p className="font-medium text-gray-900 truncate">{lead.name}</p>
+                      {/* New reply indicator dot */}
+                      {hasNewReplies(lead.id, lead.total_decoy_messages) && (
+                        <span
+                          className="h-2 w-2 bg-red-500 rounded-full animate-pulse shrink-0"
+                          title="Có tin nhắn mới từ khách hàng"
+                        />
+                      )}
                       {lead.source && (
                         <Badge variant="outline" className="text-xs shrink-0">
                           {lead.source === "zalo" ? "Zalo" : lead.source === "facebook" ? "Facebook" : lead.source}
@@ -359,20 +432,37 @@ export function LeadListSidebar({
                         )}
                       </Button>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm text-gray-700 truncate">
-                        {formatCarInfo(lead)}
-                      </p>
-                      {lead.car_created_at && (
-                        <p className="text-xs text-gray-500 shrink-0">
-                          {new Date(lead.car_created_at).toLocaleString("vi-VN", {
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-gray-700 truncate">
+                          {formatCarInfo(lead)}
                         </p>
+                        {lead.car_created_at && (
+                          <p className="text-xs text-gray-500 shrink-0">
+                            {new Date(lead.car_created_at).toLocaleString("vi-VN", {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        )}
+                      </div>
+                      {/* Car ID Display */}
+                      {lead.car_id && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">
+                            {truncateCarId(lead.car_id)}
+                          </span>
+                          <button
+                            onClick={(e) => handleCopyCarId(e, lead.car_id!)}
+                            className="p-0.5 hover:bg-gray-200 rounded transition-colors"
+                            title="Sao chép Car ID"
+                          >
+                            <Copy className="h-3 w-3 text-gray-500 hover:text-gray-700" />
+                          </button>
+                        </div>
                       )}
                     </div>
                     {/* Price Display Row */}
@@ -393,6 +483,13 @@ export function LeadListSidebar({
                           )}
                         </>
                       )}
+                    </div>
+                    {/* Last Activity Time */}
+                    <div className={`flex items-center gap-1 mt-1 ${getActivityFreshnessClass(getActivityFreshness(lead.last_activity_at))}`}>
+                      <Activity className="h-3 w-3" />
+                      <span className="text-[10px]">
+                        {formatRelativeTime(lead.last_activity_at)}
+                      </span>
                     </div>
                     {/* Workflow Status Badge */}
                     {lead.latest_campaign && (
@@ -426,9 +523,14 @@ export function LeadListSidebar({
                                 />
                               </div>
                             </div>
-                            <span className="text-[9px] text-purple-600 font-medium whitespace-nowrap">
-                              {calculateRemainingTime(lead.latest_campaign.published_at, lead.latest_campaign.duration)}
-                            </span>
+                            <div className="flex flex-col items-end">
+                              <span className="text-[9px] text-purple-600 font-medium whitespace-nowrap">
+                                {calculateRemainingTime(lead.latest_campaign.published_at, lead.latest_campaign.duration)}
+                              </span>
+                              <span className="text-[9px] text-gray-500 whitespace-nowrap">
+                                {calculateDoneDate(lead.latest_campaign.published_at, lead.latest_campaign.duration)}
+                              </span>
+                            </div>
                           </>
                         )}
                       </div>

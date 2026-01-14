@@ -18,9 +18,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car, Images, MapPin, Send } from "lucide-react"
+import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car, Images, MapPin, Send, Activity, ArrowLeft } from "lucide-react"
 import { Lead } from "../types"
-import { formatCarInfo, formatPrice, formatDate } from "../utils"
+import { formatCarInfo, formatPrice, formatDate, formatRelativeTime, getActivityFreshness, getActivityFreshnessClass } from "../utils"
 import { WorkflowTrackerTab } from "../tabs/WorkflowTrackerTab"
 import { DecoyWebTab } from "../tabs/DecoyWebTab"
 import { RecentActivityTab } from "../tabs/RecentActivityTab"
@@ -28,6 +28,8 @@ import { DecoyHistoryTab } from "../tabs/DecoyHistoryTab"
 import { Workflow2Dialog } from "../dialogs/Workflow2Dialog"
 import { ImageGalleryModal } from "../dialogs/ImageGalleryModal"
 import { useToast } from "@/hooks/use-toast"
+import { useWorkflowInstances } from "@/hooks/use-leads"
+import { useDecoySignals } from "@/hooks/use-decoy-signals"
 
 interface LeadDetailPanelProps {
   selectedAccount: string | null
@@ -54,6 +56,8 @@ interface LeadDetailPanelProps {
   onQuickEdit: (lead: Lead, e: React.MouseEvent) => void
   onOpenInspection: () => void
 
+  onBackToList?: () => void
+
   // Workflow Tab Props
   workflow2Data: any
   workflow2Open: boolean
@@ -79,8 +83,8 @@ interface LeadDetailPanelProps {
   onOpenCreateThread: () => void
 
   // Workflow View State
-  activeWorkflowView: "purchase" | "seeding"
-  onWorkflowViewChange: (view: "purchase" | "seeding") => void
+  activeWorkflowView: string // Can be "purchase", "seeding", or workflow ID
+  onWorkflowViewChange: (view: string) => void
 
 
   // Dealer Bidding Props
@@ -93,6 +97,9 @@ interface LeadDetailPanelProps {
 
   // Decoy Web refresh
   decoyWebRefreshKey?: number
+
+  // Workflow activation callback
+  onWorkflowActivated?: () => void
 }
 
 export function LeadDetailPanel({
@@ -111,6 +118,7 @@ export function LeadDetailPanel({
   onCallBot,
   callingBot,
   onOpenInspection,
+  onBackToList,
   workflow2Data,
   workflow2Open,
   setWorkflow2Open,
@@ -138,7 +146,9 @@ export function LeadDetailPanel({
   // Notes editing
   onUpdateNotes,
   // Decoy Web refresh
-  decoyWebRefreshKey
+  decoyWebRefreshKey,
+  // Workflow activation callback
+  onWorkflowActivated
 }: LeadDetailPanelProps) {
   // Debug log to track refreshKey
   console.log("[LeadDetailPanel] decoyWebRefreshKey:", decoyWebRefreshKey, "activeDetailView:", activeDetailView)
@@ -149,6 +159,52 @@ export function LeadDetailPanel({
 
   // Toast notifications
   const { toast } = useToast()
+
+  // Fetch workflow instances for beta tracking
+  const { data: workflowInstancesData } = useWorkflowInstances(selectedLead?.car_id)
+
+  // Set default view: prioritize running workflow, then WF0, then WF1
+  useEffect(() => {
+    if (!workflowInstancesData?.allWorkflows || workflowInstancesData.allWorkflows.length === 0) {
+      return
+    }
+
+    // Check if current view is already valid
+    const isValidView = workflowInstancesData.allWorkflows.some(w => w.id === activeWorkflowView)
+    if (isValidView) {
+      return // Already viewing a valid workflow
+    }
+
+    // Priority 1: Find first running workflow
+    const runningWorkflow = workflowInstancesData.data?.find(i => i.instance.status === "running")
+    if (runningWorkflow) {
+      onWorkflowViewChange(runningWorkflow.instance.workflow_id)
+      return
+    }
+
+    // Priority 2: Find WF0
+    const wf0 = workflowInstancesData.allWorkflows.find(w => w.name === "WF0")
+    if (wf0) {
+      onWorkflowViewChange(wf0.id)
+      return
+    }
+
+    // Priority 3: Find WF1
+    const wf1 = workflowInstancesData.allWorkflows.find(w => w.name === "WF1")
+    if (wf1) {
+      onWorkflowViewChange(wf1.id)
+      return
+    }
+
+    // Fallback: First available workflow
+    if (workflowInstancesData.allWorkflows[0]) {
+      onWorkflowViewChange(workflowInstancesData.allWorkflows[0].id)
+    }
+  }, [workflowInstancesData, activeWorkflowView, onWorkflowViewChange])
+
+  // Decoy signals for new reply detection
+  const { hasNewReplies, markAsRead } = useDecoySignals()
+  const hasNewDecoyReplies = selectedLead ? hasNewReplies(selectedLead.id, selectedLead.total_decoy_messages) : false
 
   // ZNS notification state
   interface ZnsTemplate {
@@ -327,6 +383,19 @@ export function LeadDetailPanel({
   return (
     <div className={`flex-1 overflow-hidden flex flex-col ${isMobile ? 'h-full' : ''}`}>
       <div className={`flex-1 overflow-y-auto scroll-touch scrollbar-hide ${isMobile ? 'has-bottom-bar' : ''}`}>
+        {/* Back Button - Only visible on mobile */}
+        {isMobile && onBackToList && (
+          <div className="sticky top-0 z-20 bg-white border-b">
+            <button
+              onClick={onBackToList}
+              className="flex items-center gap-2 px-4 py-3 text-blue-600 hover:bg-gray-50 transition-colors w-full"
+            >
+              <ArrowLeft className="h-5 w-5" />
+              <span className="font-medium">Trở về danh sách</span>
+            </button>
+          </div>
+        )}
+
         {/* Header - Optimized for mobile: reduced padding, NOT sticky on mobile to allow scroll */}
         <div className={`px-2 sm:px-4 md:px-6 lg:px-8 pt-2 sm:pt-4 md:pt-6 pb-2 sm:pb-4 md:pb-6 border-b bg-gray-50  ${isMobile ? 'bg-white' : 'sticky top-0 z-10'}`}>
           {/* Mobile: Stacked layout, Desktop: Side by side */}
@@ -450,6 +519,13 @@ export function LeadDetailPanel({
                       <Clock className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
                       <span className="text-xs sm:text-sm">
                         {formatDate(selectedLead.created_at)}
+                      </span>
+                    </div>
+                    {/* Last Activity Time */}
+                    <div className={`flex items-center gap-1 ${getActivityFreshnessClass(getActivityFreshness(selectedLead.last_activity_at))}`}>
+                      <Activity className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
+                      <span className="text-xs sm:text-sm">
+                        {formatRelativeTime(selectedLead.last_activity_at)}
                       </span>
                     </div>
                   </div>
@@ -663,7 +739,13 @@ export function LeadDetailPanel({
               onClick={() => onActiveDetailViewChange("decoy-web")}
             >
               <div className="flex items-center gap-1.5 sm:gap-2">
-                <MessageSquare className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
+                {/* Icon with new reply indicator */}
+                <span className="relative">
+                  <MessageSquare className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
+                  {hasNewDecoyReplies && activeDetailView !== "decoy-web" && (
+                    <span className="absolute -top-0.5 -right-0.5 h-2 w-2 bg-red-500 rounded-full animate-pulse" />
+                  )}
+                </span>
                 <span className="hidden sm:inline">Decoy Web Chat</span>
                 <span className="sm:hidden">Decoy</span>
                 {(selectedLead.decoy_thread_count || 0) > 0 && (
@@ -707,7 +789,7 @@ export function LeadDetailPanel({
 
         {/* Tab Content */}
         {activeDetailView === "workflow" && (
-          <div className="p-6">
+          <div className="py-6">
             <WorkflowTrackerTab
               selectedLead={selectedLead}
               activeWorkflowView={activeWorkflowView}
@@ -734,6 +816,10 @@ export function LeadDetailPanel({
 
               // Notes editing
               onUpdateNotes={onUpdateNotes}
+
+              // Beta Tracking Props
+              workflowInstancesData={workflowInstancesData}
+              onWorkflowActivated={onWorkflowActivated}
             />
           </div>
         )}
@@ -757,7 +843,7 @@ export function LeadDetailPanel({
 
         {activeDetailView === "decoy-history" && (
           <div className="h-[calc(100vh-250px)] bg-gray-50/50 overflow-y-auto scrollbar-hide">
-            <DecoyHistoryTab phone={selectedLead?.phone || selectedLead?.additional_phone || null} />
+            <DecoyHistoryTab phone={selectedLead?.phone || selectedLead?.additional_phone || null} leadId={selectedLead?.id} />
           </div>
         )}
 

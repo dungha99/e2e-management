@@ -118,3 +118,42 @@ export function useDealerBiddings({ car_ids }: DealerBiddingsParams) {
     retry: false,
   })
 }
+
+// Hook for fetching workflow instances and their details (beta)
+export function useWorkflowInstances(carId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["workflow-instances", carId],
+    queryFn: async () => {
+      if (!carId) return null
+      const response = await fetch(`/api/e2e/workflow-instances?carId=${carId}`)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch workflow instances: ${response.status}`)
+      }
+      return response.json()
+    },
+    enabled: !!carId,
+  })
+}
+
+// Hook for fetching AI insights (mutation-like query)
+// This fetches AI recommendation based on completed workflow
+export async function fetchAiInsights(carId: string, sourceInstanceId: string, phoneNumber: string) {
+  const response = await fetch("/api/e2e/ai-insights", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ carId, sourceInstanceId, phoneNumber }),
+  })
+
+  const data = await response.json()
+
+  // Handle 202 "still processing" status
+  if (response.status === 202) {
+    throw new Error(data.message || "AI insights are still being processed")
+  }
+
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to fetch AI insights")
+  }
+
+  return data
+}

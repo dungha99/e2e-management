@@ -53,6 +53,7 @@ export interface Lead {
   first_message_sent?: boolean
   session_created?: boolean
   decoy_thread_count?: number
+  total_decoy_messages?: number  // Customer reply count for new reply detection
   notes?: string | null
   price_highest_bid?: number | null
   pic_name?: string | null
@@ -76,6 +77,7 @@ export interface Lead {
   intentionLead?: string | null
   negotiationAbility?: string | null
   latest_campaign?: LatestCampaignInfo | null
+  last_activity_at?: string | null  // ISO timestamp of most recent sale activity
 }
 
 export interface DecoyMessage {
@@ -99,6 +101,25 @@ export interface BiddingHistory {
   price: number
   created_at: string
   comment: string | null
+}
+
+export interface WinCaseHistory {
+  id: string
+  car_id: string
+  dealer_id: string | null
+  dealer_name: string
+  sold_date: string
+  price_sold: number | null
+  negotiation_ability: string | null
+  car_condition: string | null
+  phone: string | null
+  car_info: {
+    brand: string
+    model: string
+    variant: string | null
+    year: number | null
+    mileage?: number | null
+  }
 }
 
 export interface Dealer {
@@ -156,3 +177,122 @@ export const SEGMENT_TO_REASON_MAP: Record<string, string> = {
 }
 
 export const ITEMS_PER_PAGE = 10
+
+// E2E Workflow Tracking Types
+export type OutcomeType = "discount" | "original_price" | "lost"
+export type InstanceStatus = "running" | "completed" | "terminated"
+export type StepStatus = "pending" | "success" | "failed"
+
+export interface WorkflowStage {
+  id: string
+  name: string
+}
+
+export type CustomFieldType = "text" | "number" | "date" | "select" | "textarea"
+
+export interface CustomFieldDefinition {
+  name: string
+  label: string
+  type: CustomFieldType
+  required: boolean
+  placeholder?: string
+  options?: string[] // For select type
+  default_value?: any
+}
+
+export interface Workflow {
+  id: string
+  name: string
+  stage_id: string
+  sla_hours: number
+  is_active: boolean
+  description: string | null
+  tooltip: string | null
+  custom_fields_schema?: CustomFieldDefinition[]
+}
+
+export interface WorkflowStep {
+  id: string
+  workflow_id: string
+  step_name: string
+  step_order: number
+  is_automated: boolean
+  template: string | null
+}
+
+export interface WorkflowInstance {
+  id: string
+  car_id: string
+  workflow_id: string
+  parent_instance_id: string | null
+  current_step_id: string | null
+  status: InstanceStatus
+  final_outcome: OutcomeType | null
+  started_at: string
+  sla_deadline: string | null
+  completed_at: string | null
+  transition_properties?: {
+    insight: string
+    car_snapshot: {
+      display_name: string | null
+      intention: string | null
+      sales_stage: string | null
+      qualified_status: string | null
+      price_customer: number | null
+      price_highest_bid: number | null
+      gap_price: number | null
+    }
+    custom_fields: Record<string, any>
+  } | null
+  // Joined data
+  workflow_name?: string
+  workflow_description?: string
+  stage_name?: string
+}
+
+export interface StepExecution {
+  id: string
+  instance_id: string
+  step_id: string
+  status: StepStatus
+  error_message: string | null
+  executed_at: string
+  // Joined data
+  step_name?: string
+  step_order?: number
+  is_automated?: boolean
+}
+
+export interface WorkflowTransition {
+  id: string
+  from_workflow_id: string
+  to_workflow_id: string
+  condition_logic: any
+  priority: number
+  transition_sla_hours: number | null
+}
+
+export interface WorkflowInstanceWithDetails {
+  instance: WorkflowInstance
+  steps: (WorkflowStep & { execution?: StepExecution })[]
+  canActivateWF2: boolean
+  potentialNextWorkflows?: { id: string; name: string }[]
+}
+
+export interface AiInsightAnalysis {
+  current_intent_detected: string
+  price_gap_evaluation: string
+  fit_score: number
+}
+
+export interface AiInsight {
+  id: string
+  car_id: string
+  source_instance_id: string
+  ai_insight_summary: AiInsightAnalysis
+  selected_transition_id: string
+  target_workflow_id: string
+  created_at: string
+  // Joined data
+  target_workflow_name?: string
+}

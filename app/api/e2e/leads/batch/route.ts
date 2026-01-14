@@ -55,9 +55,14 @@ async function fetchBatchData(
     ? "AND ss.is_hot_lead = true"
     : "AND (ss.is_hot_lead IS NULL OR ss.is_hot_lead = false)"
 
-  // Build search condition for phone
+  // Build search condition for phone, lead name, and car display name (brand + model)
   const searchCondition = search
-    ? `AND (l.phone LIKE '%${search}%' OR l.additional_phone LIKE '%${search}%')`
+    ? `AND (
+        l.phone LIKE '%${search}%' 
+        OR l.additional_phone LIKE '%${search}%'
+        OR l.name ILIKE '%${search}%'
+        OR CONCAT(c.brand, ' ', c.model) ILIKE '%${search}%'
+      )`
     : ""
 
   // Build source filter condition
@@ -150,18 +155,29 @@ async function fetchBatchData(
 
   // Run CRM enrichment queries in parallel (fast queries only)
   // Dealer biddings moved to separate endpoint for progressive loading
-  const [decoyThreadsResult, sessionsResult, latestCampaignsResult] = await Promise.all([
-    // Query 1: Decoy thread counts (CRM - fast)
+  const [decoyThreadsResult, sessionsResult, latestCampaignsResult, lastActivityResult] = await Promise.all([
+    // Query 1: Decoy thread counts + total user messages (CRM - fast)
+    // Also count messages where sender='user' to detect new customer replies
     leadIds.length > 0 && phones.length > 0
       ? vucarV2Query(
         `SELECT
             l.id as lead_id,
-            COUNT(DISTINCT ct.id) as thread_count
+            COUNT(DISTINCT ct.id) as thread_count,
+            COALESCE(
+              (SELECT COUNT(*) 
+               FROM chat_messages cm 
+               WHERE cm.sender = 'user' 
+                 AND cm.thread_id IN (
+                   SELECT ct2.id FROM chat_threads ct2 
+                   WHERE ct2.user_id = au.id
+                 )
+              ), 0
+            ) as total_user_messages
           FROM leads l
           LEFT JOIN auth_user au ON au.name = l.phone
           LEFT JOIN chat_threads ct ON ct.user_id = au.id
           WHERE l.id = ANY($1::uuid[])
-          GROUP BY l.id`,
+          GROUP BY l.id, au.id`,
         [leadIds]
       )
       : Promise.resolve({ rows: [] }),
@@ -212,12 +228,34 @@ async function fetchBatchData(
         [carIds]
       )
       : Promise.resolve({ rows: [] }),
+
+    // Query 4: Last activity time per lead from sale_activities
+    leadIds.length > 0
+      ? vucarV2Query(
+        `SELECT
+            lead_id,
+            MAX(created_at) as last_activity_at
+          FROM sale_activities
+          WHERE lead_id = ANY($1::uuid[])
+          GROUP BY lead_id`,
+        [leadIds]
+      ).catch((err) => {
+        // sale_activities table may not exist, gracefully handle
+        console.warn('[E2E Batch API] Could not query sale_activities:', err.message)
+        return { rows: [] }
+      })
+      : Promise.resolve({ rows: [] }),
   ])
 
   // Process results into lookup maps
 
   const decoyThreadCounts = Object.fromEntries(
     decoyThreadsResult.rows.map((row) => [row.lead_id, parseInt(row.thread_count) || 0])
+  )
+
+  // Map total user messages count (for new reply detection)
+  const totalUserMessages = Object.fromEntries(
+    decoyThreadsResult.rows.map((row) => [row.lead_id, parseInt(row.total_user_messages) || 0])
   )
 
   const biddingSessionCounts = Object.fromEntries(
@@ -238,6 +276,11 @@ async function fetchBatchData(
       workflow_order: parseInt(row.workflow_order) || 1,
       created_by: row.created_by || null,
     }])
+  )
+
+  // Map last activity time by lead_id
+  const lastActivityTimes = Object.fromEntries(
+    lastActivityResult.rows.map((row) => [row.lead_id, row.last_activity_at])
   )
 
   // Transform and enrich leads data
@@ -317,6 +360,8 @@ async function fetchBatchData(
         }
         : null,
       decoy_thread_count: decoyThreadCounts[lead.lead_id] || 0,
+      // Total user messages for new reply detection (comparing with stored count)
+      total_decoy_messages: totalUserMessages[lead.lead_id] || 0,
       bidding_session_count: lead.car_id ? biddingSessionCounts[lead.car_id] || 0 : 0,
       // Add dealer_bidding default - will be enriched by frontend
       dealer_bidding: lead.price_highest_bid
@@ -324,6 +369,8 @@ async function fetchBatchData(
         : { status: "not_sent" as const },
       // Latest campaign info for workflow status display
       latest_campaign: lead.car_id ? (latestCampaigns[lead.car_id] || null) : null,
+      // Last activity time from sale_activities
+      last_activity_at: lastActivityTimes[lead.lead_id] || null,
     }
   })
 

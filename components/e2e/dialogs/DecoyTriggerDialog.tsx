@@ -67,6 +67,7 @@ export function DecoyTriggerDialog({
           account: selectedAccount.account,
           segment: decoySegment,
           is_sent: false,
+          leadId: selectedLead.id, // Include leadId for sale_activities logging
         }),
       })
 

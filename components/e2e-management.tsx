@@ -28,6 +28,7 @@ import {
   useDealerBiddings,
   useLeadSources
 } from "@/hooks/use-leads"
+import { useQueryClient } from "@tanstack/react-query"
 
 // Dialog components
 import { SendToDealerGroupsDialog } from "./e2e/dialogs/SendToDealerGroupsDialog"
@@ -47,7 +48,8 @@ import { SaleActivitiesPanel } from "./e2e/layout/SaleActivitiesPanel"
 // Layout components
 import { AccountSelector } from "./e2e/layout/AccountSelector"
 import { LeadListSidebar } from "./e2e/layout/LeadListSidebar"
-import { CampaignKanbanView } from "./e2e/kanban"
+import { ViewModeToggle } from "./e2e/layout/ViewModeToggle"
+import { CampaignKanbanView } from "./e2e/kanban/CampaignKanbanView"
 
 // Local interfaces for component-specific types not in shared types
 interface DealerGroup {
@@ -94,11 +96,18 @@ interface E2EManagementProps {
   initialPage?: number
   initialSearch?: string
   initialSources?: string[]
+  initialViewMode?: "list" | "kanban"
+  onViewModeChange?: (mode: "list" | "kanban") => void
 }
 
-export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
+export function E2EManagement({
+  userId: propUserId,
+  initialViewMode,
+  onViewModeChange
+}: E2EManagementProps = {}) {
   const { toast } = useToast()
   const { accounts: ACCOUNTS } = useAccounts()
+  const queryClient = useQueryClient()
 
   // Phase 1: URL sync layer (non-breaking)
   const searchParams = useSearchParams()
@@ -278,8 +287,10 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
   const isMobile = useIsMobile()
   const [mobileView, setMobileView] = useState<"list" | "detail">("list")
 
-  // View mode state (list vs kanban)
-  const [viewMode, setViewMode] = useState<"list" | "kanban">("list")
+  // View mode state (list vs kanban) - can be controlled externally
+  const [internalViewMode, setInternalViewMode] = useState<"list" | "kanban">(initialViewMode || "list")
+  const viewMode = initialViewMode !== undefined ? initialViewMode : internalViewMode
+  const setViewMode = onViewModeChange || setInternalViewMode
 
   // Detail view tab state
   const [activeDetailView, setActiveDetailView] = useState<"workflow" | "decoy-web" | "recent-activity" | "decoy-history">("workflow")
@@ -296,7 +307,7 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
   })
 
   const [workflow2Activated, setWorkflow2Activated] = useState(false)
-  const [activeWorkflowView, setActiveWorkflowView] = useState<"purchase" | "seeding">("purchase")
+  const [activeWorkflowView, setActiveWorkflowView] = useState<string>("WF1")
 
   // Decoy trigger state
   const [decoyDialogOpen, setDecoyDialogOpen] = useState(false)
@@ -1187,6 +1198,11 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
       // Refetch leads to get updated data from server
       refetchLeads()
 
+      // Invalidate workflow instances query to refetch E2E database data
+      if (updatedLead.car_id) {
+        queryClient.invalidateQueries({ queryKey: ["workflow-instances", updatedLead.car_id] })
+      }
+
       toast({
         title: "Đã đồng bộ",
         description: "Dữ liệu đã được cập nhật",
@@ -1203,7 +1219,17 @@ export function E2EManagement({ userId: propUserId }: E2EManagementProps = {}) {
     }
   }
 
+  async function handleWorkflowActivated() {
+    // Invalidate workflow instances query to refetch E2E database data
+    if (selectedLead?.car_id) {
+      queryClient.invalidateQueries({ queryKey: ["workflow-instances", selectedLead.car_id] })
+    }
 
+    toast({
+      title: "Thành công",
+      description: "Workflow đã được kích hoạt thành công",
+    })
+  }
 
   async function handleRenameLead() {
     if (!selectedLead) return
@@ -1842,6 +1868,14 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     router.push(buildUrl(params), { scroll: false })
   }
 
+  const handleClearSearch = () => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete("search")
+    params.set("page", "1") // Reset to first page when clearing search
+    setSearchPhone("") // Clear the search input as well
+    router.push(buildUrl(params), { scroll: false })
+  }
+
   const handlePreviousPage = () => {
     if (currentPage > 1) {
       handlePageChange(currentPage - 1)
@@ -2227,13 +2261,13 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
 
   return (
     <div className={`w-full ${isMobile ? 'h-dvh overflow-hidden' : ''}`}>
-      {/* Account Selector */}
+      {/* Account Selector - Mobile rendering disabled since MobileNavigationHeader handles it */}
       <AccountSelector
         selectedAccount={selectedAccount}
         onAccountChange={handleAccountChange}
         loading={loading}
         loadingCarIds={loadingCarIds}
-        isMobile={isMobile}
+        isMobile={false}
         mobileView={mobileView}
         onBackToList={() => {
           setMobileView('list')
@@ -2241,30 +2275,12 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         }}
       />
 
-      {/* View Mode Toggle - Hidden on mobile for cleaner app-like experience */}
-      {!isMobile && (
-        <div className="flex items-center justify-between px-4 py-2 bg-white border-b">
-          <div className="text-sm font-medium text-gray-700">Chế độ xem</div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant={viewMode === "list" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setViewMode("list")}
-              className="text-xs"
-            >
-              📋 Danh sách
-            </Button>
-            <Button
-              variant={viewMode === "kanban" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setViewMode("kanban")}
-              className="text-xs"
-            >
-              📊 Kanban
-            </Button>
-          </div>
-        </div>
-      )}
+      {/* View Mode Toggle - Uses portal to render in header beside AccountSelector */}
+      <ViewModeToggle
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        isMobile={isMobile}
+      />
 
       {/* Main Content - Conditional based on view mode */}
       {viewMode === "kanban" ? (
@@ -2283,8 +2299,10 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
               loading={loading}
               loadingCarIds={loadingCarIds}
               searchPhone={searchPhone}
+              appliedSearch={search}
               onSearchChange={setSearchPhone}
               onSearch={searchLeadByPhone}
+              onClearSearch={handleClearSearch}
               activeTab={activeTab}
               onTabChange={handleTabChange}
               priorityCount={priorityCount}
@@ -2335,6 +2353,11 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
 
             onOpenInspection={() => setInspectionSystemOpen(true)}
 
+            onBackToList={() => {
+              setMobileView('list')
+              setSelectedLead(null)
+            }}
+
             workflow2Data={workflow2Data}
             workflow2Open={workflow2Open}
             setWorkflow2Open={setWorkflow2Open}
@@ -2371,6 +2394,9 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
 
             // Decoy Web refresh
             decoyWebRefreshKey={decoyWebRefreshKey}
+
+            // Workflow activation
+            onWorkflowActivated={handleWorkflowActivated}
           />
 
           {/* Sale Activities Panel - Right Side */}

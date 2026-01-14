@@ -326,6 +326,7 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
                     first_message: accountConfig.default_message,
                     account: accountConfig.account,
                     is_sent: false,
+                    leadId: leadId, // Include leadId for sale_activities logging
                 }),
             })
 

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Loader2, MessageCircle, RefreshCw } from "lucide-react"
 import { Lead, DecoyThread } from "../types"
+import { useDecoySignals } from "@/hooks/use-decoy-signals"
 
 interface DecoyWebTabProps {
   selectedLead: Lead | null
@@ -19,6 +20,17 @@ export function DecoyWebTab({
   const [decoyWebThreads, setDecoyWebThreads] = useState<DecoyThread[]>([])
   const [selectedDecoyWebThreadId, setSelectedDecoyWebThreadId] = useState<string | null>(null)
   const [loadingDecoyWeb, setLoadingDecoyWeb] = useState(false)
+
+  // Get markAsRead function from decoy signals hook
+  const { markAsRead } = useDecoySignals()
+
+  // Mark as read when tab is viewed (component mounts with a lead)
+  useEffect(() => {
+    if (selectedLead?.id && selectedLead.total_decoy_messages !== undefined) {
+      // Mark messages as read when viewing this tab
+      markAsRead(selectedLead.id, selectedLead.total_decoy_messages)
+    }
+  }, [selectedLead?.id, selectedLead?.total_decoy_messages, markAsRead])
 
   // Fetch decoy web threads when lead changes or refreshKey changes
   useEffect(() => {

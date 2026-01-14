@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Loader2, Activity, ChevronLeft, ChevronRight, CheckCircle2, Zap, User, Clock, FileEdit, ArrowRight, Sparkles } from "lucide-react"
+import { Loader2, Activity, ChevronLeft, ChevronRight, CheckCircle2, Zap, User, Clock, FileEdit, ArrowRight, Sparkles, TrendingDown, TrendingUp, AlertTriangle } from "lucide-react"
 
 interface SaleActivity {
     id: string
@@ -99,31 +99,260 @@ interface ActivityMetrics {
     label: string
 }
 
+// Price metrics interface
+interface PriceMetrics {
+    customer: {
+        decreaseCount: number
+        totalDecrease: number
+        timeline: number[]
+        current: number | null
+    }
+    dealer: {
+        increaseCount: number
+        totalIncrease: number
+        timeline: number[]
+        current: number | null
+    }
+    gap: number | null
+    lastUpdate: string | null
+}
+
+const ITEMS_PER_PAGE = 10
+
+// Price section components helpers
+interface PriceSectionProps {
+    priceMetrics: PriceMetrics
+    formatPrice: (price: number) => string
+}
+
+// Customer Price Section with expandable history
+function CustomerPriceSection({ priceMetrics, formatPrice }: PriceSectionProps) {
+    const [showHistory, setShowHistory] = useState(false)
+    const latestPrice = priceMetrics.customer.current
+
+    return (
+        <div>
+            <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-700">KH (Customer)</span>
+                <div className="flex items-center gap-2">
+                    {priceMetrics.customer.decreaseCount > 0 && (
+                        <span className="text-xs font-bold text-red-600 flex items-center gap-1">
+                            <TrendingDown className="h-3 w-3" />
+                            Giảm {formatPrice(priceMetrics.customer.totalDecrease)} ({priceMetrics.customer.decreaseCount} lần)
+                        </span>
+                    )}
+                    <span className="text-sm font-bold text-red-600">{latestPrice ? formatPrice(latestPrice) : '—'}</span>
+                    {priceMetrics.customer.timeline.length > 1 && (
+                        <button
+                            onClick={() => setShowHistory(!showHistory)}
+                            className="ml-1 text-gray-400 hover:text-gray-600 transition-colors"
+                            title="Xem lịch sử giá"
+                        >
+                            <Clock className="h-4 w-4" />
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* Expandable History */}
+            {showHistory && priceMetrics.customer.timeline.length > 1 && (
+                <div className="mt-2 pl-2 border-l-2 border-red-200">
+                    <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                        {priceMetrics.customer.timeline.map((price, idx) => (
+                            <span key={idx} className="flex items-center gap-1">
+                                <span className={`font-medium ${idx === priceMetrics.customer.timeline.length - 1 ? 'text-red-600 font-bold' : 'text-gray-500'}`}>
+                                    {formatPrice(price)}
+                                </span>
+                                {idx < priceMetrics.customer.timeline.length - 1 && (
+                                    <span className="text-gray-400">→</span>
+                                )}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+// Dealer Price Section with expandable history
+function DealerPriceSection({ priceMetrics, formatPrice }: PriceSectionProps) {
+    const [showHistory, setShowHistory] = useState(false)
+    const latestPrice = priceMetrics.dealer.current
+
+    return (
+        <div>
+            <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-700">Dealer</span>
+                <div className="flex items-center gap-2">
+                    {priceMetrics.dealer.increaseCount > 0 && (
+                        <span className="text-xs font-bold text-green-600 flex items-center gap-1">
+                            <TrendingUp className="h-3 w-3" />
+                            Tăng {formatPrice(priceMetrics.dealer.totalIncrease)} ({priceMetrics.dealer.increaseCount} lần)
+                        </span>
+                    )}
+                    <span className="text-sm font-bold text-green-600">{latestPrice ? formatPrice(latestPrice) : '—'}</span>
+                    {priceMetrics.dealer.timeline.length > 1 && (
+                        <button
+                            onClick={() => setShowHistory(!showHistory)}
+                            className="ml-1 text-gray-400 hover:text-gray-600 transition-colors"
+                            title="Xem lịch sử giá"
+                        >
+                            <Clock className="h-4 w-4" />
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* Expandable History */}
+            {showHistory && priceMetrics.dealer.timeline.length > 1 && (
+                <div className="mt-2 pl-2 border-l-2 border-green-200">
+                    <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                        {priceMetrics.dealer.timeline.map((price, idx) => (
+                            <span key={idx} className="flex items-center gap-1">
+                                <span className={`font-medium ${idx === priceMetrics.dealer.timeline.length - 1 ? 'text-green-600 font-bold' : 'text-gray-500'}`}>
+                                    {formatPrice(price)}
+                                </span>
+                                {idx < priceMetrics.dealer.timeline.length - 1 && (
+                                    <span className="text-gray-400">→</span>
+                                )}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+// E2E Workflow Tracking Types
+export type OutcomeType = "discount" | "original_price" | "lost"
+export type InstanceStatus = "running" | "completed" | "terminated"
+export type StepStatus = "pending" | "success" | "failed"
+
 export function SaleActivitiesTab({ phone, refreshKey }: SaleActivitiesTabProps) {
     const [activities, setActivities] = useState<SaleActivity[]>([])
     const [loading, setLoading] = useState(false)
     const [page, setPage] = useState(1)
     const perPage = 8
 
-    // Compute aggregate metrics by activity type
-    const computeMetrics = (activities: SaleActivity[]): ActivityMetrics[] => {
-        const counts: Record<string, number> = {}
-        activities.forEach(a => {
-            const type = a.activityType
-            counts[type] = (counts[type] || 0) + 1
-        })
+    // Filter state: track which activity types are selected
+    type FilterType = 'status' | 'price' | 'decoy' | 'zns'
+    const [activeFilters, setActiveFilters] = useState<FilterType[]>([])
 
-        // Sort by count descending
-        return Object.entries(counts)
-            .map(([type, count]) => ({
-                type,
-                count,
-                label: ACTIVITY_LABELS[type] || type.replace(/_/g, ' ')
-            }))
-            .sort((a, b) => b.count - a.count)
+
+    // Compute simplified overview metrics for "Tổng quan"
+    const computeOverviewMetrics = (activities: SaleActivity[]) => {
+        const statusCount = activities.filter(a =>
+            a.activityType.includes('STATUS') || a.activityType.includes('STAGE')
+        ).length
+        const priceCount = activities.filter(a => {
+            if (a.activityType !== 'STATUS_UPDATED') return false
+            const meta = a.metadata || {}
+            const fieldName = meta.field_name || meta.fieldName
+            return fieldName === 'priceCustomer' || fieldName === 'priceHighestBid'
+        }).length
+        const decoyCount = activities.filter(a =>
+            a.activityType.includes('DECOY')
+        ).length
+        const znsCount = activities.filter(a =>
+            a.activityType.includes('ZNS')
+        ).length
+
+        return { statusCount, priceCount, decoyCount, znsCount }
     }
 
-    const metrics = computeMetrics(activities)
+    // Compute price metrics for "Phân tích giá"
+    const computePriceMetrics = (activities: SaleActivity[]): PriceMetrics | null => {
+        // Filter for STATUS_UPDATED activities that have price field changes
+        const priceUpdates = activities.filter(a => {
+            if (a.activityType !== 'STATUS_UPDATED') return false
+            const meta = a.metadata || {}
+            const fieldName = meta.field_name || meta.fieldName
+            return fieldName === 'priceCustomer' || fieldName === 'priceHighestBid'
+        })
+
+        if (priceUpdates.length === 0) return null
+
+        // Sort by created date (oldest first) for timeline
+        const sortedUpdates = [...priceUpdates].sort((a, b) =>
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        )
+
+        // Initialize metrics
+        const metrics: PriceMetrics = {
+            customer: { decreaseCount: 0, totalDecrease: 0, timeline: [], current: null },
+            dealer: { increaseCount: 0, totalIncrease: 0, timeline: [], current: null },
+            gap: null,
+            lastUpdate: null
+        }
+
+        // Track price evolution
+        let lastCustomerPrice: number | null = null
+        let lastDealerPrice: number | null = null
+
+        sortedUpdates.forEach(activity => {
+            const meta = activity.metadata || {}
+            const fieldName = meta.field_name || meta.fieldName
+            const prevValue = meta.previous_value ?? meta.previousValue ?? meta.old
+            const newValue = meta.new_value ?? meta.newValue ?? meta.new
+
+            // Customer price updates
+            if (fieldName === 'priceCustomer' && newValue !== null && newValue !== undefined) {
+                const newPrice = Number(newValue)
+                if (!isNaN(newPrice) && newPrice > 0) {
+                    metrics.customer.timeline.push(newPrice)
+                    metrics.customer.current = newPrice
+
+                    // Check for decrease
+                    if (lastCustomerPrice !== null && newPrice < lastCustomerPrice) {
+                        metrics.customer.decreaseCount++
+                        metrics.customer.totalDecrease += (lastCustomerPrice - newPrice)
+                    }
+                    lastCustomerPrice = newPrice
+                }
+            }
+
+            // Dealer price updates
+            if (fieldName === 'priceHighestBid' && newValue !== null && newValue !== undefined) {
+                const newPrice = Number(newValue)
+                if (!isNaN(newPrice) && newPrice > 0) {
+                    metrics.dealer.timeline.push(newPrice)
+                    metrics.dealer.current = newPrice
+
+                    // Check for increase
+                    if (lastDealerPrice !== null && newPrice > lastDealerPrice) {
+                        metrics.dealer.increaseCount++
+                        metrics.dealer.totalIncrease += (newPrice - lastDealerPrice)
+                    }
+                    lastDealerPrice = newPrice
+                }
+            }
+        })
+
+        // Calculate gap
+        if (metrics.customer.current !== null && metrics.dealer.current !== null) {
+            metrics.gap = metrics.customer.current - metrics.dealer.current
+        }
+
+        // Get last update time
+        if (sortedUpdates.length > 0) {
+            metrics.lastUpdate = sortedUpdates[sortedUpdates.length - 1].createdAt
+        }
+
+        return metrics
+    }
+
+    // Format price in millions (e.g., 300000000 => "300M")
+    const formatPrice = (price: number): string => {
+        if (price >= 1000000) {
+            return `${Math.round(price / 1000000)}M`
+        }
+        return price.toLocaleString('vi-VN')
+    }
+
+    const overviewMetrics = computeOverviewMetrics(activities)
+    const priceMetrics = computePriceMetrics(activities)
 
     useEffect(() => {
         if (phone) {
@@ -156,8 +385,46 @@ export function SaleActivitiesTab({ phone, refreshKey }: SaleActivitiesTabProps)
         }
     }
 
-    const totalPages = Math.ceil(activities.length / perPage)
-    const paginated = activities.slice((page - 1) * perPage, page * perPage)
+    // Filter toggle handler
+    const toggleFilter = (filterType: FilterType) => {
+        setActiveFilters(prev =>
+            prev.includes(filterType)
+                ? prev.filter(f => f !== filterType)
+                : [...prev, filterType]
+        )
+        setPage(1) // Reset to first page when filter changes
+    }
+
+    // Filter activities based on active filters
+    const getFilteredActivities = () => {
+        if (activeFilters.length === 0) return activities // No filters = show all
+
+        return activities.filter(activity => {
+            // Check if activity matches any of the active filters
+            return activeFilters.some(filterType => {
+                switch (filterType) {
+                    case 'status':
+                        return activity.activityType.includes('STATUS') || activity.activityType.includes('STAGE')
+                    case 'price': {
+                        if (activity.activityType !== 'STATUS_UPDATED') return false
+                        const meta = activity.metadata || {}
+                        const fieldName = meta.field_name || meta.fieldName
+                        return fieldName === 'priceCustomer' || fieldName === 'priceHighestBid'
+                    }
+                    case 'decoy':
+                        return activity.activityType.includes('DECOY')
+                    case 'zns':
+                        return activity.activityType.includes('ZNS')
+                    default:
+                        return false
+                }
+            })
+        })
+    }
+
+    const filteredActivities = getFilteredActivities()
+    const totalPages = Math.ceil(filteredActivities.length / perPage)
+    const paginated = filteredActivities.slice((page - 1) * perPage, page * perPage)
 
     // Relative time in Vietnamese
     const relativeTime = (date: string) => {
@@ -273,34 +540,120 @@ export function SaleActivitiesTab({ phone, refreshKey }: SaleActivitiesTabProps)
 
     return (
         <div className="relative">
-            {/* Aggregate Metrics by Activity Type */}
-            {metrics.length > 0 && (
-                <div className="mb-4 p-3 bg-gradient-to-br from-gray-50 to-white rounded-lg border border-gray-100">
-                    <h4 className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
-                        <Activity className="h-3 w-3" />
-                        Thống kê hoạt động
-                    </h4>
-                    <div className="flex flex-wrap gap-2">
-                        {metrics.map(m => {
-                            const style = getActivityStyle(m.type)
-                            return (
-                                <div
-                                    key={m.type}
-                                    className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${style.bgColor} border border-gray-100`}
-                                >
-                                    <div className={`w-2 h-2 rounded-full ${style.dotColor}`} />
-                                    <span className={`text-xs font-medium ${style.iconColor}`}>
-                                        {m.label}
-                                    </span>
-                                    <span className="text-xs font-bold text-gray-700 bg-white px-1.5 py-0.5 rounded">
-                                        {m.count}
-                                    </span>
+            {/* Compact Overview Pills - "Tổng quan" */}
+            <div className="mb-3 p-3 bg-gradient-to-br from-gray-50 to-white rounded-lg border border-gray-100">
+                <h4 className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
+                    <Activity className="h-3 w-3" />
+                    Tổng quan
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                    {/* Status Filter */}
+                    <button
+                        onClick={() => toggleFilter('status')}
+                        className={`px-2.5 py-1.5 rounded-md flex items-center gap-2 transition-all cursor-pointer hover:shadow-sm ${activeFilters.includes('status')
+                                ? 'bg-emerald-500 border-2 border-emerald-600'
+                                : 'bg-emerald-50 border border-emerald-100 hover:bg-emerald-100'
+                            }`}
+                    >
+                        <span className={`text-xs font-medium ${activeFilters.includes('status') ? 'text-white' : 'text-gray-700'}`}>
+                            Trạng thái
+                        </span>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded min-w-[24px] text-center ${activeFilters.includes('status') ? 'bg-emerald-600 text-white' : 'text-gray-900 bg-white'
+                            }`}>
+                            {overviewMetrics.statusCount}
+                        </span>
+                    </button>
+
+                    {/* Price Filter */}
+                    <button
+                        onClick={() => toggleFilter('price')}
+                        className={`px-2.5 py-1.5 rounded-md flex items-center gap-2 transition-all cursor-pointer hover:shadow-sm ${activeFilters.includes('price')
+                                ? 'bg-blue-500 border-2 border-blue-600'
+                                : 'bg-blue-50 border border-blue-100 hover:bg-blue-100'
+                            }`}
+                    >
+                        <span className={`text-xs font-medium ${activeFilters.includes('price') ? 'text-white' : 'text-gray-700'}`}>
+                            Giá
+                        </span>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded min-w-[24px] text-center ${activeFilters.includes('price') ? 'bg-blue-600 text-white' : 'text-gray-900 bg-white'
+                            }`}>
+                            {overviewMetrics.priceCount}
+                        </span>
+                    </button>
+
+                    {/* Decoy Filter */}
+                    <button
+                        onClick={() => toggleFilter('decoy')}
+                        className={`px-2.5 py-1.5 rounded-md flex items-center gap-2 transition-all cursor-pointer hover:shadow-sm ${activeFilters.includes('decoy')
+                                ? 'bg-violet-500 border-2 border-violet-600'
+                                : 'bg-violet-50 border border-violet-100 hover:bg-violet-100'
+                            }`}
+                    >
+                        <span className={`text-xs font-medium ${activeFilters.includes('decoy') ? 'text-white' : 'text-gray-700'}`}>
+                            Decoy
+                        </span>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded min-w-[24px] text-center ${activeFilters.includes('decoy') ? 'bg-violet-600 text-white' : 'text-gray-900 bg-white'
+                            }`}>
+                            {overviewMetrics.decoyCount}
+                        </span>
+                    </button>
+
+                    {/* ZNS Filter */}
+                    <button
+                        onClick={() => toggleFilter('zns')}
+                        className={`px-2.5 py-1.5 rounded-md flex items-center gap-2 transition-all cursor-pointer hover:shadow-sm ${activeFilters.includes('zns')
+                                ? 'bg-orange-500 border-2 border-orange-600'
+                                : 'bg-orange-50 border border-orange-100 hover:bg-orange-100'
+                            }`}
+                    >
+                        <span className={`text-xs font-medium ${activeFilters.includes('zns') ? 'text-white' : 'text-gray-700'}`}>
+                            ZNS
+                        </span>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded min-w-[24px] text-center ${activeFilters.includes('zns') ? 'bg-orange-600 text-white' : 'text-gray-900 bg-white'
+                            }`}>
+                            {overviewMetrics.znsCount}
+                        </span>
+                    </button>
+                </div>
+            </div>
+
+            {/* Price Analysis Section */}
+            {priceMetrics && (priceMetrics.customer.timeline.length > 0 || priceMetrics.dealer.timeline.length > 0) && (
+                <div className="mb-4 rounded-lg border border-gray-200 overflow-hidden">
+                    {/* Content */}
+                    <div className="bg-white p-3 space-y-2.5">
+                        {priceMetrics.lastUpdate && (
+                            <div className="text-xs text-gray-500 mb-2">
+                                Cập nhật: {relativeTime(priceMetrics.lastUpdate)}
+                            </div>
+                        )}
+                        {/* Customer Price - Compact with expand toggle */}
+                        {priceMetrics.customer.timeline.length > 0 && (
+                            <CustomerPriceSection priceMetrics={priceMetrics} formatPrice={formatPrice} />
+                        )}
+
+                        {/* Dealer Price - Compact with expand toggle */}
+                        {priceMetrics.dealer.timeline.length > 0 && (
+                            <DealerPriceSection priceMetrics={priceMetrics} formatPrice={formatPrice} />
+                        )}
+
+                        {/* Gap Warning */}
+                        {priceMetrics.gap !== null && priceMetrics.gap < 0 && (
+                            <div className="bg-amber-50 border border-amber-200 rounded-md p-2 flex items-center gap-2">
+                                <AlertTriangle className="h-5 w-5 text-amber-600" />
+                                <div className="flex-1">
+                                    <p className="text-xs font-semibold text-amber-800">CHÊNH LỆCH (GAP)</p>
+                                    <p className="text-xs text-amber-700 mt-0.5">
+                                        KH thấp hơn Dealer
+                                    </p>
                                 </div>
-                            )
-                        })}
+                                <span className="text-lg font-bold text-amber-600">-{formatPrice(Math.abs(priceMetrics.gap))}</span>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
+
 
             {sortedDateKeys.map((dateKey) => (
                 <div key={dateKey} className="mb-4">

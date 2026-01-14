@@ -224,12 +224,30 @@ function WorkflowManagementContent() {
         } finally { setSaving(false) }
     }
 
+    // Helper to safely parse JSON string or return original value
+    function parseJsonField(value: any): any {
+        if (typeof value === 'string' && value.trim()) {
+            try {
+                return JSON.parse(value)
+            } catch {
+                return value // Return as-is if not valid JSON
+            }
+        }
+        return value || null
+    }
+
     async function handleCreateApiConnector() {
         setSaving(true)
         try {
+            const payload = {
+                ...apiConnectorForm,
+                auth_config: parseJsonField(apiConnectorForm.auth_config),
+                input_schema: parseJsonField(apiConnectorForm.input_schema),
+                output_schema: parseJsonField(apiConnectorForm.output_schema)
+            }
             const res = await fetch("/api/e2e/tables/api_connectors", {
                 method: "POST",
-                body: JSON.stringify(apiConnectorForm),
+                body: JSON.stringify(payload),
                 headers: { "Content-Type": "application/json" }
             })
             if ((await res.json()).success) {
@@ -245,9 +263,16 @@ function WorkflowManagementContent() {
         if (!editingApiConnector || !selectedApiConnector) return
         setSaving(true)
         try {
+            const payload = {
+                ...editingApiConnector,
+                id: selectedApiConnector.id,
+                auth_config: parseJsonField(editingApiConnector.auth_config),
+                input_schema: parseJsonField(editingApiConnector.input_schema),
+                output_schema: parseJsonField(editingApiConnector.output_schema)
+            }
             const res = await fetch("/api/e2e/tables/api_connectors", {
                 method: "PUT",
-                body: JSON.stringify({ ...editingApiConnector, id: selectedApiConnector.id }),
+                body: JSON.stringify(payload),
                 headers: { "Content-Type": "application/json" }
             })
             if ((await res.json()).success) {
@@ -880,43 +905,28 @@ function WorkflowManagementContent() {
                                                         </div>
                                                         <div>
                                                             <Label className="text-xs text-gray-500">Auth Config (JSON)</Label>
-                                                            <textarea
-                                                                value={editingApiConnector.auth_config ? JSON.stringify(editingApiConnector.auth_config, null, 2) : ""}
-                                                                onChange={e => {
-                                                                    try {
-                                                                        const parsed = e.target.value ? JSON.parse(e.target.value) : null
-                                                                        setEditingApiConnector({ ...editingApiConnector, auth_config: parsed })
-                                                                    } catch { }
-                                                                }}
-                                                                className="mt-1 w-full min-h-[80px] p-2 text-xs font-mono border rounded-md"
+                                                            <Textarea
+                                                                value={typeof editingApiConnector.auth_config === 'string' ? editingApiConnector.auth_config : (editingApiConnector.auth_config ? JSON.stringify(editingApiConnector.auth_config, null, 2) : "")}
+                                                                onChange={e => setEditingApiConnector({ ...editingApiConnector, auth_config: e.target.value })}
+                                                                className="mt-1 min-h-[80px] text-xs font-mono"
                                                                 placeholder='{"type": "bearer", "token": "..."}'
                                                             />
                                                         </div>
                                                         <div>
                                                             <Label className="text-xs text-gray-500">Input Schema (JSON)</Label>
-                                                            <textarea
-                                                                value={editingApiConnector.input_schema ? JSON.stringify(editingApiConnector.input_schema, null, 2) : ""}
-                                                                onChange={e => {
-                                                                    try {
-                                                                        const parsed = e.target.value ? JSON.parse(e.target.value) : null
-                                                                        setEditingApiConnector({ ...editingApiConnector, input_schema: parsed })
-                                                                    } catch { }
-                                                                }}
-                                                                className="mt-1 w-full min-h-[100px] p-2 text-xs font-mono border rounded-md"
+                                                            <Textarea
+                                                                value={typeof editingApiConnector.input_schema === 'string' ? editingApiConnector.input_schema : (editingApiConnector.input_schema ? JSON.stringify(editingApiConnector.input_schema, null, 2) : "")}
+                                                                onChange={e => setEditingApiConnector({ ...editingApiConnector, input_schema: e.target.value })}
+                                                                className="mt-1 min-h-[100px] text-xs font-mono"
                                                                 placeholder='{"properties": {"phone": {"type": "string"}}}'
                                                             />
                                                         </div>
                                                         <div>
                                                             <Label className="text-xs text-gray-500">Output Schema (JSON)</Label>
-                                                            <textarea
-                                                                value={editingApiConnector.output_schema ? JSON.stringify(editingApiConnector.output_schema, null, 2) : ""}
-                                                                onChange={e => {
-                                                                    try {
-                                                                        const parsed = e.target.value ? JSON.parse(e.target.value) : null
-                                                                        setEditingApiConnector({ ...editingApiConnector, output_schema: parsed })
-                                                                    } catch { }
-                                                                }}
-                                                                className="mt-1 w-full min-h-[100px] p-2 text-xs font-mono border rounded-md"
+                                                            <Textarea
+                                                                value={typeof editingApiConnector.output_schema === 'string' ? editingApiConnector.output_schema : (editingApiConnector.output_schema ? JSON.stringify(editingApiConnector.output_schema, null, 2) : "")}
+                                                                onChange={e => setEditingApiConnector({ ...editingApiConnector, output_schema: e.target.value })}
+                                                                className="mt-1 min-h-[100px] text-xs font-mono"
                                                                 placeholder='{"properties": {"id": {"type": "string"}}}'
                                                             />
                                                         </div>
@@ -1080,43 +1090,28 @@ function WorkflowManagementContent() {
                         </div>
                         <div>
                             <Label className="text-xs">Auth Config (JSON) - Tùy chọn</Label>
-                            <textarea
-                                value={apiConnectorForm.auth_config ? JSON.stringify(apiConnectorForm.auth_config, null, 2) : ""}
-                                onChange={e => {
-                                    try {
-                                        const parsed = e.target.value ? JSON.parse(e.target.value) : null
-                                        setApiConnectorForm({ ...apiConnectorForm, auth_config: parsed })
-                                    } catch { }
-                                }}
-                                className="mt-1 w-full min-h-[60px] p-2 text-xs font-mono border rounded-md"
+                            <Textarea
+                                value={typeof apiConnectorForm.auth_config === 'string' ? apiConnectorForm.auth_config : (apiConnectorForm.auth_config ? JSON.stringify(apiConnectorForm.auth_config, null, 2) : "")}
+                                onChange={e => setApiConnectorForm({ ...apiConnectorForm, auth_config: e.target.value })}
+                                className="mt-1 min-h-[60px] text-xs font-mono"
                                 placeholder='{"type": "bearer", "token": "..."}'
                             />
                         </div>
                         <div>
                             <Label className="text-xs">Input Schema (JSON) - Tùy chọn</Label>
-                            <textarea
-                                value={apiConnectorForm.input_schema ? JSON.stringify(apiConnectorForm.input_schema, null, 2) : ""}
-                                onChange={e => {
-                                    try {
-                                        const parsed = e.target.value ? JSON.parse(e.target.value) : null
-                                        setApiConnectorForm({ ...apiConnectorForm, input_schema: parsed })
-                                    } catch { }
-                                }}
-                                className="mt-1 w-full min-h-[80px] p-2 text-xs font-mono border rounded-md"
+                            <Textarea
+                                value={typeof apiConnectorForm.input_schema === 'string' ? apiConnectorForm.input_schema : (apiConnectorForm.input_schema ? JSON.stringify(apiConnectorForm.input_schema, null, 2) : "")}
+                                onChange={e => setApiConnectorForm({ ...apiConnectorForm, input_schema: e.target.value })}
+                                className="mt-1 min-h-[80px] text-xs font-mono"
                                 placeholder='{"properties": {"phone": {"type": "string"}}}'
                             />
                         </div>
                         <div>
                             <Label className="text-xs">Output Schema (JSON) - Tùy chọn</Label>
-                            <textarea
-                                value={apiConnectorForm.output_schema ? JSON.stringify(apiConnectorForm.output_schema, null, 2) : ""}
-                                onChange={e => {
-                                    try {
-                                        const parsed = e.target.value ? JSON.parse(e.target.value) : null
-                                        setApiConnectorForm({ ...apiConnectorForm, output_schema: parsed })
-                                    } catch { }
-                                }}
-                                className="mt-1 w-full min-h-[80px] p-2 text-xs font-mono border rounded-md"
+                            <Textarea
+                                value={typeof apiConnectorForm.output_schema === 'string' ? apiConnectorForm.output_schema : (apiConnectorForm.output_schema ? JSON.stringify(apiConnectorForm.output_schema, null, 2) : "")}
+                                onChange={e => setApiConnectorForm({ ...apiConnectorForm, output_schema: e.target.value })}
+                                className="mt-1 min-h-[80px] text-xs font-mono"
                                 placeholder='{"properties": {"id": {"type": "string"}}}'
                             />
                         </div>

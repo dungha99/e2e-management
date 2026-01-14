@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server"
-import { e2eQuery } from "@/lib/db"
+import { NextResponse } from "next/server";
+import { e2eQuery } from "@/lib/db";
 
 // Whitelist of allowed tables to prevent SQL injection
 const ALLOWED_TABLES = [
@@ -20,7 +20,7 @@ const TABLE_FIELDS: Record<string, {
 }> = {
     workflows: {
         required: ["name", "stage_id", "sla_hours"],
-        optional: ["description", "is_active"],
+        optional: ["description", "is_active", "tooltip"],
         generated: ["id"],
     },
     workflow_stages: {
@@ -30,7 +30,7 @@ const TABLE_FIELDS: Record<string, {
     },
     workflow_steps: {
         required: ["workflow_id", "step_name", "step_order"],
-        optional: ["is_automated", "connector_id", "input_mapping", "output_mapping", "retry_policy", "timeout_ms", "sla_hours"],
+        optional: ["is_automated", "template", "connector_id", "input_mapping", "output_mapping", "retry_policy", "timeout_ms", "sla_hours"],
         generated: ["id"],
     },
     workflow_instances: {

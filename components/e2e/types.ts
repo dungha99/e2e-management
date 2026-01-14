@@ -207,6 +207,7 @@ export interface Workflow {
   sla_hours: number
   is_active: boolean
   description: string | null
+  tooltip: string | null
   custom_fields_schema?: CustomFieldDefinition[]
 }
 
@@ -216,6 +217,7 @@ export interface WorkflowStep {
   step_name: string
   step_order: number
   is_automated: boolean
+  template: string | null
 }
 
 export interface WorkflowInstance {

@@ -4,12 +4,12 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp } from "lucide-react"
+import { CheckCircle, DollarSign, Play, Zap, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition, WinCaseHistory } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { ActivateWorkflowDialog } from "../dialogs/ActivateWorkflowDialog"
 import { fetchAiInsights } from "@/hooks/use-leads"
-import { PriceInput } from "../common/PriceInput"
 
 // Custom fields configuration for each workflow
 const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] => {
@@ -164,6 +164,24 @@ const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] 
         }
       ]
 
+    case "WFD1":
+      return [
+        {
+          name: "phone",
+          label: "Số điện thoại",
+          type: "text",
+          required: true,
+          placeholder: "Nhập số điện thoại khách hàng..."
+        },
+        {
+          name: "first_message",
+          label: "Tin nhắn đầu tiên",
+          type: "textarea",
+          required: true,
+          placeholder: "Nhập tin nhắn đầu tiên gửi cho khách..."
+        }
+      ]
+
     default:
       return []
   }
@@ -235,7 +253,7 @@ interface WorkflowTrackerTabProps {
   workflowInstancesData?: {
     success: boolean
     data: WorkflowInstanceWithDetails[]
-    allWorkflows: { id: string, name: string, description?: string }[]
+    allWorkflows: { id: string, name: string, description?: string, tooltip?: string | null }[]
     allTransitions: { from_workflow_id: string, to_workflow_id: string, to_workflow_name: string }[]
     allWorkflowSteps: Record<string, any[]>
     canActivateWF2: boolean
@@ -549,21 +567,32 @@ ${dealerBidsStr}`
                 .map(workflow => {
                   const isActive = activeWorkflowView === workflow.id
                   const instance = workflowInstancesData.data?.find(i => i.instance.workflow_id === workflow.id)
-                  return (
+
+                  const buttonContent = (
                     <button
                       key={workflow.id}
                       onClick={() => onWorkflowViewChange(workflow.id)}
-                      className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap flex items-center gap-1 ${
-                        isActive
+                      className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap flex items-center gap-1 ${isActive
                           ? "bg-blue-100 text-blue-700"
                           : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      }`}
+                        }`}
                     >
                       {instance?.instance.status === "completed" && <CheckCircle className="h-3 w-3 text-emerald-500" />}
                       {instance?.instance.status === "running" && <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />}
                       {workflow.name}
                     </button>
                   )
+
+                  return workflow.tooltip ? (
+                    <Tooltip key={workflow.id}>
+                      <TooltipTrigger asChild>
+                        {buttonContent}
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs">
+                        <p className="whitespace-pre-wrap">{workflow.tooltip}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : buttonContent
                 })
               }
             </div>
@@ -1016,6 +1045,7 @@ ${dealerBidsStr}`
           aiInsightId={aiInsights?.aiInsightId || null}
           isAlignedWithAi={aiInsights?.targetWorkflowId === selectedTransition.workflowId}
           hideDefaultFields={selectedTransition.isFromWF0}
+          workflowSteps={workflowInstancesData?.allWorkflowSteps?.[selectedTransition.workflowId] || []}
           onSuccess={() => {
             if (onWorkflowActivated) {
               onWorkflowActivated()

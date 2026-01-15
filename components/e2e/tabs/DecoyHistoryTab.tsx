@@ -181,7 +181,7 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
             if (data.length === 0) {
                 toast({
                     title: "Không tìm thấy dữ liệu",
-                    description: `Không có lịch sử quây khách cho số ${phone}`,
+                    description: `Không có lịch sử quây khách cho số ${maskPhone(phone)}`,
                 })
             }
         } catch (error) {

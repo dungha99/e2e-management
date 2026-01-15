@@ -166,7 +166,7 @@ export const CampaignHistory = forwardRef<{ refresh: () => void }, CampaignHisto
       if (data.length === 0) {
         toast({
           title: "Không tìm thấy dữ liệu",
-          description: `Không có lịch sử quây khách cho số ${phoneToSearch}`,
+          description: `Không có lịch sử quây khách cho số ${maskPhone(phoneToSearch)}`,
         })
       }
     } catch (error) {

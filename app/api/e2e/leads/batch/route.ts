@@ -155,7 +155,7 @@ async function fetchBatchData(
 
   // Run CRM enrichment queries in parallel (fast queries only)
   // Dealer biddings moved to separate endpoint for progressive loading
-  const [decoyThreadsResult, sessionsResult, latestCampaignsResult, lastActivityResult] = await Promise.all([
+  const [decoyThreadsResult, sessionsResult, latestCampaignsResult, lastActivityResult, inspectionResult] = await Promise.all([
     // Query 1: Decoy thread counts + total user messages (CRM - fast)
     // Also count messages where sender='user' to detect new customer replies
     leadIds.length > 0 && phones.length > 0
@@ -245,6 +245,27 @@ async function fetchBatchData(
         return { rows: [] }
       })
       : Promise.resolve({ rows: [] }),
+
+    // Query 5: Inspection completed activities (for schedule indicator)
+    // Only select activities that have location AND inspector in metadata
+    leadIds.length > 0
+      ? vucarV2Query(
+        `SELECT DISTINCT ON (lead_id)
+            lead_id,
+            metadata,
+            created_at
+          FROM sale_activities
+          WHERE lead_id = ANY($1::uuid[])
+            AND activity_type = 'INSPECTION_COMPLETED'
+            AND metadata->>'location' IS NOT NULL
+            AND metadata->>'inspector' IS NOT NULL
+          ORDER BY lead_id, created_at DESC`,
+        [leadIds]
+      ).catch((err) => {
+        console.warn('[E2E Batch API] Could not query inspection activities:', err.message)
+        return { rows: [] }
+      })
+      : Promise.resolve({ rows: [] }),
   ])
 
   // Process results into lookup maps
@@ -282,6 +303,25 @@ async function fetchBatchData(
   const lastActivityTimes = Object.fromEntries(
     lastActivityResult.rows.map((row) => [row.lead_id, row.last_activity_at])
   )
+
+  // Map inspection schedules by lead_id (metadata is JSONB with location and inspector)
+  const inspectionSchedules = Object.fromEntries(
+    inspectionResult.rows
+      .map((row) => {
+        // metadata is a JSONB object with location and inspector fields
+        const metadata = row.metadata
+        if (!metadata || !metadata.location || !metadata.inspector) {
+          return null
+        }
+        return [row.lead_id, {
+          location: metadata.location,
+          inspector: metadata.inspector,
+          scheduled_at: row.created_at,
+        }]
+      })
+      .filter((entry): entry is [string, { location: string, inspector: string, scheduled_at: string }] => entry !== null)
+  )
+
 
   // Transform and enrich leads data
   const enrichedLeads = leads.map((lead) => {
@@ -371,6 +411,8 @@ async function fetchBatchData(
       latest_campaign: lead.car_id ? (latestCampaigns[lead.car_id] || null) : null,
       // Last activity time from sale_activities
       last_activity_at: lastActivityTimes[lead.lead_id] || null,
+      // Inspection schedule from INSPECTION_COMPLETED activity
+      inspection_schedule: inspectionSchedules[lead.lead_id] || null,
     }
   })
 

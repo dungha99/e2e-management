@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, DollarSign, Play, Zap, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp } from "lucide-react"
+import { CheckCircle, DollarSign, Play, Zap, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp, Info } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition, WinCaseHistory } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
@@ -312,6 +312,7 @@ export function WorkflowTrackerTab({
   const [selectedTransition, setSelectedTransition] = useState<{
     workflowId: string
     workflowName: string
+    workflowTooltip?: string | null
     parentInstanceId: string
     isFromWF0?: boolean
   } | null>(null)
@@ -573,8 +574,8 @@ ${dealerBidsStr}`
                       key={workflow.id}
                       onClick={() => onWorkflowViewChange(workflow.id)}
                       className={`px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap flex items-center gap-1 ${isActive
-                          ? "bg-blue-100 text-blue-700"
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        ? "bg-blue-100 text-blue-700"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                         }`}
                     >
                       {instance?.instance.status === "completed" && <CheckCircle className="h-3 w-3 text-emerald-500" />}
@@ -598,6 +599,20 @@ ${dealerBidsStr}`
             </div>
           </div>
         </div>
+
+        {/* Current Workflow Description Callout - Below the tabs */}
+        {(() => {
+          const currentWorkflow = workflowInstancesData?.allWorkflows?.find(w => w.id === activeWorkflowView)
+          if (currentWorkflow?.tooltip) {
+            return (
+              <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                <Info className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-blue-700 whitespace-pre-wrap">{currentWorkflow.tooltip}</p>
+              </div>
+            )
+          }
+          return null
+        })()}
 
         {/* Workflow Steps - Horizontally scrollable on mobile */}
         {workflowInstancesData?.allWorkflows?.find(w => w.id === activeWorkflowView) ? (
@@ -699,10 +714,13 @@ ${dealerBidsStr}`
                         onClick={() => {
                           // For WF0, use null as parentInstanceId since there's no instance
                           const parentId = isWF0 ? null : currentInstance?.instance.id
+                          // Get tooltip from allWorkflows
+                          const targetWorkflow = workflowInstancesData.allWorkflows.find(w => w.id === transition.to_workflow_id)
                           if (isWF0 || currentInstance?.instance.id) {
                             setSelectedTransition({
                               workflowId: transition.to_workflow_id,
                               workflowName: transition.to_workflow_name,
+                              workflowTooltip: targetWorkflow?.tooltip || null,
                               parentInstanceId: parentId || "",
                               isFromWF0: isWF0
                             })
@@ -1040,6 +1058,7 @@ ${dealerBidsStr}`
           selectedLead={selectedLead}
           targetWorkflowId={selectedTransition.workflowId}
           targetWorkflowName={selectedTransition.workflowName}
+          targetWorkflowTooltip={selectedTransition.workflowTooltip}
           parentInstanceId={selectedTransition.parentInstanceId}
           customFields={getWorkflowCustomFields(selectedTransition.workflowName)}
           aiInsightId={aiInsights?.aiInsightId || null}

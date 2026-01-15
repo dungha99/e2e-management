@@ -14,8 +14,8 @@ interface KanbanCardProps {
     instance: WorkflowInstanceForKanban
     onClick?: () => void
     onTransition?: (instanceId: string, transitionId: string, toWorkflowId: string) => void
-    onNote?: (leadId: string, leadName: string) => void
-    onNoteUpdate?: (leadId: string, notes: string) => Promise<void>
+    onNote?: (leadId: string, leadName: string, carId: string) => void
+    onNoteUpdate?: (leadId: string, carId: string, notes: string, previousNotes: string) => Promise<void>
     onOpenTransitionDialog?: (instance: WorkflowInstanceForKanban) => void
 }
 
@@ -193,7 +193,7 @@ export function KanbanCard({ instance, onClick, onTransition, onNote, onNoteUpda
 
         setSavingNote(true)
         try {
-            await onNoteUpdate(instance.lead_id, noteValue)
+            await onNoteUpdate(instance.lead_id, instance.car_id, noteValue, instance.notes || "")
             setIsEditingNote(false)
         } catch (error) {
             console.error("[KanbanCard] Error saving note:", error)
@@ -411,7 +411,7 @@ export function KanbanCard({ instance, onClick, onTransition, onNote, onNoteUpda
                             onClick={(e) => {
                                 e.stopPropagation()
                                 if (instance.lead_id) {
-                                    onNote?.(instance.lead_id, instance.lead_name || "")
+                                    onNote?.(instance.lead_id, instance.lead_name || "", instance.car_id)
                                 }
                             }}
                             title="Ghi chú"

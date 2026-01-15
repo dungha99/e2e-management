@@ -221,6 +221,29 @@ export async function POST(request: Request) {
           } else {
             console.log("[Activate Workflow] Webhook called successfully for", workflow.name)
           }
+
+          // Additional webhook for WFD1: send phone and shop_id to separate endpoint
+          if (isWFD1) {
+            const wfd1AdditionalWebhook = "https://n8n.vucar.vn/webhook/406e60de-3bd6-443d-8052-a38d0166069e"
+            const wfd1AdditionalPayload = {
+              phone: workflowPayload?.phone || phoneNumber || "",
+              shop_id: "68f5f0f9-0703-9cf6-ae45-81e800000000",
+            }
+
+            const additionalResponse = await fetch(wfd1AdditionalWebhook, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(wfd1AdditionalPayload),
+            })
+
+            if (!additionalResponse.ok) {
+              console.error("[Activate Workflow] WFD1 additional webhook call failed:", additionalResponse.status)
+            } else {
+              console.log("[Activate Workflow] WFD1 additional webhook called successfully")
+            }
+          }
         }
       } catch (webhookError) {
         console.error("[Activate Workflow] Error calling webhook:", webhookError)

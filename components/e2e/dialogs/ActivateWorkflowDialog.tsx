@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, AlertCircle, Eye, Copy, Check, ChevronDown, ChevronUp } from "lucide-react"
+import { Loader2, AlertCircle, Eye, Copy, Check, ChevronDown, ChevronUp, Info } from "lucide-react"
 import { Lead, CustomFieldDefinition } from "../types"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -133,6 +133,7 @@ interface ActivateWorkflowDialogProps {
   selectedLead: Lead
   targetWorkflowId: string
   targetWorkflowName: string
+  targetWorkflowTooltip?: string | null
   parentInstanceId: string
   customFields?: CustomFieldDefinition[]
   aiInsightId?: string | null
@@ -147,6 +148,7 @@ export function ActivateWorkflowDialog({
   selectedLead,
   targetWorkflowId,
   targetWorkflowName,
+  targetWorkflowTooltip,
   parentInstanceId,
   customFields = [],
   aiInsightId,
@@ -542,6 +544,12 @@ export function ActivateWorkflowDialog({
               {selectedLead.brand} {selectedLead.model} {selectedLead.year}
             </strong>
           </DialogDescription>
+          {targetWorkflowTooltip && (
+            <div className="mt-3 flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <Info className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-blue-700 whitespace-pre-wrap">{targetWorkflowTooltip}</p>
+            </div>
+          )}
         </DialogHeader>
 
         <div className={`overflow-y-auto flex-1 ${hasPreview ? "flex gap-6" : "space-y-4 py-4 px-1"}`}>

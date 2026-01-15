@@ -24,10 +24,11 @@ import { NavigationHeader } from "@/components/e2e/layout/NavigationHeader"
 
 // Types
 interface WorkflowType { id: string; name: string; description: string; stage_id: string; sla_hours: number; is_active: boolean; tooltip: string | null }
-interface WorkflowStep { id: string; workflow_id: string; step_name: string; step_order: number; is_automated: boolean }
+interface WorkflowStep { id: string; workflow_id: string; connector_id?: string; step_name: string; step_order: number; is_automated: boolean; input_mapping?: any; output_mapping?: any; retry_policy?: any; timeout_ms?: number; sla_hours?: number; template: string | null }
 interface Stage { id: string; name: string }
 interface Transition { id: string; from_workflow_id: string; to_workflow_id: string; condition_logic: string; priority: number; transition_sla_hours?: number }
 interface WorkflowInstance { id: string; car_id: string; workflow_id: string; status: string; started_at: string; completed_at?: string }
+interface ApiConnector { id: string; name: string; base_url: string; method: string; auth_config?: any; input_schema?: any; output_schema?: any }
 
 // Node position for flow diagram
 interface NodePosition { x: number; y: number }
@@ -37,15 +38,18 @@ function WorkflowManagementContent() {
     const { toast } = useToast()
 
     const [mainTab, setMainTab] = useState<"flow" | "monitor">("flow")
+    const [flowSubTab, setFlowSubTab] = useState<"workflows" | "apis">("workflows")
     const [workflows, setWorkflows] = useState<WorkflowType[]>([])
     const [steps, setSteps] = useState<WorkflowStep[]>([])
     const [allSteps, setAllSteps] = useState<WorkflowStep[]>([])
     const [stages, setStages] = useState<Stage[]>([])
     const [transitions, setTransitions] = useState<Transition[]>([])
     const [instances, setInstances] = useState<WorkflowInstance[]>([])
+    const [apiConnectors, setApiConnectors] = useState<ApiConnector[]>([])
     const [selectedStage, setSelectedStage] = useState<Stage | null>(null)
     const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowType | null>(null)
     const [selectedStep, setSelectedStep] = useState<WorkflowStep | null>(null)
+    const [selectedApiConnector, setSelectedApiConnector] = useState<ApiConnector | null>(null)
     const [monitorSearch, setMonitorSearch] = useState("")
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
@@ -54,6 +58,8 @@ function WorkflowManagementContent() {
     const [createWorkflowOpen, setCreateWorkflowOpen] = useState(false)
     const [createStepOpen, setCreateStepOpen] = useState(false)
     const [createTransitionOpen, setCreateTransitionOpen] = useState(false)
+    const [createApiConnectorOpen, setCreateApiConnectorOpen] = useState(false)
+    const [editApiConnectorOpen, setEditApiConnectorOpen] = useState(false)
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
     const [deleteTarget, setDeleteTarget] = useState<{ type: string, item: any } | null>(null)
 
@@ -63,9 +69,15 @@ function WorkflowManagementContent() {
     const [workflowForm, setWorkflowForm] = useState<Partial<WorkflowType>>({})
     const [stepForm, setStepForm] = useState<Partial<WorkflowStep>>({})
     const [transitionForm, setTransitionForm] = useState<Partial<Transition>>({})
+    const [apiConnectorForm, setApiConnectorForm] = useState<Partial<ApiConnector>>({})
+    const [editingApiConnector, setEditingApiConnector] = useState<Partial<ApiConnector> | null>(null)
 
     // Flow diagram node positions
     const [nodePositions, setNodePositions] = useState<Record<string, NodePosition>>({})
+
+    // Right panel resize state
+    const [panelWidth, setPanelWidth] = useState(450)
+    const [isResizing, setIsResizing] = useState(false)
 
     useEffect(() => { fetchAllData() }, [])
 
@@ -105,19 +117,21 @@ function WorkflowManagementContent() {
     async function fetchAllData() {
         setLoading(true)
         try {
-            const [wfRes, stRes, trRes, instRes, stepsRes] = await Promise.all([
+            const [wfRes, stRes, trRes, instRes, stepsRes, apiRes] = await Promise.all([
                 fetch("/api/e2e/tables/workflows?limit=100"),
                 fetch("/api/e2e/tables/workflow_stages?limit=100"),
                 fetch("/api/e2e/tables/workflow_transitions?limit=100"),
                 fetch("/api/e2e/tables/workflow_instances?limit=100&orderBy=started_at&orderDir=desc"),
-                fetch("/api/e2e/tables/workflow_steps?limit=500")
+                fetch("/api/e2e/tables/workflow_steps?limit=500"),
+                fetch("/api/e2e/tables/api_connectors?limit=100")
             ])
-            const [wfData, stData, trData, instData, stepsData] = await Promise.all([wfRes.json(), stRes.json(), trRes.json(), instRes.json(), stepsRes.json()])
+            const [wfData, stData, trData, instData, stepsData, apiData] = await Promise.all([wfRes.json(), stRes.json(), trRes.json(), instRes.json(), stepsRes.json(), apiRes.json()])
             if (stData.success) { setStages(stData.data); if (!selectedStage && stData.data.length > 0) setSelectedStage(stData.data[0]) }
             if (wfData.success) setWorkflows(wfData.data)
             if (trData.success) setTransitions(trData.data)
             if (instData.success) setInstances(instData.data)
             if (stepsData.success) setAllSteps(stepsData.data)
+            if (apiData.success) setApiConnectors(apiData.data)
         } catch (error) { console.error("Error:", error) }
         finally { setLoading(false) }
     }
@@ -195,19 +209,105 @@ function WorkflowManagementContent() {
         if (!deleteTarget) return
         setSaving(true)
         try {
-            const tableName = deleteTarget.type === "workflow" ? "workflows" : deleteTarget.type === "transition" ? "workflow_transitions" : "workflow_steps"
+            const tableName = deleteTarget.type === "workflow" ? "workflows" : deleteTarget.type === "transition" ? "workflow_transitions" : deleteTarget.type === "api_connector" ? "api_connectors" : "workflow_steps"
             const res = await fetch(`/api/e2e/tables/${tableName}?id=${deleteTarget.item.id}`, { method: "DELETE" })
             if ((await res.json()).success) {
                 toast({ title: "Đã xóa" })
                 setDeleteConfirmOpen(false)
+                setDeleteTarget(null)
+                if (deleteTarget.type === "api_connector") {
+                    setSelectedApiConnector(null)
+                    setEditingApiConnector(null)
+                }
                 fetchAllData()
             }
         } finally { setSaving(false) }
     }
 
+    // Helper to safely parse JSON string or return original value
+    function parseJsonField(value: any): any {
+        if (typeof value === 'string' && value.trim()) {
+            try {
+                return JSON.parse(value)
+            } catch {
+                return value // Return as-is if not valid JSON
+            }
+        }
+        return value || null
+    }
+
+    async function handleCreateApiConnector() {
+        setSaving(true)
+        try {
+            const payload = {
+                ...apiConnectorForm,
+                auth_config: parseJsonField(apiConnectorForm.auth_config),
+                input_schema: parseJsonField(apiConnectorForm.input_schema),
+                output_schema: parseJsonField(apiConnectorForm.output_schema)
+            }
+            const res = await fetch("/api/e2e/tables/api_connectors", {
+                method: "POST",
+                body: JSON.stringify(payload),
+                headers: { "Content-Type": "application/json" }
+            })
+            if ((await res.json()).success) {
+                toast({ title: "Thành công" })
+                setCreateApiConnectorOpen(false)
+                setApiConnectorForm({})
+                fetchAllData()
+            }
+        } finally { setSaving(false) }
+    }
+
+    async function handleSaveApiConnector() {
+        if (!editingApiConnector || !selectedApiConnector) return
+        setSaving(true)
+        try {
+            const payload = {
+                ...editingApiConnector,
+                id: selectedApiConnector.id,
+                auth_config: parseJsonField(editingApiConnector.auth_config),
+                input_schema: parseJsonField(editingApiConnector.input_schema),
+                output_schema: parseJsonField(editingApiConnector.output_schema)
+            }
+            const res = await fetch("/api/e2e/tables/api_connectors", {
+                method: "PUT",
+                body: JSON.stringify(payload),
+                headers: { "Content-Type": "application/json" }
+            })
+            if ((await res.json()).success) {
+                toast({ title: "Đã lưu" })
+                fetchAllData()
+            }
+        } finally { setSaving(false) }
+    }
+
+    function selectApiConnectorForEdit(connector: ApiConnector) {
+        setSelectedApiConnector(connector)
+        setEditingApiConnector({
+            name: connector.name,
+            base_url: connector.base_url,
+            method: connector.method,
+            auth_config: connector.auth_config,
+            input_schema: connector.input_schema,
+            output_schema: connector.output_schema
+        })
+    }
+
     function selectStepForEdit(step: WorkflowStep) {
         setSelectedStep(step)
-        setEditingStep({ step_name: step.step_name, step_order: step.step_order, is_automated: step.is_automated })
+        setEditingStep({
+            step_name: step.step_name,
+            step_order: step.step_order,
+            is_automated: step.is_automated,
+            connector_id: step.connector_id,
+            input_mapping: step.input_mapping,
+            output_mapping: step.output_mapping,
+            retry_policy: step.retry_policy,
+            timeout_ms: step.timeout_ms,
+            sla_hours: step.sla_hours,
+            template: step.template
+        })
     }
 
     function selectWorkflowInFlow(wf: WorkflowType) {
@@ -219,6 +319,35 @@ function WorkflowManagementContent() {
 
     const filteredInstances = useMemo(() => monitorSearch ? instances.filter(i => i.car_id.toLowerCase().includes(monitorSearch.toLowerCase())) : instances, [instances, monitorSearch])
     const stats = useMemo(() => ({ total: instances.length, active: instances.filter(i => i.status === 'running').length, completed: instances.filter(i => i.status === 'completed').length, failed: instances.filter(i => i.status === 'failed' || i.status === 'terminated').length }), [instances])
+
+    // Handle panel resize
+    const handleMouseDown = () => {
+        setIsResizing(true)
+    }
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isResizing) return
+            const newWidth = window.innerWidth - e.clientX
+            if (newWidth >= 350 && newWidth <= 800) {
+                setPanelWidth(newWidth)
+            }
+        }
+
+        const handleMouseUp = () => {
+            setIsResizing(false)
+        }
+
+        if (isResizing) {
+            document.addEventListener('mousemove', handleMouseMove)
+            document.addEventListener('mouseup', handleMouseUp)
+        }
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove)
+            document.removeEventListener('mouseup', handleMouseUp)
+        }
+    }, [isResizing])
 
     function handleNavTabChange(value: string) {
         if (value === "dashboard") router.push("/")
@@ -232,7 +361,7 @@ function WorkflowManagementContent() {
     if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="animate-spin h-6 w-6 border-2 border-gray-400 border-t-transparent rounded-full" /></div>
 
     return (
-        <div className="w-full">
+        <div className={`w-full ${isResizing ? 'cursor-col-resize select-none' : ''}`}>
             {/* Navigation Header */}
             <Tabs value="workflow" onValueChange={handleNavTabChange}>
                 <NavigationHeader
@@ -248,7 +377,44 @@ function WorkflowManagementContent() {
 
                         {/* ============ FLOW VIEW (Diagram) ============ */}
                         {mainTab === "flow" && (
-                            <div className="flex w-full">
+                            <div className="flex w-full flex-col">
+                                {/* Sub-tabs for Workflows and API Connectors */}
+                                <div className="bg-white border-b px-4">
+                                    <div className="flex gap-1">
+                                        <button
+                                            onClick={() => setFlowSubTab("workflows")}
+                                            className={cn(
+                                                "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
+                                                flowSubTab === "workflows"
+                                                    ? "border-purple-500 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700"
+                                            )}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <Workflow className="h-4 w-4" />
+                                                Workflows
+                                            </div>
+                                        </button>
+                                        <button
+                                            onClick={() => setFlowSubTab("apis")}
+                                            className={cn(
+                                                "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
+                                                flowSubTab === "apis"
+                                                    ? "border-purple-500 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700"
+                                            )}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <Settings className="h-4 w-4" />
+                                                API Connectors
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Workflows Sub-Tab Content */}
+                                {flowSubTab === "workflows" && (
+                            <div className="flex w-full flex-1">
                                 {/* LEFT: Flow Diagram Canvas */}
                                 <div className="flex-1 relative overflow-auto" style={{ background: 'linear-gradient(to right, #f9fafb 1px, transparent 1px), linear-gradient(to bottom, #f9fafb 1px, transparent 1px)', backgroundSize: '20px 20px', backgroundColor: '#fafafa' }}>
 
@@ -364,7 +530,18 @@ function WorkflowManagementContent() {
                                 </div>
 
                                 {/* RIGHT: Details Panel */}
-                                <div className="w-[450px] bg-white border-l flex flex-col overflow-hidden">
+                                <div
+                                    className="bg-white border-l flex flex-col overflow-hidden relative"
+                                    style={{ width: `${panelWidth}px`, minWidth: '350px', maxWidth: '800px' }}
+                                >
+                                    {/* Resize Handle */}
+                                    <div
+                                        className={`absolute left-0 top-0 bottom-0 w-1 hover:w-2 cursor-col-resize group z-10 ${isResizing ? 'bg-blue-500 w-2' : 'bg-gray-200 hover:bg-blue-400'} transition-all`}
+                                        onMouseDown={handleMouseDown}
+                                        style={{ marginLeft: '-1px' }}
+                                    >
+                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-16 bg-blue-500 rounded-r opacity-50 group-hover:opacity-100 transition-opacity shadow-sm"></div>
+                                    </div>
                                     <div className="p-4 border-b flex-shrink-0">
                                         <div className="flex items-center gap-2">
                                             {selectedWorkflow ? (
@@ -384,8 +561,8 @@ function WorkflowManagementContent() {
                                     </div>
 
                                     {selectedWorkflow && (
-                                        <ScrollArea className="flex-1 h-full">
-                                            <div className="p-4 space-y-6 pr-4">
+                                        <ScrollArea className="flex-1 overflow-y-auto">
+                                            <div className="p-4 space-y-6">
                                                 {/* Workflow Details */}
                                                 <div>
                                                     <div className="mb-3">
@@ -447,7 +624,9 @@ function WorkflowManagementContent() {
                                                         <button onClick={() => { setStepForm({ is_automated: false }); setCreateStepOpen(true) }} className="text-xs text-purple-600 hover:text-purple-700 font-medium">+ Thêm</button>
                                                     </div>
                                                     <div className="space-y-2">
-                                                        {steps.map(step => (
+                                                        {steps.map(step => {
+                                                            const connectedApi = step.connector_id ? apiConnectors.find(a => a.id === step.connector_id) : null
+                                                            return (
                                                             <div
                                                                 key={step.id}
                                                                 onClick={() => selectStepForEdit(step)}
@@ -458,11 +637,23 @@ function WorkflowManagementContent() {
                                                             >
                                                                 <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium", selectedStep?.id === step.id ? "bg-purple-500 text-white" : "bg-gray-200 text-gray-600")}>{step.step_order}</div>
                                                                 <div className="flex-1 min-w-0">
-                                                                    <p className="text-sm font-medium text-gray-900 truncate">{step.step_name}</p>
-                                                                    <p className="text-xs text-gray-400">{step.is_automated ? "Tự động" : "Thủ công"}</p>
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <p className="text-sm font-medium text-gray-900 truncate">{step.step_name}</p>
+                                                                        {connectedApi && (
+                                                                            <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 bg-purple-50 text-purple-600 border-purple-200">
+                                                                                <Settings className="h-2 w-2 mr-0.5" />
+                                                                                API
+                                                                            </Badge>
+                                                                        )}
+                                                                        {step.template && <Badge variant="outline" className="text-[9px] h-4 px-1 bg-blue-50 text-blue-600 border-blue-200">T</Badge>}
+                                                                    </div>
+                                                                    <p className="text-xs text-gray-400">
+                                                                        {step.is_automated ? "Tự động" : "Thủ công"}
+                                                                        {connectedApi && <span className="ml-1">• {connectedApi.name}</span>}
+                                                                    </p>
                                                                 </div>
                                                             </div>
-                                                        ))}
+                                                        )})}
                                                         {steps.length === 0 && <p className="text-xs text-gray-400 text-center py-4">Chưa có bước nào</p>}
                                                     </div>
                                                 </div>
@@ -479,6 +670,74 @@ function WorkflowManagementContent() {
                                                             <div className="flex items-center gap-2">
                                                                 <Switch checked={editingStep.is_automated} onCheckedChange={c => setEditingStep({ ...editingStep, is_automated: c })} />
                                                                 <span className="text-sm text-gray-600">{editingStep.is_automated ? "Tự động" : "Thủ công"}</span>
+                                                            </div>
+                                                            <div>
+                                                                <Label className="text-xs text-gray-500">API Connector</Label>
+                                                                <Select value={editingStep.connector_id || "none"} onValueChange={v => setEditingStep({ ...editingStep, connector_id: v === "none" ? undefined : v })}>
+                                                                    <SelectTrigger className="mt-1 h-9 bg-white">
+                                                                        <SelectValue placeholder="Chọn API connector" />
+                                                                    </SelectTrigger>
+                                                                    <SelectContent>
+                                                                        <SelectItem value="none">Không có</SelectItem>
+                                                                        {apiConnectors.map(api => (
+                                                                            <SelectItem key={api.id} value={api.id}>
+                                                                                {api.name} ({api.method})
+                                                                            </SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                                {editingStep.connector_id && apiConnectors.find(a => a.id === editingStep.connector_id) && (
+                                                                    <div className="mt-2 p-2 bg-white rounded text-xs">
+                                                                        <p className="text-gray-500">Connected API:</p>
+                                                                        <p className="font-medium text-purple-600 truncate">
+                                                                            {apiConnectors.find(a => a.id === editingStep.connector_id)?.base_url}
+                                                                        </p>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <div>
+                                                                <Label className="text-xs text-gray-500">Template</Label>
+                                                                <div className="flex flex-wrap gap-1 mb-2 p-2 bg-gray-50 rounded border border-gray-200">
+                                                                    {[
+                                                                        { key: '{{display_name}}', label: 'Tên xe' },
+                                                                        { key: '{{year}}', label: 'Năm' },
+                                                                        { key: '{{similar_car}}', label: 'Xe tương tự' },
+                                                                        { key: '{{similar_year}}', label: 'Năm tương tự' },
+                                                                        { key: '{{price_reference}}', label: 'Giá tham khảo' },
+                                                                        { key: '{{price_range}}', label: 'Khoảng giá' },
+                                                                        { key: '{{session_url}}', label: 'Link phiên' },
+                                                                        { key: '{{mileage}}', label: 'Số km' }
+                                                                    ].map(item => (
+                                                                        <button
+                                                                            key={item.key}
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                const textarea = document.getElementById('edit-step-template') as HTMLTextAreaElement
+                                                                                if (textarea) {
+                                                                                    const start = textarea.selectionStart
+                                                                                    const end = textarea.selectionEnd
+                                                                                    const text = editingStep.template || ''
+                                                                                    const newText = text.substring(0, start) + item.key + text.substring(end)
+                                                                                    setEditingStep({ ...editingStep, template: newText })
+                                                                                    setTimeout(() => {
+                                                                                        textarea.focus()
+                                                                                        textarea.setSelectionRange(start + item.key.length, start + item.key.length)
+                                                                                    }, 0)
+                                                                                }
+                                                                            }}
+                                                                            className="px-2 py-1 text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-700 rounded border border-blue-300 cursor-pointer transition-colors"
+                                                                        >
+                                                                            {item.label}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                                <Textarea
+                                                                    id="edit-step-template"
+                                                                    value={editingStep.template || ""}
+                                                                    onChange={e => setEditingStep({ ...editingStep, template: e.target.value })}
+                                                                    className="mt-1 bg-white min-h-[80px]"
+                                                                    placeholder="Mẫu nội dung cho bước này (tuỳ chọn)"
+                                                                />
                                                             </div>
                                                             <div className="flex gap-2 pt-2">
                                                                 <Button size="sm" className="flex-1 h-8" onClick={handleSaveStep} disabled={saving}><Save className="h-3 w-3 mr-1" /> Lưu</Button>
@@ -515,6 +774,186 @@ function WorkflowManagementContent() {
                                     )}
                                 </div>
                             </div>
+                                )}
+
+                                {/* API Connectors Sub-Tab Content */}
+                                {flowSubTab === "apis" && (
+                                    <div className="flex w-full flex-1">
+                                        {/* LEFT: API Connectors List */}
+                                        <div className="flex-1 overflow-auto p-6 bg-gray-50">
+                                            <div className="max-w-5xl mx-auto">
+                                                <div className="flex items-center justify-between mb-6">
+                                                    <div>
+                                                        <h2 className="text-2xl font-bold text-gray-900">API Connectors</h2>
+                                                        <p className="text-sm text-gray-500 mt-1">Quản lý các API để kết nối với workflow steps</p>
+                                                    </div>
+                                                    <Button onClick={() => { setApiConnectorForm({ method: "GET" }); setCreateApiConnectorOpen(true) }}>
+                                                        <Plus className="h-4 w-4 mr-2" />
+                                                        Thêm API Connector
+                                                    </Button>
+                                                </div>
+
+                                                {apiConnectors.length === 0 ? (
+                                                    <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+                                                        <Settings className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                                                        <p className="text-gray-500 mb-4">Chưa có API connector nào</p>
+                                                        <Button onClick={() => { setApiConnectorForm({ method: "GET" }); setCreateApiConnectorOpen(true) }}>
+                                                            <Plus className="h-4 w-4 mr-2" />
+                                                            Tạo API Connector đầu tiên
+                                                        </Button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="grid gap-4">
+                                                        {apiConnectors.map(connector => {
+                                                            const isSelected = selectedApiConnector?.id === connector.id
+                                                            return (
+                                                                <div
+                                                                    key={connector.id}
+                                                                    onClick={() => selectApiConnectorForEdit(connector)}
+                                                                    className={cn(
+                                                                        "bg-white rounded-lg border-2 p-5 cursor-pointer transition-all hover:shadow-md",
+                                                                        isSelected ? "border-purple-400 shadow-purple-100" : "border-gray-200"
+                                                                    )}
+                                                                >
+                                                                    <div className="flex items-start justify-between">
+                                                                        <div className="flex items-start gap-4 flex-1">
+                                                                            <div className={cn(
+                                                                                "w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0",
+                                                                                isSelected ? "bg-purple-500" : "bg-gray-400"
+                                                                            )}>
+                                                                                <Settings className="h-6 w-6 text-white" />
+                                                                            </div>
+                                                                            <div className="flex-1 min-w-0">
+                                                                                <div className="flex items-center gap-2 mb-2">
+                                                                                    <h3 className="text-lg font-semibold text-gray-900">{connector.name}</h3>
+                                                                                    <Badge variant="outline" className="text-xs">{connector.method}</Badge>
+                                                                                </div>
+                                                                                <p className="text-sm text-gray-600 break-all mb-3">{connector.base_url}</p>
+                                                                                <div className="flex gap-4 text-xs text-gray-500">
+                                                                                    {connector.input_schema && <span>✓ Input Schema</span>}
+                                                                                    {connector.output_schema && <span>✓ Output Schema</span>}
+                                                                                    {connector.auth_config && <span>✓ Auth Config</span>}
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* RIGHT: API Connector Details Panel */}
+                                        <div className="w-96 bg-white border-l flex flex-col overflow-hidden">
+                                            <div className="p-4 border-b flex-shrink-0">
+                                                <div className="flex items-center gap-2">
+                                                    {selectedApiConnector ? (
+                                                        <>
+                                                            <div className="w-10 h-10 rounded-lg bg-purple-500 flex items-center justify-center flex-shrink-0">
+                                                                <Settings className="h-5 w-5 text-white" />
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="text-sm font-semibold text-gray-900 truncate">{selectedApiConnector.name}</p>
+                                                                <p className="text-xs text-gray-400 truncate">{selectedApiConnector.method}</p>
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <p className="text-sm text-gray-400">Chọn một API connector</p>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {selectedApiConnector && editingApiConnector && (
+                                                <ScrollArea className="flex-1">
+                                                    <div className="p-4 space-y-4">
+                                                        <div>
+                                                            <Label className="text-xs text-gray-500">Tên</Label>
+                                                            <Input
+                                                                value={editingApiConnector.name || ""}
+                                                                onChange={e => setEditingApiConnector({ ...editingApiConnector, name: e.target.value })}
+                                                                className="mt-1 h-9"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <Label className="text-xs text-gray-500">Base URL</Label>
+                                                            <Input
+                                                                value={editingApiConnector.base_url || ""}
+                                                                onChange={e => setEditingApiConnector({ ...editingApiConnector, base_url: e.target.value })}
+                                                                className="mt-1 h-9"
+                                                                placeholder="https://api.example.com"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <Label className="text-xs text-gray-500">HTTP Method</Label>
+                                                            <Select
+                                                                value={editingApiConnector.method || "GET"}
+                                                                onValueChange={v => setEditingApiConnector({ ...editingApiConnector, method: v })}
+                                                            >
+                                                                <SelectTrigger className="mt-1 h-9">
+                                                                    <SelectValue />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    <SelectItem value="GET">GET</SelectItem>
+                                                                    <SelectItem value="POST">POST</SelectItem>
+                                                                    <SelectItem value="PUT">PUT</SelectItem>
+                                                                    <SelectItem value="PATCH">PATCH</SelectItem>
+                                                                    <SelectItem value="DELETE">DELETE</SelectItem>
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
+                                                        <div>
+                                                            <Label className="text-xs text-gray-500">Auth Config (JSON)</Label>
+                                                            <Textarea
+                                                                value={typeof editingApiConnector.auth_config === 'string' ? editingApiConnector.auth_config : (editingApiConnector.auth_config ? JSON.stringify(editingApiConnector.auth_config, null, 2) : "")}
+                                                                onChange={e => setEditingApiConnector({ ...editingApiConnector, auth_config: e.target.value })}
+                                                                className="mt-1 min-h-[80px] text-xs font-mono"
+                                                                placeholder='{"type": "bearer", "token": "..."}'
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <Label className="text-xs text-gray-500">Input Schema (JSON)</Label>
+                                                            <Textarea
+                                                                value={typeof editingApiConnector.input_schema === 'string' ? editingApiConnector.input_schema : (editingApiConnector.input_schema ? JSON.stringify(editingApiConnector.input_schema, null, 2) : "")}
+                                                                onChange={e => setEditingApiConnector({ ...editingApiConnector, input_schema: e.target.value })}
+                                                                className="mt-1 min-h-[100px] text-xs font-mono"
+                                                                placeholder='{"properties": {"phone": {"type": "string"}}}'
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <Label className="text-xs text-gray-500">Output Schema (JSON)</Label>
+                                                            <Textarea
+                                                                value={typeof editingApiConnector.output_schema === 'string' ? editingApiConnector.output_schema : (editingApiConnector.output_schema ? JSON.stringify(editingApiConnector.output_schema, null, 2) : "")}
+                                                                onChange={e => setEditingApiConnector({ ...editingApiConnector, output_schema: e.target.value })}
+                                                                className="mt-1 min-h-[100px] text-xs font-mono"
+                                                                placeholder='{"properties": {"id": {"type": "string"}}}'
+                                                            />
+                                                        </div>
+                                                        <div className="flex gap-2 pt-2">
+                                                            <Button size="sm" className="flex-1" onClick={handleSaveApiConnector} disabled={saving}>
+                                                                <Save className="h-3 w-3 mr-1" />
+                                                                Lưu
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                className="text-red-500 hover:text-red-600"
+                                                                onClick={() => {
+                                                                    setDeleteTarget({ type: "api_connector", item: selectedApiConnector })
+                                                                    setDeleteConfirmOpen(true)
+                                                                }}
+                                                            >
+                                                                <Trash2 className="h-3 w-3" />
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                </ScrollArea>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         {/* ============ MONITOR VIEW (Kanban) ============ */}
@@ -540,8 +979,65 @@ function WorkflowManagementContent() {
             </Dialog>
 
             <Dialog open={createStepOpen} onOpenChange={setCreateStepOpen}>
-                <DialogContent><DialogHeader><DialogTitle>Thêm bước vào {selectedWorkflow?.name}</DialogTitle></DialogHeader>
-                    <div className="space-y-3 py-2"><div><Label className="text-xs">Tên bước</Label><Input value={stepForm.step_name || ""} onChange={e => setStepForm({ ...stepForm, step_name: e.target.value })} className="mt-1" /></div><div className="flex items-center gap-2"><Switch checked={stepForm.is_automated} onCheckedChange={c => setStepForm({ ...stepForm, is_automated: c })} /><Label className="text-xs">Tự động</Label></div></div>
+                <DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Thêm bước vào {selectedWorkflow?.name}</DialogTitle></DialogHeader>
+                    <div className="space-y-3 py-2">
+                        <div><Label className="text-xs">Tên bước</Label><Input value={stepForm.step_name || ""} onChange={e => setStepForm({ ...stepForm, step_name: e.target.value })} className="mt-1" /></div>
+                        <div className="flex items-center gap-2"><Switch checked={stepForm.is_automated} onCheckedChange={c => setStepForm({ ...stepForm, is_automated: c })} /><Label className="text-xs">Tự động</Label></div>
+                        <div>
+                            <Label className="text-xs">API Connector (Tùy chọn)</Label>
+                            <Select value={stepForm.connector_id || "none"} onValueChange={v => setStepForm({ ...stepForm, connector_id: v === "none" ? undefined : v })}>
+                                <SelectTrigger className="mt-1"><SelectValue placeholder="Chọn API connector" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">Không có</SelectItem>
+                                    {apiConnectors.map(api => <SelectItem key={api.id} value={api.id}>{api.name} ({api.method})</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <Label className="text-xs">Template</Label>
+                            <div className="flex flex-wrap gap-1 mb-2 p-2 bg-gray-50 rounded border border-gray-200">
+                                {[
+                                    { key: '{{display_name}}', label: 'Tên xe' },
+                                    { key: '{{year}}', label: 'Năm' },
+                                    { key: '{{similar_car}}', label: 'Xe tương tự' },
+                                    { key: '{{similar_year}}', label: 'Năm tương tự' },
+                                    { key: '{{price_reference}}', label: 'Giá tham khảo' },
+                                    { key: '{{price_range}}', label: 'Khoảng giá' },
+                                    { key: '{{session_url}}', label: 'Link phiên' },
+                                    { key: '{{mileage}}', label: 'Số km' }
+                                ].map(item => (
+                                    <button
+                                        key={item.key}
+                                        type="button"
+                                        onClick={() => {
+                                            const textarea = document.getElementById('create-step-template') as HTMLTextAreaElement
+                                            if (textarea) {
+                                                const start = textarea.selectionStart
+                                                const end = textarea.selectionEnd
+                                                const text = stepForm.template || ''
+                                                const newText = text.substring(0, start) + item.key + text.substring(end)
+                                                setStepForm({ ...stepForm, template: newText })
+                                                setTimeout(() => {
+                                                    textarea.focus()
+                                                    textarea.setSelectionRange(start + item.key.length, start + item.key.length)
+                                                }, 0)
+                                            }
+                                        }}
+                                        className="px-2 py-1 text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-700 rounded border border-blue-300 cursor-pointer transition-colors"
+                                    >
+                                        {item.label}
+                                    </button>
+                                ))}
+                            </div>
+                            <Textarea
+                                id="create-step-template"
+                                value={stepForm.template || ""}
+                                onChange={e => setStepForm({ ...stepForm, template: e.target.value })}
+                                className="mt-1 min-h-[80px]"
+                                placeholder="Mẫu nội dung cho bước này (tuỳ chọn)"
+                            />
+                        </div>
+                    </div>
                     <DialogFooter><Button variant="outline" onClick={() => setCreateStepOpen(false)}>Hủy</Button><Button onClick={handleCreateStep} disabled={saving}>Thêm</Button></DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -564,6 +1060,63 @@ function WorkflowManagementContent() {
                         </div>
                     </div>
                     <DialogFooter><Button variant="outline" onClick={() => setCreateTransitionOpen(false)}>Hủy</Button><Button onClick={handleCreateTransition} disabled={saving || !transitionForm.to_workflow_id}>Tạo</Button></DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={createApiConnectorOpen} onOpenChange={setCreateApiConnectorOpen}>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader><DialogTitle>Tạo API Connector mới</DialogTitle></DialogHeader>
+                    <div className="space-y-3 py-2">
+                        <div>
+                            <Label className="text-xs">Tên</Label>
+                            <Input value={apiConnectorForm.name || ""} onChange={e => setApiConnectorForm({ ...apiConnectorForm, name: e.target.value })} className="mt-1" placeholder="VD: Send SMS API" />
+                        </div>
+                        <div>
+                            <Label className="text-xs">Base URL</Label>
+                            <Input value={apiConnectorForm.base_url || ""} onChange={e => setApiConnectorForm({ ...apiConnectorForm, base_url: e.target.value })} className="mt-1" placeholder="https://api.example.com/v1/endpoint" />
+                        </div>
+                        <div>
+                            <Label className="text-xs">HTTP Method</Label>
+                            <Select value={apiConnectorForm.method || "GET"} onValueChange={v => setApiConnectorForm({ ...apiConnectorForm, method: v })}>
+                                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="GET">GET</SelectItem>
+                                    <SelectItem value="POST">POST</SelectItem>
+                                    <SelectItem value="PUT">PUT</SelectItem>
+                                    <SelectItem value="PATCH">PATCH</SelectItem>
+                                    <SelectItem value="DELETE">DELETE</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <Label className="text-xs">Auth Config (JSON) - Tùy chọn</Label>
+                            <Textarea
+                                value={typeof apiConnectorForm.auth_config === 'string' ? apiConnectorForm.auth_config : (apiConnectorForm.auth_config ? JSON.stringify(apiConnectorForm.auth_config, null, 2) : "")}
+                                onChange={e => setApiConnectorForm({ ...apiConnectorForm, auth_config: e.target.value })}
+                                className="mt-1 min-h-[60px] text-xs font-mono"
+                                placeholder='{"type": "bearer", "token": "..."}'
+                            />
+                        </div>
+                        <div>
+                            <Label className="text-xs">Input Schema (JSON) - Tùy chọn</Label>
+                            <Textarea
+                                value={typeof apiConnectorForm.input_schema === 'string' ? apiConnectorForm.input_schema : (apiConnectorForm.input_schema ? JSON.stringify(apiConnectorForm.input_schema, null, 2) : "")}
+                                onChange={e => setApiConnectorForm({ ...apiConnectorForm, input_schema: e.target.value })}
+                                className="mt-1 min-h-[80px] text-xs font-mono"
+                                placeholder='{"properties": {"phone": {"type": "string"}}}'
+                            />
+                        </div>
+                        <div>
+                            <Label className="text-xs">Output Schema (JSON) - Tùy chọn</Label>
+                            <Textarea
+                                value={typeof apiConnectorForm.output_schema === 'string' ? apiConnectorForm.output_schema : (apiConnectorForm.output_schema ? JSON.stringify(apiConnectorForm.output_schema, null, 2) : "")}
+                                onChange={e => setApiConnectorForm({ ...apiConnectorForm, output_schema: e.target.value })}
+                                className="mt-1 min-h-[80px] text-xs font-mono"
+                                placeholder='{"properties": {"id": {"type": "string"}}}'
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter><Button variant="outline" onClick={() => setCreateApiConnectorOpen(false)}>Hủy</Button><Button onClick={handleCreateApiConnector} disabled={saving || !apiConnectorForm.name || !apiConnectorForm.base_url || !apiConnectorForm.method}>Tạo</Button></DialogFooter>
                 </DialogContent>
             </Dialog>
 

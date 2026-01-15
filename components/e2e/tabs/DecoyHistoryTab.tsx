@@ -158,15 +158,39 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
         console.log("[DecoyHistoryTab] Fetching decoy history for phone:", phone)
         setLoading(true)
         try {
-            const response = await fetch("/api/decoy/all")
+            const response = await fetch("https://crm-vucar-api.vucar.vn/api/v1/decoy/by-phone", {
+                method: "POST",
+                headers: {
+                    "accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    phone: phone
+                })
+            })
+            
+            if (!response.ok) {
+                throw new Error("Failed to fetch decoy history")
+            }
+            
             const data = await response.json()
-            // Filter jobs by this lead's phone
-            const filteredJobs = data.filter((job: Job) => job.phone === phone)
-            console.log("[DecoyHistoryTab] Found", filteredJobs.length, "jobs for phone:", phone)
-            setJobs(filteredJobs)
+            console.log("[DecoyHistoryTab] Found", data.length, "jobs for phone:", phone)
+            setJobs(data)
             setLastUpdated(new Date())
+            
+            if (data.length === 0) {
+                toast({
+                    title: "Không tìm thấy dữ liệu",
+                    description: `Không có lịch sử quây khách cho số ${phone}`,
+                })
+            }
         } catch (error) {
             console.error("[DecoyHistoryTab] Error fetching jobs:", error)
+            toast({
+                title: "Lỗi tải dữ liệu",
+                description: "Không thể tải lịch sử quây khách. Vui lòng thử lại.",
+                variant: "destructive",
+            })
         } finally {
             setLoading(false)
         }
@@ -254,6 +278,11 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
         const accountConfig = DECOY_ACCOUNTS.find(acc => acc.account === job.account)
         if (!accountConfig || !job.phone) {
             console.warn("[DecoyHistoryTab] Cannot fetch chat history - missing account config or phone")
+            toast({
+                title: "Không thể tải tin nhắn",
+                description: "Thiếu thông tin tài khoản hoặc số điện thoại",
+                variant: "destructive",
+            })
             return
         }
 
@@ -269,7 +298,9 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
             })
 
             if (!response.ok) {
-                throw new Error("Failed to fetch chat history")
+                const errorText = await response.text()
+                console.error("[DecoyHistoryTab] Failed to fetch chat history:", response.status, errorText)
+                throw new Error(`Failed to fetch chat history: ${response.status}`)
             }
 
             const data: AkabizChatHistoryResponse = await response.json()
@@ -277,13 +308,27 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
             if (data.is_successful && data.chat_history) {
                 console.log("[DecoyHistoryTab] Fetched", data.chat_history.length, "messages from Akabiz")
                 setRealTimeChatHistory(data.chat_history)
+                toast({
+                    title: "✓ Đã tải tin nhắn",
+                    description: `Đã tải ${data.chat_history.length} tin nhắn`,
+                    className: "bg-green-50 border-green-200",
+                })
             } else {
                 console.warn("[DecoyHistoryTab] No chat history available:", data.error_message)
                 setRealTimeChatHistory([])
+                toast({
+                    title: "Không có tin nhắn",
+                    description: data.error_message || "Chưa có lịch sử trò chuyện",
+                })
             }
         } catch (error) {
             console.error("[DecoyHistoryTab] Error fetching real-time chat history:", error)
             setRealTimeChatHistory([])
+            toast({
+                title: "✗ Lỗi tải tin nhắn",
+                description: "Không thể tải lịch sử tin nhắn. Vui lòng thử lại sau.",
+                variant: "destructive",
+            })
         } finally {
             setLoadingChatHistory(false)
         }
@@ -613,16 +658,20 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
                         </div>
                     ) : (
                         <div className="border rounded-xl overflow-hidden bg-white">
-                            <table className="w-full text-sm">
-                                <thead className="bg-gray-50">
-                                    <tr>
-                                        <th className="px-4 py-3 text-left font-medium">Thời gian</th>
-                                        <th className="px-4 py-3 text-left font-medium">Account</th>
-                                        <th className="px-4 py-3 text-left font-medium">Trạng thái gửi</th>
-                                        <th className="px-4 py-3 text-left font-medium">Trạng thái phản hồi</th>
-                                        <th className="px-4 py-3 text-left font-medium">Hành động</th>
-                                    </tr>
-                                </thead>
+                            <div 
+                                className="overflow-x-auto pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 scroll-smooth"
+                                style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+                            >
+                                <table className="w-full text-sm min-w-[600px] sm:min-w-0">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Thời gian</th>
+                                            <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Account</th>
+                                            <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Trạng thái gửi</th>
+                                            <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Trạng thái phản hồi</th>
+                                            <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Hành động</th>
+                                        </tr>
+                                    </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {jobs
                                         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -633,21 +682,21 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
 
                                             return (
                                                 <tr key={job.id} className="hover:bg-gray-50 transition-colors">
-                                                    <td className="px-4 py-3 text-gray-600">
+                                                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
                                                         {formatDateTime(job.created_at)}
                                                     </td>
-                                                    <td className="px-4 py-3">
+                                                    <td className="px-4 py-3 whitespace-nowrap">
                                                         <div className="flex items-center gap-2">
                                                             <Badge variant="outline">{job.account}</Badge>
                                                             <span className="text-xs text-gray-500">{accountInfo?.name}</span>
                                                         </div>
                                                     </td>
-                                                    <td className="px-4 py-3">
+                                                    <td className="px-4 py-3 whitespace-nowrap">
                                                         <Badge variant={job.is_sent ? "default" : "secondary"}>
                                                             {job.is_sent ? "Đã gửi" : "Chưa gửi/Lỗi"}
                                                         </Badge>
                                                     </td>
-                                                    <td className="px-4 py-3">
+                                                    <td className="px-4 py-3 whitespace-nowrap">
                                                         <Badge
                                                             variant={hasReplied ? "default" : "secondary"}
                                                             className={hasReplied ? "bg-purple-500" : ""}
@@ -655,27 +704,21 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
                                                             {hasReplied ? "Đã phản hồi" : "Chưa phản hồi"}
                                                         </Badge>
                                                     </td>
-                                                    <td className="px-4 py-3">
+                                                    <td className="px-4 py-3 whitespace-nowrap">
                                                         <div className="flex gap-2">
-                                                            {hasChat ? (
-                                                                <Tooltip>
-                                                                    <TooltipTrigger asChild>
-                                                                        <Button
-                                                                            variant="ghost"
-                                                                            size="sm"
-                                                                            onClick={() => openChatModal(job)}
-                                                                            className="h-8 w-8 p-0"
-                                                                        >
-                                                                            <MessageCircle className="h-4 w-4" />
-                                                                        </Button>
-                                                                    </TooltipTrigger>
-                                                                    <TooltipContent>Xem tin nhắn</TooltipContent>
-                                                                </Tooltip>
-                                                            ) : (
-                                                                <span className="h-8 w-8 inline-flex items-center justify-center text-gray-400 text-xs">
-                                                                    —
-                                                                </span>
-                                                            )}
+                                                            <Tooltip>
+                                                                <TooltipTrigger asChild>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => openChatModal(job)}
+                                                                        className="h-8 w-8 p-0"
+                                                                    >
+                                                                        <MessageCircle className="h-4 w-4" />
+                                                                    </Button>
+                                                                </TooltipTrigger>
+                                                                <TooltipContent>Xem tin nhắn</TooltipContent>
+                                                            </Tooltip>
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -683,6 +726,7 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
                                         })}
                                 </tbody>
                             </table>
+                            </div>
                         </div>
                     )}
 

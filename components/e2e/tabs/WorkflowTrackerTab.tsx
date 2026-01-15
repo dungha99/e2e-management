@@ -4,13 +4,12 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, DollarSign, Play, Zap, Search, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp, Info } from "lucide-react"
+import { CheckCircle, DollarSign, Play, Zap, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp, Info } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition, WinCaseHistory } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { ActivateWorkflowDialog } from "../dialogs/ActivateWorkflowDialog"
 import { fetchAiInsights } from "@/hooks/use-leads"
-import { PriceInput } from "../common/PriceInput"
 
 // Custom fields configuration for each workflow
 const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] => {
@@ -1065,6 +1064,7 @@ ${dealerBidsStr}`
           aiInsightId={aiInsights?.aiInsightId || null}
           isAlignedWithAi={aiInsights?.targetWorkflowId === selectedTransition.workflowId}
           hideDefaultFields={selectedTransition.isFromWF0}
+          workflowSteps={workflowInstancesData?.allWorkflowSteps?.[selectedTransition.workflowId] || []}
           onSuccess={() => {
             if (onWorkflowActivated) {
               onWorkflowActivated()

@@ -25,107 +25,8 @@ import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { PriceInput } from "../common/PriceInput"
 
-// WFD5 Message Templates
-const WFD5_MESSAGE_TEMPLATES: Record<string, { title: string; template: string }> = {
-  "D5.1": {
-    title: "Mở phiên 5 ngày + Gửi cho người bán",
-    template: `Về xe {{display_name}} {{year}} của mình, em sẽ cố gắng neo người mua để họ giữ nguyên mức giá trong 3 ngày tới ạ, mình cứ cân đối rồi báo em hong sao hết ạ.
+// Hardcoded message templates removed in favor of dynamic loading from workflow_steps table.
 
-Đồng thời, em đã mở thêm phiên kết nối để tìm thêm người mua có nhu cầu để tìm được mức giá tốt nhất có thể: {{session_url}}
-
-Anh chị có thể theo dõi trực tiếp các tương tác từ người mua trên link này nhé!
-Em sẽ update thường xuyên cho anh chị nha.`
-  },
-  "D5.2": {
-    title: "Social Proof (Day 2)",
-    template: `Tuần vừa rồi Vucar vừa giao dịch thành công 1 chiếc {{similar_car}} đời {{similar_year}}.
-
-Tình trạng xe ok, giá chốt khoảng {{price_reference}}.
-
-Em gửi anh chị tham khảo để nắm được tình hình thị trường hiện tại ạ.`
-  },
-  "D5.3": {
-    title: "Scarcity - Buyer withdrew (Day 3)",
-    template: `Dạ anh chị ơii,
-
-Em cập nhật tình hình: Người mua trước có giá cao nhất liên hệ mình hôm trước thì họ đã mua được xe vừa ý rồi nên ngừng giao dịch ạ huhu
-
-Để em tiếp tục tìm thêm người mua phù hợp cho mình nhé. Em sẽ cố gắng tìm được người mua tốt nhất cho xe của anh chị.`
-  },
-  "D5.4": {
-    title: "Urgency - New buyer (Day 4)",
-    template: `Em update cho anh chị tình hình ạ! Hiện tại hệ thống bên em đang có yêu cầu tìm mua dòng {{display_name}} từ khách hàng đã từng bán xe qua Vucar.
-
-Họ cần xe trong tuần và có thể mua ngay. Mình còn nhu cầu bán không để em báo họ ưu tiên dẫn họ xem xe mình trước ạ?
-
-Tài chính họ hiện tại đang tầm {{price_range}}.
-
-Nếu oke thì em sẽ liên hệ người mua ngay để sắp xếp xem xe nhé! Mình phản hồi giúp em để em kịp thời báo cho người mua ạ.`
-  },
-  "D5.5": {
-    title: "Close Session + Final Decision (Day 5)",
-    template: `Dạ anh chị ơi, phiên đấu giá xe {{display_name}} đã kết thúc, em đẩy thêm tin xe mình đến tệp khách phù hợp tìm đúng dòng xe mình thì hiện tại thì ngân sách của họ chỉ đang giao động tầm {{price_range}}.
-
-Em đã thương lượng sẵn cho bên bán thì với mức giá này bên người mua lo hết chi phí giấy tờ, anh chị nhận về đủ ạ.
-
-Ngoài ra anh chị đắn đo giấy tờ hồ sơ thì bên em cũng sẽ hỗ trợ giúp mình cho đến khi nhận đủ tiền mới thôi.
-
-Mình có thể xem thương lượng để đi đến mức giá tối ưu với khách này. Không biết anh chị thấy thế nào ạ?`
-  }
-}
-
-// WFB2 Message Templates
-const WFB2_MESSAGE_TEMPLATES: Record<string, { title: string; template: string }> = {
-  "B2.1": {
-    title: "Gửi lại phiên có báo cáo kiểm định cho khách",
-    template: `Dạ anh chị ơi, xe mình đã kiểm định rồi nên em đã upload tình trạng xe chi tiết lên trên tin xe của mình để người mua họ tự tin đặt giá ạ.
-
-Em đã upload tình trạng xe của mình trên phiên đấu giá của anh chị ạ: {{session_url}}. Có điểm gì cần bổ sung anh chị cứ nhắn em nha.
-
-[Tin nhắn 2]
-Với tình trạng xe của mình, anh xem có thể cân nhắc được giá nào cho khách em ạ. Khách em thiện chí muốn mua xe mình lắm nhưng mà với tình trạng xe đẹp, không vết vát gì thì khách giao dịch đủ tiền như em báo với mình luôn. Tuy nhiên thì sau khi xem xe, khách có cân nhắc thêm nên anh xem gia lộc cho khách được giá nào để em báo khách ạ?`
-  },
-  "B2.2": {
-    title: "Social Proof (sau 30')",
-    template: `Decoy zalo`
-  },
-  "B2.3": {
-    title: "Gửi lại summary của bot (sau 30')",
-    template: ``
-  },
-  "B2.4": {
-    title: "Gửi lại kết phiên cho khách",
-    template: `Dạ em đã đẩy thêm tin xe mình với tình trạng xe thực tế. Có vài người mua mới liên hệ nhưng tài chính họ hơi thấp nên em chưa làm việc tiếp. Hiện tại thì người mua hôm trước trả giá cao nhất vẫn còn quan tâm do họ tìm đúng dòng này ạ.
-
-Dạ nếu anh cân nhắc được mức giá nào hợp lý thì cứ báo lại em để em hỗ trợ mình deal với khách ạ, do em ở giữa nên luôn cố gắng deal cho mình mức giá tốt và hợp lý nhất, anh yên tâm nhé.`
-  }
-}
-
-// WF2 Message Templates
-const WF2_MESSAGE_TEMPLATES: Record<string, { title: string; template: string }> = {
-  "W2.1": {
-    title: "Create Bidding",
-    template: `Dạ em đang tiếp tục đẩy thêm tin xe mình tiếp tục trên hệ thống ạ để thu hút thêm người mua quan tâm dòng xe này.
-
-Em gửi anh chị theo dõi tin xe của mình ạ.
-
-Phiên đấu giá xe {{display_name}} {{year}}
-Thông tin xe:
-Khu vực: TP. Hồ Chí Minh
-Odo: {{mileage}} km
-Link phiên: {{session_url}}`
-  },
-  "W2.2": {
-    title: "Kết thúc phiên",
-    template: `Dạ anh chị ơi, phiên đấu giá xe {{display_name}} đã kết thúc, thì kết quả không khả quan lắm ạ, các khách mua bên Vucar em có thông tin sẵn thì vẫn không được giá.
-
-Hiện tại thì ngân sách của họ chỉ đang giao động tầm {{price_range}}.
-
-Em có thương lượng thêm thì với mức giá này bên người mua lo hết chi phí giấy tờ, anh chị nhận về đủ ạ.
-
-Mình có thể xem thương lượng để đi đến mức giá tối ưu với khách này. Không biết anh chị thấy thế nào ạ?`
-  }
-}
 
 interface ActivateWorkflowDialogProps {
   open: boolean
@@ -140,6 +41,7 @@ interface ActivateWorkflowDialogProps {
   isAlignedWithAi?: boolean
   hideDefaultFields?: boolean
   onSuccess?: () => void
+  workflowSteps?: any[]
 }
 
 export function ActivateWorkflowDialog({
@@ -155,6 +57,7 @@ export function ActivateWorkflowDialog({
   isAlignedWithAi,
   hideDefaultFields = false,
   onSuccess,
+  workflowSteps = [],
 }: ActivateWorkflowDialogProps) {
   const [insight, setInsight] = useState("")
   const [finalOutcome, setFinalOutcome] = useState<"discount" | "original_price" | "lost" | "">("")
@@ -167,35 +70,33 @@ export function ActivateWorkflowDialog({
   const [selectedPreviewStep, setSelectedPreviewStep] = useState<string>("")
   const [copied, setCopied] = useState(false)
 
-  // Check workflow type and get appropriate templates
-  // Workflow IDs:
-  // WF0: 3fc82631-68e9-469a-95d7-c249fe682ced
-  // WF1: 36af24d3-6e60-43b8-b198-cfec8b5d0e0e
-  // WF2: 3b78a161-116e-43a2-8b7f-61fcf9ba9930
-  // WFD1: 9f130676-a416-418f-bae9-a581096f6426
-  // WFD5: e06d0d0b-be03-45f9-97f1-38964ee7e231
-  // WFB2: fc43e876-0948-4d5a-b16d-a717e891fd57
+  // Workflow IDs for specific logic (prefilling, etc.)
   const isWFD1 = targetWorkflowId === "9f130676-a416-418f-bae9-a581096f6426"
-  const isWFD5 = targetWorkflowId === "e06d0d0b-be03-45f9-97f1-38964ee7e231"
-  const isWFB2 = targetWorkflowId === "fc43e876-0948-4d5a-b16d-a717e891fd57"
-  const isWF2 = targetWorkflowId === "3b78a161-116e-43a2-8b7f-61fcf9ba9930"
-  const hasPreview = isWFD5 || isWFB2 || isWF2
 
-  // Get the appropriate template set based on workflow type
-  const getMessageTemplates = () => {
-    if (isWFD5) return WFD5_MESSAGE_TEMPLATES
-    if (isWFB2) return WFB2_MESSAGE_TEMPLATES
-    if (isWF2) return WF2_MESSAGE_TEMPLATES
-    return {}
-  }
-  const messageTemplates = getMessageTemplates()
+  // Generate dynamic templates from workflow_steps
+  const messageTemplates: Record<string, { title: string; template: string }> = workflowSteps.reduce((acc, step) => {
+    if (step.template) {
+      // Step key format: [Workflow Name].[Step Order] (e.g., WF2.1)
+      const stepKey = `${targetWorkflowName}.${step.step_order}`
+      acc[stepKey] = {
+        title: step.step_name,
+        template: step.template
+      }
+    }
+    return acc
+  }, {} as Record<string, { title: string; template: string }>)
 
-  // Set default step when workflow type changes
+  const hasPreview = Object.keys(messageTemplates).length > 0
+
+  // Set default step when templates or workflow changes
   useEffect(() => {
-    if (isWFD5) setSelectedPreviewStep("D5.1")
-    else if (isWFB2) setSelectedPreviewStep("B2.1")
-    else if (isWF2) setSelectedPreviewStep("W2.1")
-  }, [isWFD5, isWFB2, isWF2])
+    if (hasPreview) {
+      const firstStepKey = Object.keys(messageTemplates).sort()[0]
+      setSelectedPreviewStep(firstStepKey)
+    } else {
+      setSelectedPreviewStep("")
+    }
+  }, [targetWorkflowId, hasPreview])
 
   // Helper function to get plain text message (for copy)
   // Uses customFieldValues (form input) when available for live preview updates
@@ -267,7 +168,7 @@ export function ActivateWorkflowDialog({
 
     // Split by markers and create JSX elements
     const parts = markedText.split(/⟦|⟧/)
-    return parts.map((part, index) => {
+    return parts.map((part: string, index: number) => {
       // Odd indices are the highlighted variables
       if (index % 2 === 1) {
         return (

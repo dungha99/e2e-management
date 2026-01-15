@@ -10,8 +10,8 @@ interface KanbanColumnProps {
     workflow: KanbanWorkflow
     onInstanceClick?: (instance: WorkflowInstanceForKanban) => void
     onTransition?: (instanceId: string, transitionId: string, toWorkflowId: string) => void
-    onNote?: (leadId: string, leadName: string) => void
-    onNoteUpdate?: (leadId: string, notes: string) => Promise<void>
+    onNote?: (leadId: string, leadName: string, carId: string) => void
+    onNoteUpdate?: (leadId: string, carId: string, notes: string, previousNotes: string) => Promise<void>
     onOpenTransitionDialog?: (instance: WorkflowInstanceForKanban) => void
 }
 

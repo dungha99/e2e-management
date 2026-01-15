@@ -16,6 +16,7 @@ interface NoteDialogProps {
     onOpenChange: (open: boolean) => void
     leadId: string | null
     leadName: string | null
+    carId: string | null
     initialNotes?: string
     onSave?: (notes: string) => Promise<void>
 }
@@ -25,6 +26,7 @@ export function NoteDialog({
     onOpenChange,
     leadId,
     leadName,
+    carId,
     initialNotes = "",
     onSave,
 }: NoteDialogProps) {
@@ -69,14 +71,21 @@ export function NoteDialog({
     }
 
     const handleSave = async () => {
-        if (!leadId) return
+        if (!carId || !leadId) return
 
         setSaving(true)
         try {
-            const response = await fetch(`/api/e2e/leads/${leadId}/notes`, {
-                method: "PUT",
+            const response = await fetch("/api/e2e/update-sale-status", {
+                method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ notes: editedNotes })
+                body: JSON.stringify({
+                    carId,
+                    leadId,
+                    notes: editedNotes,
+                    previousValues: {
+                        notes: notes,
+                    }
+                })
             })
 
             if (response.ok) {

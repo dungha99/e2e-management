@@ -123,6 +123,7 @@ export function CampaignKanbanView({ picId }: CampaignKanbanViewProps) {
     const [selectedLeadForNote, setSelectedLeadForNote] = useState<{
         leadId: string
         leadName: string
+        carId: string
     } | null>(null)
 
     // Edit Lead Dialog state
@@ -231,8 +232,8 @@ export function CampaignKanbanView({ picId }: CampaignKanbanViewProps) {
         }
     }
 
-    const handleOpenNote = (leadId: string, leadName: string) => {
-        setSelectedLeadForNote({ leadId, leadName })
+    const handleOpenNote = (leadId: string, leadName: string, carId: string) => {
+        setSelectedLeadForNote({ leadId, leadName, carId })
         setNoteDialogOpen(true)
     }
 
@@ -281,12 +282,19 @@ export function CampaignKanbanView({ picId }: CampaignKanbanViewProps) {
     }
 
     // Handle inline note update from KanbanCard
-    const handleNoteUpdate = async (leadId: string, notes: string) => {
+    const handleNoteUpdate = async (leadId: string, carId: string, notes: string, previousNotes: string) => {
         try {
-            const response = await fetch(`/api/e2e/leads/${leadId}/notes`, {
+            const response = await fetch("/api/e2e/update-sale-status", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ notes })
+                body: JSON.stringify({
+                    carId,
+                    leadId,
+                    notes,
+                    previousValues: {
+                        notes: previousNotes,
+                    }
+                })
             })
 
             if (!response.ok) {
@@ -626,6 +634,7 @@ export function CampaignKanbanView({ picId }: CampaignKanbanViewProps) {
                 onOpenChange={setNoteDialogOpen}
                 leadId={selectedLeadForNote?.leadId || null}
                 leadName={selectedLeadForNote?.leadName || null}
+                carId={selectedLeadForNote?.carId || null}
             />
 
             {/* Edit Lead Dialog */}

@@ -10,6 +10,7 @@ import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinitio
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { ActivateWorkflowDialog } from "../dialogs/ActivateWorkflowDialog"
 import { fetchAiInsights } from "@/hooks/use-leads"
+import { AiThinkingChat } from "../common/AiThinkingChat"
 
 // Custom fields configuration for each workflow
 const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] => {
@@ -358,8 +359,16 @@ export function WorkflowTrackerTab({
     }
   }, [workflowInstancesData, activeWorkflowView, onWorkflowViewChange])
 
+  // Join data
+  const currentInstance = workflowInstancesData?.data?.find(i => i.instance.workflow_id === activeWorkflowView)
+
   // Fetch AI insights when accessing a completed workflow instance
   useEffect(() => {
+    let isMounted = true
+
+    // Clear previous insights when switching or if dependencies change
+    setAiInsights(null)
+
     // Only fetch for dynamic workflows (not "purchase" or "seeding")
     const isDynamicWorkflow = activeWorkflowView !== "purchase" && activeWorkflowView !== "seeding"
     if (!isDynamicWorkflow || !workflowInstancesData || !selectedLead.car_id) {
@@ -388,20 +397,30 @@ export function WorkflowTrackerTab({
     setFetchingAiInsights(true)
     fetchAiInsights(selectedLead.car_id, sourceInstanceId, phoneNumber)
       .then((insights) => {
-        setAiInsights(insights)
-        console.log("[WorkflowTracker] AI Insights fetched:", insights)
+        if (isMounted) {
+          setAiInsights(insights)
+          console.log("[WorkflowTracker] AI Insights fetched:", insights)
+        }
       })
       .catch((error) => {
-        // Check if it's a 202 "still processing" response
-        if (error.message.includes("still being processed")) {
-          console.log("[WorkflowTracker] AI insights still processing, will retry on next render")
-        } else {
-          console.error("[WorkflowTracker] Failed to fetch AI insights:", error)
+        if (isMounted) {
+          // Check if it's a 202 "still processing" response
+          if (error.message.includes("still being processed")) {
+            console.log("[WorkflowTracker] AI insights still processing, will retry on next render")
+          } else {
+            console.error("[WorkflowTracker] Failed to fetch AI insights:", error)
+          }
         }
       })
       .finally(() => {
-        setFetchingAiInsights(false)
+        if (isMounted) {
+          setFetchingAiInsights(false)
+        }
       })
+
+    return () => {
+      isMounted = false
+    }
   }, [activeWorkflowView, workflowInstancesData, selectedLead.car_id, selectedLead.phone, selectedLead.additional_phone])
 
   // Fetch win case history when car model is available
@@ -727,7 +746,10 @@ ${dealerBidsStr}`
                             setActivateDialogOpen(true)
                           }
                         }}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-xs sm:text-sm"
+                        className={`${transition.to_workflow_id === aiInsights?.targetWorkflowId
+                          ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200 border-none"
+                          : "bg-emerald-600 hover:bg-emerald-700"
+                          } text-xs sm:text-sm`}
                       >
                         <Zap className="h-3.5 w-3.5 mr-1.5" />
                         Kích hoạt {transition.to_workflow_name}
@@ -762,6 +784,32 @@ ${dealerBidsStr}`
             )
           })()
         ) : null}
+
+        {/* AI Insight Thinking Chat */}
+        <AiThinkingChat
+          insights={aiInsights}
+          isLoading={fetchingAiInsights}
+          onSubmitFeedback={async (feedback) => {
+            if (!selectedLead.car_id || !currentInstance?.instance.id) return
+            const phoneNumber = selectedLead.phone || selectedLead.additional_phone
+            if (!phoneNumber) return
+
+            setFetchingAiInsights(true)
+            try {
+              const newInsights = await fetchAiInsights(
+                selectedLead.car_id,
+                currentInstance.instance.id,
+                phoneNumber,
+                feedback
+              )
+              setAiInsights(newInsights)
+            } catch (error) {
+              console.error("[WorkflowTracker] Failed to submit AI feedback:", error)
+            } finally {
+              setFetchingAiInsights(false)
+            }
+          }}
+        />
       </div>
 
       {/* Additional Info Cards */}

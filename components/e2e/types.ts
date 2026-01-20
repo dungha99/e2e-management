@@ -75,8 +75,8 @@ export interface Lead {
     inside?: Array<{ key: string; url: string; name: string; type: string }>;
     outside?: Array<{ key: string; url: string; name: string; type: string }>;
     [key: string]:
-      | Array<{ key: string; url: string; name: string; type: string }>
-      | undefined;
+    | Array<{ key: string; url: string; name: string; type: string }>
+    | undefined;
   };
   sku?: string | null;
   car_created_at?: string | null;
@@ -307,14 +307,25 @@ export interface AiInsightAnalysis {
   fit_score: number;
 }
 
-export interface AiInsight {
+export interface AiInsightHistory {
   id: string;
+  ai_insight_id: string;
+  ai_insight_summary: AiInsightAnalysis;
+  user_feedback: string | null;
+  created_at: string;
+}
+
+export interface AiInsight {
+  id?: string;
+  aiInsightId?: string;
   car_id: string;
   source_instance_id: string;
-  ai_insight_summary: AiInsightAnalysis;
+  analysis: AiInsightAnalysis;
   selected_transition_id: string;
   target_workflow_id: string;
   created_at: string;
+  history?: AiInsightHistory[];
+  isNew?: boolean;
   // Joined data
-  target_workflow_name?: string;
+  targetWorkflowName?: string;
 }

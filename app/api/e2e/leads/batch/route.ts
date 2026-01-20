@@ -83,12 +83,13 @@ async function fetchBatchData(
           l.created_at,
           c.id as car_id,
           ROW_NUMBER() OVER (
-            PARTITION BY l.phone
+            PARTITION BY l.phone, c.id
             ORDER BY l.created_at DESC, c.created_at DESC NULLS LAST
           ) as rn
         FROM leads l
         LEFT JOIN cars c ON c.lead_id = l.id
           AND (c.updated_at IS NULL OR c.updated_at > NOW() - INTERVAL '2 months')
+          AND (c.is_deleted IS NULL OR c.is_deleted = false)
         LEFT JOIN sale_status ss ON ss.car_id = c.id
         WHERE l.pic_id = $1::uuid
           ${tabCondition}
@@ -214,6 +215,7 @@ async function fetchBatchData(
           LEFT JOIN cars c ON c.id = cp.car_auction_id
           WHERE cp.car_auction_id = ANY($1::uuid[])
             AND cp.created_by IS NULL
+            AND (c.is_deleted IS NULL OR c.is_deleted = false)
         )
         SELECT 
           id,

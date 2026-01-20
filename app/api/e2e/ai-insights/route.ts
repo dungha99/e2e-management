@@ -122,6 +122,11 @@ export async function POST(request: Request) {
         headers: {
           "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          carId,
+          sourceInstanceId,
+          phoneNumber
+        })
       })
 
       if (!response.ok) {

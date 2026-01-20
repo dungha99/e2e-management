@@ -200,12 +200,13 @@ export async function POST(request: Request) {
           const isWFB2 = workflow.id === "fc43e876-0948-4d5a-b16d-a717e891fd57"
 
           const webhookPayload = (isWFD1 || isWFB2)
-            ? transformedPayload
+            ? { ...transformedPayload, carId }
             : {
-                workflowInstanceId: newInstanceId,
-                phone: phoneNumber,
-                ...transformedPayload, // Spread transformed workflow-specific fields
-              }
+              workflowInstanceId: newInstanceId,
+              phone: phoneNumber,
+              carId,
+              ...transformedPayload, // Spread transformed workflow-specific fields
+            }
 
           const webhookResponse = await fetch(webhookUrl, {
             method: "POST",

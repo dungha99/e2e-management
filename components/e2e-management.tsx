@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useCallback } from "react"
+import { DateRange } from "react-day-picker"
 import { useSearchParams, useRouter } from "next/navigation"
 import { useIsMobile } from "@/components/ui/use-mobile"
 import { Badge } from "@/components/ui/badge"
@@ -206,6 +207,18 @@ export function E2EManagement({
   const appliedSearchPhone = searchParams.get("search") || ""
   const sourceFilter = searchParams.get("sources")?.split(",").filter(Boolean) || []
 
+  // Date range from URL params (format: YYYY-MM-DD)
+  const dateFromParam = searchParams.get("dateFrom") || null
+  const dateToParam = searchParams.get("dateTo") || null
+
+  // Convert URL date params to DateRange for the UI component
+  const dateRangeFilter: DateRange | undefined = dateFromParam
+    ? {
+      from: new Date(dateFromParam),
+      to: dateToParam ? new Date(dateToParam) : new Date(dateFromParam)
+    }
+    : undefined
+
   const tab = activeTab
   const page = currentPage
   const search = appliedSearchPhone
@@ -222,16 +235,18 @@ export function E2EManagement({
     }
   }, [propUserId])
 
-  // Fetch counts with filters
+  // Fetch counts with filters (including date range)
   const { data: countsData, isLoading: loadingCounts, refetch: refetchCounts } = useLeadsCounts({
     uid: selectedAccount,
     search,
     sources,
+    dateFrom: dateFromParam,
+    dateTo: dateToParam,
     refreshKey
   })
   const counts = countsData || { priority: 0, nurture: 0, total: 0 }
 
-  // Fetch leads with server-side filtering
+  // Fetch leads with server-side filtering (including date range)
   const {
     data: leadsData,
     isLoading: loading,
@@ -243,6 +258,8 @@ export function E2EManagement({
     per_page: ITEMS_PER_PAGE,
     search,
     sources,
+    dateFrom: dateFromParam,
+    dateTo: dateToParam,
     refreshKey,
   })
 
@@ -1835,7 +1852,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
   const currentTabCount = activeTab === "priority" ? priorityCount : nurtureCount
   const totalPages = Math.ceil(currentTabCount / ITEMS_PER_PAGE)
 
-  // Leads are already filtered and paginated from backend, display them directly
+  // Leads are already filtered and paginated from backend (including date range filter)
   const currentPageLeads = enrichedLeads
 
   const handleTabChange = (tab: "priority" | "nurture") => {
@@ -1873,6 +1890,30 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     params.delete("search")
     params.set("page", "1") // Reset to first page when clearing search
     setSearchPhone("") // Clear the search input as well
+    router.push(buildUrl(params), { scroll: false })
+  }
+
+  // Handler for date range filter changes - updates URL params
+  const handleDateRangeFilterChange = (newDateRange: DateRange | undefined) => {
+    const params = new URLSearchParams(searchParams.toString())
+
+    if (newDateRange?.from) {
+      // Format dates as YYYY-MM-DD for URL
+      const dateFrom = newDateRange.from.toISOString().split('T')[0]
+      params.set("dateFrom", dateFrom)
+
+      if (newDateRange.to) {
+        const dateTo = newDateRange.to.toISOString().split('T')[0]
+        params.set("dateTo", dateTo)
+      } else {
+        params.delete("dateTo")
+      }
+    } else {
+      params.delete("dateFrom")
+      params.delete("dateTo")
+    }
+    params.set("page", "1") // Reset to first page when filtering
+
     router.push(buildUrl(params), { scroll: false })
   }
 
@@ -2319,6 +2360,8 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
               sourceFilter={sourceFilter}
               onSourceFilterChange={handleSourceFilterChange}
               availableSources={availableSources}
+              dateRangeFilter={dateRangeFilter}
+              onDateRangeFilterChange={handleDateRangeFilterChange}
             />
           )}
 

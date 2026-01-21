@@ -1,6 +1,8 @@
 "use client"
 
+import * as React from "react"
 import { useState } from "react"
+import { DateRange } from "react-day-picker"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,6 +14,7 @@ import { BiddingHistory, Dealer, Lead } from "../types"
 import { formatPrice, formatDate, formatCarInfo, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { cn } from "@/lib/utils"
 import { PriceInput } from "../common/PriceInput"
+import { DateRangePickerWithPresets } from "../common/DateRangePickerWithPresets"
 
 interface BiddingHistoryDialogProps {
   open: boolean
@@ -72,6 +75,7 @@ export function BiddingHistoryDialog({
   const [localNewBidComment, setLocalNewBidComment] = useState("")
   const [showAddBiddingForm, setShowAddBiddingForm] = useState(false)
   const [openCombobox, setOpenCombobox] = useState(false)
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined)
 
   const newBidDealerId = externalNewBidDealerId ?? localNewBidDealerId
   const setNewBidDealerId = externalSetNewBidDealerId ?? setLocalNewBidDealerId
@@ -79,6 +83,22 @@ export function BiddingHistoryDialog({
   const setNewBidPrice = externalSetNewBidPrice ?? setLocalNewBidPrice
   const newBidComment = externalNewBidComment ?? localNewBidComment
   const setNewBidComment = externalSetNewBidComment ?? setLocalNewBidComment
+
+  // Filter bidding history based on date range
+  const filteredBiddingHistory = React.useMemo(() => {
+    if (!dateRange?.from) return biddingHistory
+
+    return biddingHistory.filter((bid) => {
+      const bidDate = new Date(bid.created_at)
+      const startOfDay = new Date(dateRange.from!)
+      startOfDay.setHours(0, 0, 0, 0)
+
+      const endOfDay = dateRange.to ? new Date(dateRange.to) : new Date(dateRange.from as Date)
+      endOfDay.setHours(23, 59, 59, 999)
+
+      return bidDate >= startOfDay && bidDate <= endOfDay
+    })
+  }, [biddingHistory, dateRange])
 
   const handleAddBid = () => {
     onAddBid()
@@ -98,7 +118,7 @@ export function BiddingHistoryDialog({
           <DialogDescription>
             Danh sách các dealer đã trả giá cho xe {formatCarInfo(selectedLead || {} as Lead)}
           </DialogDescription>
-          <div className="mt-2 flex gap-2">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -114,6 +134,13 @@ export function BiddingHistoryDialog({
             >
               Gửi thêm dealer
             </Button>
+            <div className="ml-auto">
+              <DateRangePickerWithPresets
+                dateRange={dateRange}
+                onDateRangeChange={setDateRange}
+                placeholder="Lọc theo ngày"
+              />
+            </div>
           </div>
         </DialogHeader>
 
@@ -197,9 +224,9 @@ export function BiddingHistoryDialog({
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
               <span className="ml-3 text-muted-foreground">Đang tải lịch sử...</span>
             </div>
-          ) : biddingHistory.length === 0 ? (
+          ) : filteredBiddingHistory.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
-              <p>Chưa có dealer nào trả giá</p>
+              <p>{dateRange?.from ? "Không có kết quả trong khoảng thời gian đã chọn" : "Chưa có dealer nào trả giá"}</p>
             </div>
           ) : (
             <div className="border rounded-lg overflow-hidden">
@@ -214,7 +241,7 @@ export function BiddingHistoryDialog({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {biddingHistory.map((bid, index) => (
+                  {filteredBiddingHistory.map((bid, index) => (
                     <tr key={bid.id} className="hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3 text-muted-foreground">{index + 1}</td>
                       <td className="px-4 py-3 font-medium">{bid.dealer_name}</td>
@@ -285,7 +312,13 @@ export function BiddingHistoryDialog({
         <DialogFooter className="border-t pt-4">
           <div className="flex items-center justify-between w-full">
             <div className="text-sm text-muted-foreground">
-              Tổng số: <span className="font-semibold">{biddingHistory.length}</span> dealer trả giá
+              {dateRange?.from ? (
+                <>
+                  Hiển thị: <span className="font-semibold">{filteredBiddingHistory.length}</span> / {biddingHistory.length} dealer trả giá
+                </>
+              ) : (
+                <>Tổng số: <span className="font-semibold">{biddingHistory.length}</span> dealer trả giá</>
+              )}
             </div>
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Đóng

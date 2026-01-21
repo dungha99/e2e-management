@@ -5,7 +5,7 @@ import { getCached } from "@/lib/cache"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { uid, page = 1, per_page = 10, tab = "priority", search = "", sources = [], refreshKey = 0 } = body
+    const { uid, page = 1, per_page = 10, tab = "priority", search = "", sources = [], refreshKey = 0, dateFrom = null, dateTo = null } = body
 
     if (!uid) {
       return NextResponse.json({ error: "UID is required" }, { status: 400 })
@@ -18,15 +18,16 @@ export async function POST(request: Request) {
 
     const offset = (page - 1) * per_page
 
-    // Cache key includes uid, tab, pagination params, search, sources, AND refreshKey
+    // Cache key includes uid, tab, pagination params, search, sources, dates, AND refreshKey
     const sourcesKey = sources.length > 0 ? sources.sort().join(",") : "all"
     const searchKey = search ? `s:${search}` : "nosearch"
-    const cacheKey = `leads-batch:${uid}:${tab}:p${page}:pp${per_page}:${searchKey}:src:${sourcesKey}:rk:${refreshKey}`
+    const dateKey = dateFrom ? `df:${dateFrom}:dt:${dateTo || dateFrom}` : "nodate"
+    const cacheKey = `leads-batch:${uid}:${tab}:p${page}:pp${per_page}:${searchKey}:src:${sourcesKey}:${dateKey}:rk:${refreshKey}`
 
     const result = await getCached(
       cacheKey,
       async () => {
-        return await fetchBatchData(uid, tab, page, per_page, offset, search, sources)
+        return await fetchBatchData(uid, tab, page, per_page, offset, search, sources, dateFrom, dateTo)
       },
       30 // Cache for 30 seconds - lead data changes frequently
     )
@@ -48,7 +49,9 @@ async function fetchBatchData(
   per_page: number,
   offset: number,
   search: string,
-  sources: string[]
+  sources: string[],
+  dateFrom: string | null = null,
+  dateTo: string | null = null
 ) {
   // Build WHERE condition based on tab
   const tabCondition = tab === "priority"
@@ -69,6 +72,14 @@ async function fetchBatchData(
   const sourceCondition = sources.length > 0
     ? `AND l.source = ANY(ARRAY[${sources.map(s => `'${s}'`).join(",")}])`
     : ""
+
+  // Build date range filter condition (filter by car created_at)
+  let dateCondition = ""
+  if (dateFrom && dateTo) {
+    dateCondition = `AND c.created_at >= '${dateFrom}'::date AND c.created_at < ('${dateTo}'::date + interval '1 day')`
+  } else if (dateFrom) {
+    dateCondition = `AND c.created_at >= '${dateFrom}'::date AND c.created_at < ('${dateFrom}'::date + interval '1 day')`
+  }
 
   // Highly optimized query:
   // 1. Rank with minimal data
@@ -95,6 +106,7 @@ async function fetchBatchData(
           ${tabCondition}
           ${searchCondition}
           ${sourceCondition}
+          ${dateCondition}
       ),
       paginated_leads AS (
         SELECT lead_id, car_id, created_at, phone
@@ -129,6 +141,7 @@ async function fetchBatchData(
         c.sku,
         c.location,
         c.additional_images,
+        c.created_at as car_created_at,
         u.user_name as pic_name,
         ss.id as sale_status_id,
         ss.price_customer,
@@ -137,7 +150,9 @@ async function fetchBatchData(
         ss.stage,
         ss.notes,
         ss.messages_zalo,
-        ss.is_hot_lead
+        ss.is_hot_lead,
+        ss.intention,
+        ss.negotiation_ability
       FROM paginated_leads pl
       JOIN leads l ON l.id = pl.lead_id
       LEFT JOIN cars c ON c.id = pl.car_id
@@ -376,6 +391,7 @@ async function fetchBatchData(
       mileage: lead.mileage,
       sku: lead.sku,
       location: lead.location,
+      car_created_at: lead.car_created_at || null,
       has_enough_images: has_enough_images,
       workflow2_is_active: lead.car_id ? (workflow2Status[lead.car_id] ?? null) : null,
       additional_images: additionalImages,
@@ -386,6 +402,8 @@ async function fetchBatchData(
       price_highest_bid: lead.price_highest_bid,
       stage: lead.stage || "UNDEFINED",
       notes: lead.notes,
+      intentionLead: lead.intention || null,
+      negotiationAbility: lead.negotiation_ability || null,
       first_message_sent: first_message_sent,
       session_created: session_created,
       // Also keep nested sale_status for backwards compatibility

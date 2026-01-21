@@ -269,6 +269,7 @@ export async function POST(request: Request) {
             const wfd1AdditionalPayload = {
               phone: workflowPayload?.phone || phoneNumber || "",
               shop_id: minhAnhShopId,
+              carId: carId,
             }
 
             const additionalResponse = await fetch(wfd1AdditionalWebhook, {

@@ -21,6 +21,7 @@ export async function POST(request: Request) {
         ai.ai_insight_summary,
         ai.selected_transition_id,
         ai.target_workflow_id,
+        ai.is_positive,
         ai.created_at,
         EXTRACT(EPOCH FROM (NOW() - ai.created_at)) as age_seconds
        FROM ai_insights ai
@@ -40,15 +41,17 @@ export async function POST(request: Request) {
       // 2a. Archive current insight to old_ai_insights
       await e2eQuery(
         `INSERT INTO old_ai_insights (
-          ai_insight_id,
-          ai_insight_summary,
-          user_feedback,
-          created_at
-        ) VALUES ($1, $2, $3, NOW())`,
+            ai_insight_id,
+            ai_insight_summary,
+            user_feedback,
+            is_positive,
+            created_at
+          ) VALUES ($1, $2, $3, $4, NOW())`,
         [
           existingInsight.id,
           JSON.stringify(existingInsight.ai_insight_summary),
-          userFeedback
+          userFeedback,
+          existingInsight.is_positive
         ]
       )
 
@@ -58,6 +61,7 @@ export async function POST(request: Request) {
          SET ai_insight_summary = $1, 
              selected_transition_id = NULL, 
              target_workflow_id = NULL,
+             is_positive = NULL,
              created_at = NOW()
          WHERE id = $2`,
         [JSON.stringify({ processing: true, feedbackContext: userFeedback }), existingInsight.id]
@@ -159,7 +163,7 @@ export async function POST(request: Request) {
 // Helper to return insight with its history
 async function returnWithHistory(insight: any, isNew: boolean = false) {
   const historyResult = await e2eQuery(
-    `SELECT ai_insight_summary, user_feedback, created_at 
+    `SELECT id, ai_insight_summary, user_feedback, is_positive, created_at 
      FROM old_ai_insights 
      WHERE ai_insight_id = $1 
      ORDER BY created_at ASC`,
@@ -178,6 +182,7 @@ async function returnWithHistory(insight: any, isNew: boolean = false) {
     selectedTransitionId: insight.selected_transition_id,
     targetWorkflowId: insight.target_workflow_id,
     targetWorkflowName: workflowResult.rows[0]?.name || "Unknown Workflow",
+    is_positive: insight.is_positive,
     history: historyResult.rows,
     isNew: isNew,
   })

@@ -1,6 +1,9 @@
 "use client"
 
 import { useState } from "react"
+import { DateRange } from "react-day-picker"
+import { format } from "date-fns"
+import { vi } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SearchInput } from "@/components/ui/search-input"
@@ -16,6 +19,7 @@ import {
 } from "@/components/ui/popover"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ExportReportDialog } from "../dialogs/ExportReportDialog"
+import { DateRangePickerWithPresets } from "../common/DateRangePickerWithPresets"
 
 interface LeadListSidebarProps {
   // Display props
@@ -38,6 +42,10 @@ interface LeadListSidebarProps {
   sourceFilter: string[]
   onSourceFilterChange: (sources: string[]) => void
   availableSources: string[]
+
+  // Date range filter
+  dateRangeFilter?: DateRange | undefined
+  onDateRangeFilterChange?: (dateRange: DateRange | undefined) => void
 
   // Tabs & counts
   activeTab: "priority" | "nurture"
@@ -77,6 +85,8 @@ export function LeadListSidebar({
   sourceFilter,
   onSourceFilterChange,
   availableSources,
+  dateRangeFilter,
+  onDateRangeFilterChange,
   activeTab,
   onTabChange,
   priorityCount,
@@ -273,13 +283,26 @@ export function LeadListSidebar({
           </Popover>
         </div>
 
+        {/* Date Range Filter Row */}
+        {onDateRangeFilterChange && (
+          <div className="mt-2">
+            <DateRangePickerWithPresets
+              dateRange={dateRangeFilter}
+              onDateRangeChange={onDateRangeFilterChange}
+              placeholder="Lọc theo ngày tạo"
+              className="w-full h-9 text-sm"
+            />
+          </div>
+        )}
+
         {/* Active Filter Pills */}
-        {(appliedSearch || sourceFilter.length > 0) && (
+        {(appliedSearch || sourceFilter.length > 0 || dateRangeFilter?.from) && (
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <button
               onClick={() => {
                 if (onClearSearch) onClearSearch()
                 onSourceFilterChange([])
+                if (onDateRangeFilterChange) onDateRangeFilterChange(undefined)
               }}
               className="flex items-center gap-1 text-xs text-red-600 hover:text-red-700 font-medium"
             >
@@ -318,6 +341,25 @@ export function LeadListSidebar({
                 </div>
               )
             })}
+            {dateRangeFilter?.from && (
+              <div
+                className="flex items-center gap-1 bg-white border border-gray-200 rounded-full px-2.5 py-1 text-xs"
+              >
+                <span className="text-gray-600">ngày:</span>
+                <span className="font-medium text-gray-900">
+                  {format(dateRangeFilter.from, "dd/MM", { locale: vi })}
+                  {dateRangeFilter.to && dateRangeFilter.to !== dateRangeFilter.from && (
+                    <> - {format(dateRangeFilter.to, "dd/MM", { locale: vi })}</>
+                  )}
+                </span>
+                <button
+                  onClick={() => onDateRangeFilterChange?.(undefined)}
+                  className="ml-0.5 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

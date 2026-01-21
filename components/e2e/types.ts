@@ -312,6 +312,7 @@ export interface AiInsightHistory {
   ai_insight_id: string;
   ai_insight_summary: AiInsightAnalysis;
   user_feedback: string | null;
+  is_positive: boolean | null;
   created_at: string;
 }
 
@@ -323,6 +324,7 @@ export interface AiInsight {
   analysis: AiInsightAnalysis;
   selected_transition_id: string;
   target_workflow_id: string;
+  is_positive: boolean | null;
   created_at: string;
   history?: AiInsightHistory[];
   isNew?: boolean;

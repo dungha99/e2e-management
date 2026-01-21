@@ -18,7 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car, Images, MapPin, Send, Activity, ArrowLeft } from "lucide-react"
+import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car, Images, MapPin, Send, Activity, ArrowLeft, Bell } from "lucide-react"
 import { Lead } from "../types"
 import { formatCarInfo, formatPrice, formatDate, formatRelativeTime, getActivityFreshness, getActivityFreshnessClass } from "../utils"
 import { WorkflowTrackerTab } from "../tabs/WorkflowTrackerTab"
@@ -303,6 +303,81 @@ export function LeadDetailPanel({
       setSendingZns(false)
       setConfirmDialogOpen(false)
       setSelectedTemplate(null)
+    }
+  }
+
+  // Handle Follow Up
+  const [isFollowUpLoading, setIsFollowUpLoading] = useState(false)
+  const handleFollowUp = async () => {
+    if (!selectedLead) return
+
+    const phone = selectedLead.phone || selectedLead.additional_phone
+    if (!phone) {
+      toast({
+        title: "Lỗi",
+        description: "Không tìm thấy số điện thoại của lead",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsFollowUpLoading(true)
+    try {
+      const response = await fetch('https://n8n.vucar.vn/webhook/7c06fc96-f8dc-4c5d-af17-57c2bab57864', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ phone }),
+      })
+
+      if (response.ok) {
+        toast({
+          title: "Thành công",
+          description: "Đã gửi yêu cầu Follow up",
+        })
+
+        // Log activity
+        try {
+          await fetch('/api/e2e/log-activity', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              leadId: selectedLead.id,
+              activityType: 'BOT_FOLLOW_UP_SENT',
+              actorType: 'USER',
+              metadata: {
+                field_name: 'bot_follow_up',
+                new_value: 'Triggered manually',
+                channel: 'SYSTEM'
+              },
+              field: 'bot_follow_up'
+            }),
+          })
+
+          // Refresh activity list if needed
+          if (onWorkflowActivated) {
+            // This might not be the right callback but it triggers a refresh in some parents
+            // For now just logging is enough as per requirement
+          }
+        } catch (logError) {
+          console.error('[Follow Up] Failed to log activity:', logError)
+        }
+
+      } else {
+        throw new Error('Gửi yêu cầu thất bại')
+      }
+    } catch (error) {
+      console.error('[Follow Up] Error:', error)
+      toast({
+        title: "Lỗi",
+        description: "Có lỗi xảy ra khi gửi yêu cầu",
+        variant: "destructive",
+      })
+    } finally {
+      setIsFollowUpLoading(false)
     }
   }
 
@@ -661,6 +736,25 @@ export function LeadDetailPanel({
               >
                 <span className="hidden sm:inline">Đặt lịch KD</span>
                 <span className="sm:hidden">Lịch KD</span>
+              </Button>
+
+              {/* Follow Up Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleFollowUp}
+                disabled={isFollowUpLoading}
+                className="bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100 hover:border-purple-300 text-xs sm:text-sm"
+              >
+                {isFollowUpLoading ? (
+                  <Loader2 className="h-3.5 sm:h-4 w-3.5 sm:w-4 animate-spin" />
+                ) : (
+                  <>
+                    <Bell className="h-3.5 sm:h-4 w-3.5 sm:w-4 mr-1.5 sm:mr-2" />
+                    <span className="hidden sm:inline">Follow up</span>
+                    <span className="sm:hidden">Follow</span>
+                  </>
+                )}
               </Button>
 
               {/* Secondary Action - ZNS Notification Button */}

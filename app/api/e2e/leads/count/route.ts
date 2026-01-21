@@ -4,7 +4,7 @@ import { vucarV2Query } from "@/lib/db"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { uid, search = "", sources = [] } = body
+    const { uid, search = "", sources = [], dateFrom = null, dateTo = null } = body
 
     if (!uid) {
       return NextResponse.json({ error: "UID is required" }, { status: 400 })
@@ -25,6 +25,14 @@ export async function POST(request: Request) {
       ? `AND l.source = ANY(ARRAY[${sources.map((s: string) => `'${s}'`).join(",")}])`
       : ""
 
+    // Build date range filter condition (filter by car created_at)
+    let dateCondition = ""
+    if (dateFrom && dateTo) {
+      dateCondition = `AND c.created_at >= '${dateFrom}'::date AND c.created_at < ('${dateTo}'::date + interval '1 day')`
+    } else if (dateFrom) {
+      dateCondition = `AND c.created_at >= '${dateFrom}'::date AND c.created_at < ('${dateFrom}'::date + interval '1 day')`
+    }
+
     // Optimized query using GROUP BY instead of DISTINCT ON for better scalability
     const result = await vucarV2Query(
       `SELECT
@@ -42,6 +50,7 @@ export async function POST(request: Request) {
         WHERE l.pic_id = $1::uuid
         ${searchCondition}
         ${sourceCondition}
+        ${dateCondition}
         GROUP BY l.phone
       ) AS grouped_leads`,
       [uid]

@@ -91,31 +91,19 @@ interface AkabizChatHistoryResponse {
     error_message: string | null
 }
 
-const DECOY_ACCOUNTS = [
-    {
-        name: "Hùng Taxi",
-        account: "HT",
-        shop_id: "68ff3282-a3cd-ba1d-a71a-1b7100000000",
-        default_message: "Anh ơi, em là tài xế công nghệ đang cần mua xe gấp để chạy kiếm sống. Em thấy xe nhà anh đăng bán, không biết xe còn không ạ?",
-    },
-    {
-        name: "Huy Hồ",
-        account: "HH",
-        shop_id: "68c11ae4-b7f5-3ee3-7614-5cc200000000",
-        default_message: "Em được giới thiệu mình có nhu cầu bán xe em kết bạn để hỏi thêm ít thông tin được không ạ? Xe còn ko a",
-    },
-    {
-        name: "Minh Anh",
-        account: "MA",
-        shop_id: "68f5f0f9-0703-9cf6-ae45-81e800000000",
-        default_message: "em dc bên kết nối chào xe. xe nhà mình còn hong. gđ e xin thêm thông tin á anh",
-    },
-]
+interface DecoyAccount {
+    name: string
+    account: string
+    shop_id: string
+    default_message: string
+}
 
 export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabProps) {
     const [jobs, setJobs] = useState<Job[]>([])
     const [loading, setLoading] = useState(true)
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+    const [decoyAccounts, setDecoyAccounts] = useState<DecoyAccount[]>([])
+    const [loadingAccounts, setLoadingAccounts] = useState(true)
 
     // Chat modal state
     const [selectedChat, setSelectedChat] = useState<Job | null>(null)
@@ -144,6 +132,35 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
     }
+
+    // Fetch decoy accounts from database
+    async function fetchDecoyAccounts() {
+        console.log("[DecoyHistoryTab] Fetching decoy accounts from database")
+        setLoadingAccounts(true)
+        try {
+            const response = await fetch("/api/decoy/accounts")
+            if (!response.ok) {
+                throw new Error("Failed to fetch decoy accounts")
+            }
+            const data = await response.json()
+            console.log("[DecoyHistoryTab] Loaded", data.length, "decoy accounts from database:", data)
+            setDecoyAccounts(data)
+        } catch (error) {
+            console.error("[DecoyHistoryTab] Error fetching decoy accounts:", error)
+            toast({
+                title: "Lỗi tải tài khoản",
+                description: "Không thể tải danh sách tài khoản quây khách. Vui lòng thử lại.",
+                variant: "destructive",
+            })
+        } finally {
+            setLoadingAccounts(false)
+        }
+    }
+
+    // Fetch decoy accounts on mount
+    useEffect(() => {
+        fetchDecoyAccounts()
+    }, [])
 
     useEffect(() => {
         if (phone) {
@@ -181,7 +198,7 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
             if (data.length === 0) {
                 toast({
                     title: "Không tìm thấy dữ liệu",
-                    description: `Không có lịch sử quây khách cho số ${phone}`,
+                    description: `Không có lịch sử quây khách cho số ${maskPhone(phone)}`,
                 })
             }
         } catch (error) {
@@ -275,7 +292,7 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
     }
 
     async function fetchRealTimeChatHistory(job: Job) {
-        const accountConfig = DECOY_ACCOUNTS.find(acc => acc.account === job.account)
+        const accountConfig = decoyAccounts.find(acc => acc.account === job.account)
         if (!accountConfig || !job.phone) {
             console.warn("[DecoyHistoryTab] Cannot fetch chat history - missing account config or phone")
             toast({
@@ -337,7 +354,7 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
     function openSendOtherBotModal(currentAccount: string) {
         // Determine which account hasn't sent to this phone yet
         const usedAccounts = jobs.map(j => j.account)
-        const availableAccounts = DECOY_ACCOUNTS.filter(acc => !usedAccounts.includes(acc.account))
+        const availableAccounts = decoyAccounts.filter(acc => !usedAccounts.includes(acc.account))
 
         if (availableAccounts.length > 0) {
             setSendOtherBotAccount(availableAccounts[0].account)
@@ -356,7 +373,7 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
         setSendingOtherBot(true)
 
         try {
-            const accountConfig = DECOY_ACCOUNTS.find(acc => acc.account === sendOtherBotAccount)
+            const accountConfig = decoyAccounts.find(acc => acc.account === sendOtherBotAccount)
             if (!accountConfig) {
                 throw new Error("Account not found")
             }
@@ -450,7 +467,7 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
     async function handleSendMessage() {
         if (!selectedChat || !newMessage.trim()) return
 
-        const accountConfig = DECOY_ACCOUNTS.find(acc => acc.account === selectedChat.account)
+        const accountConfig = decoyAccounts.find(acc => acc.account === selectedChat.account)
         if (!accountConfig) {
             toast({
                 title: "✗ Lỗi",
@@ -521,7 +538,7 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
 
     // Get available accounts (not yet used)
     const usedAccounts = jobs.map(j => j.account)
-    const availableAccounts = DECOY_ACCOUNTS.filter(acc => !usedAccounts.includes(acc.account))
+    const availableAccounts = decoyAccounts.filter(acc => !usedAccounts.includes(acc.account))
 
     if (!phone) {
         return (
@@ -678,7 +695,7 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
                                         .map((job) => {
                                             const hasReplied = job.length_of_chat_history > 1
                                             const hasChat = job.chat_history && job.chat_history.messages && job.chat_history.messages.length > 0
-                                            const accountInfo = DECOY_ACCOUNTS.find(acc => acc.account === job.account)
+                                            const accountInfo = decoyAccounts.find(acc => acc.account === job.account)
 
                                             return (
                                                 <tr key={job.id} className="hover:bg-gray-50 transition-colors">
@@ -749,7 +766,7 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
                                 Hội thoại với {selectedChat ? maskPhone(selectedChat.phone) : ""}
                                 {selectedChat && (
                                     <span className="ml-2 text-sm font-normal text-gray-500">
-                                        ({DECOY_ACCOUNTS.find(acc => acc.account === selectedChat.account)?.name})
+                                        ({decoyAccounts.find(acc => acc.account === selectedChat.account)?.name})
                                     </span>
                                 )}
                             </DialogTitle>
@@ -883,7 +900,7 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
                                     <SelectValue placeholder="Chọn tài khoản..." />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {DECOY_ACCOUNTS.map((acc) => {
+                                    {decoyAccounts.map((acc) => {
                                         const isUsed = usedAccounts.includes(acc.account)
                                         return (
                                             <SelectItem key={acc.account} value={acc.account} disabled={isUsed}>
@@ -897,7 +914,7 @@ export function DecoyHistoryTab({ phone, leadId, onSuccess }: DecoyHistoryTabPro
                         <div className="space-y-2">
                             <Label>Tin nhắn mẫu</Label>
                             <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
-                                {DECOY_ACCOUNTS.find(acc => acc.account === sendOtherBotAccount)?.default_message || "Chọn tài khoản để xem tin nhắn mẫu"}
+                                {decoyAccounts.find(acc => acc.account === sendOtherBotAccount)?.default_message || "Chọn tài khoản để xem tin nhắn mẫu"}
                             </p>
                         </div>
                         <div className="flex justify-end gap-2">

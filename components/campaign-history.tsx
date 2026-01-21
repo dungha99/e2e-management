@@ -166,7 +166,7 @@ export const CampaignHistory = forwardRef<{ refresh: () => void }, CampaignHisto
       if (data.length === 0) {
         toast({
           title: "Không tìm thấy dữ liệu",
-          description: `Không có lịch sử quây khách cho số ${phoneToSearch}`,
+          description: `Không có lịch sử quây khách cho số ${maskPhone(phoneToSearch)}`,
         })
       }
     } catch (error) {
@@ -253,32 +253,65 @@ export const CampaignHistory = forwardRef<{ refresh: () => void }, CampaignHisto
     setSendOtherBotAccount(otherAccount)
     setSendOtherBotModalOpen(true)
   }
-
   async function sendWithOtherBot() {
     console.log("[v0] Sending campaign with other bot:", sendOtherBotAccount, "to phone:", sendOtherBotPhone)
     setSendingOtherBot(true)
 
     try {
-      let accountConfig
-      if (sendOtherBotAccount === "MA") {
-        accountConfig = {
+      // Load account configurations from database
+      const { followupDataQuery } = await import("@/lib/db")
+      const result = await followupDataQuery(
+        `SELECT name, shop_id FROM staffs WHERE name IN ('Huy Hồ', 'Minh Anh', 'Hùng Taxi')`,
+        []
+      )
+      
+      const accountMap: Record<string, { account: string; default_message: string }> = {
+        "Minh Anh": {
           account: "MA",
-          shop_id: "68c11ae4-b7f5-3ee3-7614-5cc200000000",
           default_message: "em dc bên kết nối chào xe. xe nhà mình còn hong. gđ e xin thêm thông tin á anh",
-        }
-      } else if (sendOtherBotAccount === "HH") {
+        },
+        "Huy Hồ": {
+          account: "HH", 
+          default_message: "Em được giới thiệu mình có nhu cầu bán xe em kết bạn để hỏi thêm ít thông tin được không ạ? Xe còn ko a",
+        },
+        "Hùng Taxi": {
+          account: "HT",
+          default_message: "Anh ơi, em là tài xế công nghệ đang cần mua xe gấp để chạy kiếm sống. Em thấy xe nhà anh đăng bán, không biết xe còn không ạ? Em muốn hỏi thêm thông tin với giá cả để tính toán xem có phù hợp không ạ.",
+        },
+      }
+
+      // Find the account configuration based on sendOtherBotAccount
+      let accountConfig
+      const dbAccount = result.rows.find(row => accountMap[row.name]?.account === sendOtherBotAccount)
+      
+      if (dbAccount) {
         accountConfig = {
-          account: "HH",
-          shop_id: "68c11ae4-b7f5-3ee3-7614-5cc200000000",
-          default_message:
-            "Em được giới thiệu mình có nhu cầu bán xe em kết bạn để hỏi thêm ít thông tin được không ạ? Xe còn ko a",
+          account: sendOtherBotAccount,
+          shop_id: dbAccount.shop_id,
+          default_message: accountMap[dbAccount.name].default_message,
         }
       } else {
-        accountConfig = {
-          account: "HT",
-          shop_id: "68ff3282-a3cd-ba1d-a71a-1b7100000000",
-          default_message:
-            "Anh ơi, em là tài xế công nghệ đang cần mua xe gấp để chạy kiếm sống. Em thấy xe nhà anh đăng bán, không biết xe còn không ạ? Em muốn hỏi thêm thông tin với giá cả để tính toán xem có phù hợp không ạ.",
+        // Fallback to hardcoded values if database query fails
+        if (sendOtherBotAccount === "MA") {
+          accountConfig = {
+            account: "MA",
+            shop_id: "68f5f0f9-0703-9cf6-ae45-81e800000000",
+            default_message: "em dc bên kết nối chào xe. xe nhà mình còn hong. gđ e xin thêm thông tin á anh",
+          }
+        } else if (sendOtherBotAccount === "HH") {
+          accountConfig = {
+            account: "HH",
+            shop_id: "31240d1a-a079-43ed-8c21-c8a18269b014",
+            default_message:
+              "Em được giới thiệu mình có nhu cầu bán xe em kết bạn để hỏi thêm ít thông tin được không ạ? Xe còn ko a",
+          }
+        } else {
+          accountConfig = {
+            account: "HT",
+            shop_id: "68ff3282-a3cd-ba1d-a71a-1b7100000000",
+            default_message:
+              "Anh ơi, em là tài xế công nghệ đang cần mua xe gấp để chạy kiếm sống. Em thấy xe nhà anh đăng bán, không biết xe còn không ạ? Em muốn hỏi thêm thông tin với giá cả để tính toán xem có phù hợp không ạ.",
+          }
         }
       }
 

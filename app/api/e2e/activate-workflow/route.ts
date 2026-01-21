@@ -1,5 +1,38 @@
 import { NextResponse } from "next/server"
-import { e2eQuery, vucarV2Query } from "@/lib/db"
+import { e2eQuery, vucarV2Query, followupDataQuery } from "@/lib/db"
+
+// Cache for Minh Anh shop_id
+let cachedMinhAnhShopId: string | null = null
+let cacheTimestamp = 0
+const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+
+async function getMinhAnhShopId(): Promise<string> {
+  const now = Date.now()
+  
+  // Return cached value if still valid
+  if (cachedMinhAnhShopId && now - cacheTimestamp < CACHE_DURATION) {
+    return cachedMinhAnhShopId
+  }
+
+  // Fetch from database
+  try {
+    const result = await followupDataQuery(
+      `SELECT shop_id FROM staffs WHERE name = 'Minh Anh' LIMIT 1`,
+      []
+    )
+    
+    if (result.rows.length > 0) {
+      cachedMinhAnhShopId = result.rows[0].shop_id
+      cacheTimestamp = now
+      return cachedMinhAnhShopId
+    }
+  } catch (error) {
+    console.error("[Activate Workflow] Error fetching Minh Anh shop_id:", error)
+  }
+  
+  // Fallback to hardcoded value if database query fails
+  return "68f5f0f9-0703-9cf6-ae45-81e800000000"
+}
 
 export async function POST(request: Request) {
   try {
@@ -159,10 +192,13 @@ export async function POST(request: Request) {
         } else if (workflow.id === "9f130676-a416-418f-bae9-a581096f6426") { //WFD1
           webhookUrl = "https://n8n.vucar.vn/webhook/57039721-04a9-42a1-945c-fdd24250e6a8"
 
+          // Get Minh Anh shop_id from database
+          const minhAnhShopId = await getMinhAnhShopId()
+
           // Transform WFD1 payload with fixed and dynamic fields
           transformedPayload = {
             phone: workflowPayload.phone || phoneNumber || "",
-            shop_id: "68f5f0f9-0703-9cf6-ae45-81e800000000",
+            shop_id: minhAnhShopId,
             first_message: workflowPayload.first_message || "Em được giới thiệu mình có nhu cầu bán xe em kết bạn để hỏi thêm ít thông tin được không ạ? Xe còn ko a",
             account: "MA",
             segment: "negotiation",
@@ -226,9 +262,13 @@ export async function POST(request: Request) {
           // Additional webhook for WFD1: send phone and shop_id to separate endpoint
           if (isWFD1) {
             const wfd1AdditionalWebhook = "https://n8n.vucar.vn/webhook/406e60de-3bd6-443d-8052-a38d0166069e"
+            
+            // Get Minh Anh shop_id from database
+            const minhAnhShopId = await getMinhAnhShopId()
+            
             const wfd1AdditionalPayload = {
               phone: workflowPayload?.phone || phoneNumber || "",
-              shop_id: "68f5f0f9-0703-9cf6-ae45-81e800000000",
+              shop_id: minhAnhShopId,
             }
 
             const additionalResponse = await fetch(wfd1AdditionalWebhook, {

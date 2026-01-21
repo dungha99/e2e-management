@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle, DollarSign, Play, Zap, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp, Info } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition, WinCaseHistory } from "../types"
+import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition, WinCaseHistory, AiInsight, AiInsightHistory } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { ActivateWorkflowDialog } from "../dialogs/ActivateWorkflowDialog"
 import { fetchAiInsights } from "@/hooks/use-leads"
@@ -808,6 +808,27 @@ ${dealerBidsStr}`
             } finally {
               setFetchingAiInsights(false)
             }
+          }}
+          onRate={async (id, isHistory, isPositive) => {
+            if (!aiInsights) return
+
+            // Update parent state directly for sync
+            setAiInsights((prev: AiInsight | null) => {
+              if (!prev) return prev
+
+              if (!isHistory && prev.aiInsightId === id) {
+                return { ...prev, is_positive: isPositive }
+              }
+
+              if (prev.history) {
+                const newHistory = prev.history.map((h: AiInsightHistory) =>
+                  h.id === id ? { ...h, is_positive: isPositive } : h
+                )
+                return { ...prev, history: newHistory }
+              }
+
+              return prev
+            })
           }}
         />
       </div>

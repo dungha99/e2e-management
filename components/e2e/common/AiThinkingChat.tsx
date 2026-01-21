@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo } from "react"
-import { Bot, Target, BarChart, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp } from "lucide-react"
+import { Bot, Target, BarChart, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -9,6 +9,7 @@ interface AiThinkingChatProps {
   insights: AiInsight | null
   isLoading: boolean
   onSubmitFeedback: (feedback: string) => Promise<void>
+  onRate?: (id: string, isHistory: boolean, isPositive: boolean | null) => Promise<void>
 }
 
 const TypingText = memo(({ text, speed = 5, onComplete }: { text: string; speed?: number; onComplete?: () => void }) => {
@@ -32,12 +33,14 @@ const TypingText = memo(({ text, speed = 5, onComplete }: { text: string; speed?
 
 TypingText.displayName = "TypingText"
 
-export function AiThinkingChat({ insights, isLoading, onSubmitFeedback }: AiThinkingChatProps) {
+export function AiThinkingChat({ insights, isLoading, onSubmitFeedback, onRate }: AiThinkingChatProps) {
   const [feedback, setFeedback] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [expandedIndices, setExpandedIndices] = useState<number[]>([])
   const [hasAnimated, setHasAnimated] = useState<string | null>(null) // Tracks last animated unique state
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  const [localRatings, setLocalRatings] = useState<Record<string, boolean | null>>({})
 
   const handleSendFeedback = async () => {
     if (!feedback.trim()) return
@@ -47,6 +50,31 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback }: AiThin
       setFeedback("")
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const handleRate = async (id: string, isHistory: boolean, isPositive: boolean | null) => {
+    // Optimistic update
+    const rateId = isHistory ? `hist-${id}` : `current-${id}`
+    const currentVal = localRatings[rateId] === undefined ?
+      (isHistory ? history.find(h => h.id === id)?.is_positive : insights?.is_positive) :
+      localRatings[rateId];
+
+    // Toggle logic: if clicking the same rating, set to null
+    const newVal = currentVal === isPositive ? null : isPositive
+
+    setLocalRatings(prev => ({ ...prev, [rateId]: newVal }))
+
+    try {
+      await fetch("/api/e2e/ai-insights/rate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, isHistory, isPositive: newVal })
+      })
+      if (onRate) await onRate(id, isHistory, newVal)
+    } catch (error) {
+      console.error("[AiThinkingChat] Failed to rate:", error)
+      // Rollback on error? Maybe not necessary for this tiny feature
     }
   }
 
@@ -62,6 +90,23 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback }: AiThin
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [insights, isLoading])
+
+  const animationKey = insights ? `${insights.aiInsightId}-${insights.created_at}` : null
+
+  // Clear local ratings for current insight when a new analysis starts
+  useEffect(() => {
+    if (insights?.aiInsightId) {
+      const key = `current-${insights.aiInsightId}`
+      setLocalRatings(prev => {
+        if (prev[key] !== undefined) {
+          const newState = { ...prev }
+          delete newState[key]
+          return newState
+        }
+        return prev
+      })
+    }
+  }, [animationKey])
 
   if (isLoading && !insights) {
     return (
@@ -81,7 +126,6 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback }: AiThin
   if (!insights || (!insights.analysis && !insights.history?.length)) return null
 
   const { analysis, targetWorkflowName, history = [] } = insights
-  const animationKey = `${insights.aiInsightId}-${insights.created_at}`
   const isNew = insights.isNew && hasAnimated !== animationKey
 
   return (
@@ -126,11 +170,27 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback }: AiThin
                     {isExpanded && item.ai_insight_summary.fit_score !== undefined && (
                       <div className="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between">
                         <span className="text-[10px] text-gray-400">Fit Score: {item.ai_insight_summary.fit_score}%</span>
-                        <div className="w-16 h-1 bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-indigo-300"
-                            style={{ width: `${item.ai_insight_summary.fit_score}%` }}
-                          />
+                        <div className="flex items-center gap-4">
+                          <div className="w-16 h-1 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-indigo-300"
+                              style={{ width: `${item.ai_insight_summary.fit_score}%` }}
+                            />
+                          </div>
+                          <div className="flex items-center gap-1 ml-2 border-l pl-2 border-gray-100">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleRate(item.id, true, true); }}
+                              className={`p-1 hover:bg-green-50 rounded transition-colors group/rate-up ${(localRatings[`hist-${item.id}`] ?? item.is_positive) === true ? 'text-green-600 bg-green-50' : 'text-gray-300 hover:text-green-500'}`}
+                            >
+                              <ThumbsUp className="h-3 w-3" />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleRate(item.id, true, false); }}
+                              className={`p-1 hover:bg-red-50 rounded transition-colors group/rate-down ${(localRatings[`hist-${item.id}`] ?? item.is_positive) === false ? 'text-red-500 bg-red-50' : 'text-gray-300 hover:text-red-400'}`}
+                            >
+                              <ThumbsDown className="h-3 w-3" />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -210,11 +270,27 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback }: AiThin
 
                   {analysis.fit_score !== undefined && (
                     <div className="mt-2 pt-3 border-t border-indigo-100 flex items-center justify-between">
-                      <div className="flex flex-col gap-0.5">
+                      <div className="flex-1 flex flex-col gap-0.5">
                         <span className="text-xs text-gray-500 font-bold">Độ phù hợp (Fit Score)</span>
-                        <span className="text-[10px] text-gray-400">Confidence based on current context</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-gray-400">Confidence based on context</span>
+                          <div className="flex items-center gap-1 ml-auto border-l pl-2 border-indigo-100">
+                            <button
+                              onClick={() => insights.aiInsightId && handleRate(insights.aiInsightId, false, true)}
+                              className={`p-1.5 hover:bg-green-50 rounded-md transition-colors ${(localRatings[`current-${insights.aiInsightId}`] ?? insights.is_positive) === true ? 'text-green-600 bg-green-50 ring-1 ring-green-200' : 'text-gray-400 hover:text-green-500 hover:ring-1 hover:ring-green-100'}`}
+                            >
+                              <ThumbsUp className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => insights.aiInsightId && handleRate(insights.aiInsightId, false, false)}
+                              className={`p-1.5 hover:bg-red-50 rounded-md transition-colors ${(localRatings[`current-${insights.aiInsightId}`] ?? insights.is_positive) === false ? 'text-red-500 bg-red-50 ring-1 ring-red-200' : 'text-gray-400 hover:text-red-400 hover:ring-1 hover:ring-red-100'}`}
+                            >
+                              <ThumbsDown className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3 bg-white px-3 py-1.5 rounded-full border border-indigo-50 shadow-sm">
+                      <div className="flex items-center gap-3 bg-white px-3 py-1.5 rounded-full border border-indigo-50 shadow-sm ml-4">
                         <div className="w-16 h-2 bg-gray-100 rounded-full overflow-hidden">
                           <div
                             className={`h-full transition-all duration-1000 ${analysis.fit_score > 70 ? 'bg-emerald-500' : analysis.fit_score > 40 ? 'bg-amber-500' : 'bg-rose-500'

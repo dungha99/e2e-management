@@ -75,8 +75,8 @@ export interface Lead {
     inside?: Array<{ key: string; url: string; name: string; type: string }>;
     outside?: Array<{ key: string; url: string; name: string; type: string }>;
     [key: string]:
-      | Array<{ key: string; url: string; name: string; type: string }>
-      | undefined;
+    | Array<{ key: string; url: string; name: string; type: string }>
+    | undefined;
   };
   sku?: string | null;
   car_created_at?: string | null;
@@ -302,19 +302,30 @@ export interface WorkflowInstanceWithDetails {
 }
 
 export interface AiInsightAnalysis {
-  current_intent_detected: string;
-  price_gap_evaluation: string;
-  fit_score: number;
+  [key: string]: any;
+}
+
+export interface AiInsightHistory {
+  id: string;
+  ai_insight_id: string;
+  ai_insight_summary: AiInsightAnalysis;
+  user_feedback: string | null;
+  is_positive: boolean | null;
+  created_at: string;
 }
 
 export interface AiInsight {
-  id: string;
+  id?: string;
+  aiInsightId?: string;
   car_id: string;
   source_instance_id: string;
-  ai_insight_summary: AiInsightAnalysis;
+  analysis: AiInsightAnalysis;
   selected_transition_id: string;
   target_workflow_id: string;
+  is_positive: boolean | null;
   created_at: string;
+  history?: AiInsightHistory[];
+  isNew?: boolean;
   // Joined data
-  target_workflow_name?: string;
+  targetWorkflowName?: string;
 }

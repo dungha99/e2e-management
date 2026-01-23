@@ -3,18 +3,19 @@ import { vucarV2Query } from "@/lib/db"
 
 export async function POST(request: Request) {
   let phone: string | undefined
+  let carId: string | undefined
   try {
     const body = await request.json()
     phone = body.phone
+    carId = body.carId
 
-    if (!phone) {
-      return NextResponse.json({ error: "Phone is required" }, { status: 400 })
+    if (!phone && !carId) {
+      return NextResponse.json({ error: "Phone or carId is required" }, { status: 400 })
     }
 
 
     // Optimized query with subqueries to reduce separate DB calls
-    const result = await vucarV2Query(
-      `SELECT
+    const query = `SELECT
         l.id,
         l.name,
         l.phone,
@@ -50,11 +51,11 @@ export async function POST(request: Request) {
        LEFT JOIN users u ON l.pic_id = u.id
        LEFT JOIN cars c ON c.lead_id = l.id
        LEFT JOIN sale_status ss ON ss.car_id = c.id
-       WHERE l.phone = $1 OR l.additional_phone = $1
+       WHERE ${carId ? 'c.id = $1' : '(l.phone = $1 OR l.additional_phone = $1)'}
        ORDER BY l.created_at DESC, c.created_at DESC
-       LIMIT 1`,
-      [phone]
-    )
+       LIMIT 1`
+
+    const result = await vucarV2Query(query, [carId || phone])
 
     if (result.rows.length === 0) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 })
@@ -112,7 +113,7 @@ export async function POST(request: Request) {
         session_created,
         notes: leadData.notes || null,
         qualified: leadData.qualified || null,
-        intentionLead: leadData.intention_lead || null,
+        intentionLead: leadData.intention || null,
         negotiationAbility: leadData.negotiation_ability || null,
       },
       car_info: {

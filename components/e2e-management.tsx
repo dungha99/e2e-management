@@ -491,7 +491,7 @@ export function E2EManagement({
     }
   }
 
-  async function fetchLeadDetails(phone: string): Promise<{
+  async function fetchLeadDetails(phone: string, carId?: string | null): Promise<{
     car_id: string | null
     price_customer: number | null
     brand: string | null
@@ -524,7 +524,7 @@ export function E2EManagement({
       const response = await fetch("/api/e2e/lead-details", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone, carId }),
       })
 
       if (!response.ok) {
@@ -827,7 +827,7 @@ export function E2EManagement({
     // Fetch fresh lead details to get workflow2_is_active and other updated info
     const phone = lead.phone || lead.additional_phone
     if (phone) {
-      const leadDetails = await fetchLeadDetails(phone)
+      const leadDetails = await fetchLeadDetails(phone, lead.car_id)
 
       // Update selected lead with fresh data, only merging non-null values
       // This prevents overwriting good data when the API call fails
@@ -1165,7 +1165,7 @@ export function E2EManagement({
 
     try {
       // Fetch updated lead details
-      const leadDetails = await fetchLeadDetails(phone)
+      const leadDetails = await fetchLeadDetails(phone, selectedLead.car_id)
 
       // Fetch dealer bidding status
       const dealerBiddingStatus = leadDetails.car_id
@@ -1208,6 +1208,9 @@ export function E2EManagement({
         bidding_session_count: biddingSessionCount,
         has_active_campaigns: hasActiveCampaigns,
         workflow2_is_active: leadDetails.workflow2_is_active,
+        qualified: leadDetails.qualified,
+        intentionLead: leadDetails.intentionLead,
+        negotiationAbility: leadDetails.negotiationAbility,
       }
 
       setSelectedLead(updatedLead)

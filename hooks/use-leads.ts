@@ -141,11 +141,11 @@ export function useWorkflowInstances(carId: string | null | undefined) {
 
 // Hook for fetching AI insights (mutation-like query)
 // This fetches AI recommendation based on completed workflow
-export async function fetchAiInsights(carId: string, sourceInstanceId: string, phoneNumber: string) {
+export async function fetchAiInsights(carId: string, sourceInstanceId: string, phoneNumber: string, userFeedback?: string) {
   const response = await fetch("/api/e2e/ai-insights", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ carId, sourceInstanceId, phoneNumber }),
+    body: JSON.stringify({ carId, sourceInstanceId, phoneNumber, userFeedback }),
   })
 
   const data = await response.json()

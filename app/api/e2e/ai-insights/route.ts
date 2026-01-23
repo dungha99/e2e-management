@@ -137,12 +137,31 @@ export async function POST(request: Request) {
       let aiResponse = await response.json()
       if (Array.isArray(aiResponse)) aiResponse = aiResponse[0]
 
+      // Helper to find specific keys recursively in a nested object
+      const findNestedValue = (obj: any, targetKey: string): any => {
+        if (!obj || typeof obj !== "object") return undefined
+        if (targetKey in obj) return obj[targetKey]
+        for (const key in obj) {
+          const found = findNestedValue(obj[key], targetKey)
+          if (found !== undefined) return found
+        }
+        return undefined
+      }
+
+      // Dynamic Extraction
+      const selectedTransitionId = findNestedValue(aiResponse, "selected_transition_id")
+      const targetWorkflowId = findNestedValue(aiResponse, "target_workflow_id")
+
+      // Use the 'analysis' field if it exists (backwards compatibility), 
+      // otherwise use the entire response as the summary
+      const storageSummary = aiResponse.analysis || aiResponse
+
       // Update record with results
       await e2eQuery(
         `UPDATE ai_insights
          SET ai_insight_summary = $1, selected_transition_id = $2, target_workflow_id = $3
          WHERE id = $4`,
-        [JSON.stringify(aiResponse.analysis), aiResponse.selected_transition_id, aiResponse.target_workflow_id, insightIdToUpdate]
+        [JSON.stringify(storageSummary), selectedTransitionId, targetWorkflowId, insightIdToUpdate]
       )
 
       const updatedInsight = (await e2eQuery(`SELECT * FROM ai_insights WHERE id = $1`, [insightIdToUpdate])).rows[0]

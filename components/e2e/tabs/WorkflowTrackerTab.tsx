@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -322,24 +322,32 @@ export function WorkflowTrackerTab({
   const [aiInsights, setAiInsights] = useState<any>(null)
   const [fetchingAiInsights, setFetchingAiInsights] = useState(false)
 
-  // Auto-select workflow on load: running > most recently completed > WF0
+  // Track last selected lead to detect when to force reset the view
+  const lastLeadIdRef = useRef<string | null>(null)
+
+  // Auto-select workflow on load: Latest Completed > WF0
   useEffect(() => {
-    if (!workflowInstancesData?.allWorkflows || workflowInstancesData.allWorkflows.length === 0) {
+    if (!workflowInstancesData?.allWorkflows || workflowInstancesData.allWorkflows.length === 0 || !selectedLead) {
       return
     }
 
-    // First priority: Find running workflow
-    const runningWorkflow = (workflowInstancesData.data || []).find(i => i.instance.status === "running")
-    if (runningWorkflow) {
-      console.log(`[WorkflowTracker] Auto-selecting running workflow: ${runningWorkflow.instance.workflow_id}`)
-      onWorkflowViewChange(runningWorkflow.instance.workflow_id)
-      return
+    const leadChanged = lastLeadIdRef.current !== selectedLead.id
+    lastLeadIdRef.current = selectedLead.id
+
+    // Only skip auto-selection if lead hasn't changed AND current view is valid
+    if (!leadChanged) {
+      const isValidView = activeWorkflowView === "purchase" ||
+        activeWorkflowView === "seeding" ||
+        workflowInstancesData.allWorkflows.some((w: any) => w.id === activeWorkflowView)
+      if (isValidView) {
+        return
+      }
     }
 
-    // Second priority: Find the most recently completed workflow instance
+    // Priority 1: Find the most recently completed workflow instance
     const completedWorkflows = (workflowInstancesData.data || [])
-      .filter(i => i.instance.status === "completed" && i.instance.completed_at)
-      .sort((a, b) => {
+      .filter((i: any) => i.instance.status === "completed" && i.instance.completed_at)
+      .sort((a: any, b: any) => {
         const dateA = new Date(a.instance.completed_at!).getTime()
         const dateB = new Date(b.instance.completed_at!).getTime()
         return dateB - dateA // Most recent first
@@ -352,13 +360,19 @@ export function WorkflowTrackerTab({
       return
     }
 
-    // Fallback: Select WF0
-    const wf0 = workflowInstancesData.allWorkflows.find(w => w.name === "WF0")
+    // Priority 2: Select WF0
+    const wf0 = workflowInstancesData.allWorkflows.find((w: any) => w.name === "WF0")
     if (wf0) {
       console.log(`[WorkflowTracker] Auto-selecting WF0 as fallback`)
       onWorkflowViewChange(wf0.id)
+      return
     }
-  }, [workflowInstancesData, activeWorkflowView, onWorkflowViewChange])
+
+    // Fallback: First available workflow
+    if (workflowInstancesData.allWorkflows[0]) {
+      onWorkflowViewChange(workflowInstancesData.allWorkflows[0].id)
+    }
+  }, [workflowInstancesData, activeWorkflowView, onWorkflowViewChange, selectedLead])
 
   // Join data
   const currentInstance = workflowInstancesData?.data?.find(i => i.instance.workflow_id === activeWorkflowView)

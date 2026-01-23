@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -160,47 +160,58 @@ export function LeadDetailPanel({
   // Toast notifications
   const { toast } = useToast()
 
+  // Track last selected lead to detect when to force reset the view
+  const lastLeadIdRef = useRef<string | null>(null)
+
   // Fetch workflow instances for beta tracking
   const { data: workflowInstancesData } = useWorkflowInstances(selectedLead?.car_id)
 
-  // Set default view: prioritize running workflow, then WF0, then WF1
+  // Set default view: prioritize latest completed, then fallback to WF0
   useEffect(() => {
-    if (!workflowInstancesData?.allWorkflows || workflowInstancesData.allWorkflows.length === 0) {
+    if (!workflowInstancesData?.allWorkflows || workflowInstancesData.allWorkflows.length === 0 || !selectedLead) {
       return
     }
 
-    // Check if current view is already valid
-    const isValidView = workflowInstancesData.allWorkflows.some(w => w.id === activeWorkflowView)
-    if (isValidView) {
-      return // Already viewing a valid workflow
+    const leadChanged = lastLeadIdRef.current !== selectedLead.id
+    lastLeadIdRef.current = selectedLead.id
+
+    // Only skip auto-selection if lead hasn't changed AND current view is valid
+    if (!leadChanged) {
+      const isValidView = activeWorkflowView === "purchase" ||
+        activeWorkflowView === "seeding" ||
+        workflowInstancesData.allWorkflows.some((w: any) => w.id === activeWorkflowView)
+      if (isValidView) {
+        return
+      }
     }
 
-    // Priority 1: Find first running workflow
-    const runningWorkflow = workflowInstancesData.data?.find(i => i.instance.status === "running")
-    if (runningWorkflow) {
-      onWorkflowViewChange(runningWorkflow.instance.workflow_id)
+    // Priority 1: Find the most recently completed workflow instance
+    const completedWorkflows = (workflowInstancesData.data || [])
+      .filter((i: any) => i.instance.status === "completed" && i.instance.completed_at)
+      .sort((a: any, b: any) => {
+        const dateA = new Date(a.instance.completed_at!).getTime()
+        const dateB = new Date(b.instance.completed_at!).getTime()
+        return dateB - dateA // Most recent first
+      })
+
+    if (completedWorkflows.length > 0) {
+      const mostRecentCompleted = completedWorkflows[0]
+      onWorkflowViewChange(mostRecentCompleted.instance.workflow_id)
       return
     }
 
     // Priority 2: Find WF0
-    const wf0 = workflowInstancesData.allWorkflows.find(w => w.name === "WF0")
+    const wf0 = workflowInstancesData.allWorkflows.find((w: any) => w.name === "WF0")
     if (wf0) {
       onWorkflowViewChange(wf0.id)
       return
     }
 
-    // Priority 3: Find WF1
-    const wf1 = workflowInstancesData.allWorkflows.find(w => w.name === "WF1")
-    if (wf1) {
-      onWorkflowViewChange(wf1.id)
-      return
-    }
-
-    // Fallback: First available workflow
+    // Priority 3: First available workflow
     if (workflowInstancesData.allWorkflows[0]) {
       onWorkflowViewChange(workflowInstancesData.allWorkflows[0].id)
     }
-  }, [workflowInstancesData, activeWorkflowView, onWorkflowViewChange])
+  }, [workflowInstancesData, activeWorkflowView, onWorkflowViewChange, selectedLead])
 
   // Decoy signals for new reply detection
   const { hasNewReplies, markAsRead } = useDecoySignals()

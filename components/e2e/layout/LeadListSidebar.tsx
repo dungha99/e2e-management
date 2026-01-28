@@ -644,66 +644,68 @@ export function LeadListSidebar({
                         {formatRelativeTime(lead.last_activity_at)}
                       </span>
                     </div>
-                    {/* Workflow Status Badge */}
-                    {/* Workflow Status Badge */}
-                    {lead.latest_campaign && (
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        <Badge
-                          variant="outline"
-                          className={`text-[10px] px-1.5 py-0.5 ${lead.latest_campaign.is_active
-                            ? 'bg-purple-50 text-purple-700 border-purple-200'
-                            : 'bg-green-50 text-green-700 border-green-200'
-                            }`}
-                        >
-                          {lead.latest_campaign.is_active ? (
-                            <><Play className="h-2.5 w-2.5 mr-0.5" />WF{lead.latest_campaign.workflow_order}</>
-                          ) : (
-                            <><CheckCircle className="h-2.5 w-2.5 mr-0.5" />WF{lead.latest_campaign.workflow_order} - Done</>
-                          )}
-                        </Badge>
-                        {/* Progress bar and countdown for running campaigns */}
-                        {lead.latest_campaign.is_active && lead.latest_campaign.duration && (
-                          <>
-                            <div className="flex-1 max-w-[40px]">
-                              <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-purple-500 transition-all"
-                                  style={{
-                                    width: `${calculateCampaignProgress(
-                                      lead.latest_campaign.published_at,
-                                      lead.latest_campaign.duration
-                                    )}%`
-                                  }}
-                                />
+                    {/* Workflow Status & Bot Button Row */}
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      {lead.latest_campaign && (
+                        <>
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] px-1.5 py-0.5 ${lead.latest_campaign.is_active
+                              ? 'bg-purple-50 text-purple-700 border-purple-200'
+                              : 'bg-green-50 text-green-700 border-green-200'
+                              }`}
+                          >
+                            {lead.latest_campaign.is_active ? (
+                              <><Play className="h-2.5 w-2.5 mr-0.5" />WF{lead.latest_campaign.workflow_order}</>
+                            ) : (
+                              <><CheckCircle className="h-2.5 w-2.5 mr-0.5" />WF{lead.latest_campaign.workflow_order} - Done</>
+                            )}
+                          </Badge>
+                          {/* Progress bar and countdown for running campaigns */}
+                          {lead.latest_campaign.is_active && lead.latest_campaign.duration && (
+                            <>
+                              <div className="flex-1 max-w-[40px]">
+                                <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-purple-500 transition-all"
+                                    style={{
+                                      width: `${calculateCampaignProgress(
+                                        lead.latest_campaign.published_at,
+                                        lead.latest_campaign.duration
+                                      )}%`
+                                    }}
+                                  />
+                                </div>
                               </div>
-                            </div>
-                            <div className="flex flex-col items-end">
-                              <span className="text-[9px] text-purple-600 font-medium whitespace-nowrap">
-                                {calculateRemainingTime(lead.latest_campaign.published_at, lead.latest_campaign.duration)}
-                              </span>
-                              <span className="text-[9px] text-gray-500 whitespace-nowrap">
-                                {calculateDoneDate(lead.latest_campaign.published_at, lead.latest_campaign.duration)}
-                              </span>
-                            </div>
-                          </>
-                        )}
-                        {/* Bot check biển upload button */}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-6 px-2 text-[10px] ml-auto border-blue-200 text-blue-700 hover:bg-blue-50"
-                          onClick={(e) => handleUploadClick(lead, e)}
-                          disabled={uploading && activeUploadLead?.id === lead.id}
-                        >
-                          {uploading && activeUploadLead?.id === lead.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <Upload className="h-3 w-3 mr-1" />
+                              <div className="flex flex-col items-end">
+                                <span className="text-[9px] text-purple-600 font-medium whitespace-nowrap">
+                                  {calculateRemainingTime(lead.latest_campaign.published_at, lead.latest_campaign.duration)}
+                                </span>
+                                <span className="text-[9px] text-gray-500 whitespace-nowrap">
+                                  {calculateDoneDate(lead.latest_campaign.published_at, lead.latest_campaign.duration)}
+                                </span>
+                              </div>
+                            </>
                           )}
-                          Bot che biển
-                        </Button>
-                      </div>
-                    )}
+                        </>
+                      )}
+
+                      {/* Bot check biển upload button - Always visible */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-[10px] ml-auto border-blue-200 text-blue-700 hover:bg-blue-50"
+                        onClick={(e) => handleUploadClick(lead, e)}
+                        disabled={uploading && activeUploadLead?.id === lead.id}
+                      >
+                        {uploading && activeUploadLead?.id === lead.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Upload className="h-3 w-3 mr-1" />
+                        )}
+                        Bot che biển
+                      </Button>
+                    </div>
                     {/* Inspection Schedule Badge */}
                     {lead.inspection_schedule && (
                       <div className="flex items-center gap-2 mt-1">

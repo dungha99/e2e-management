@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo } from "react"
-import { Bot, Target, BarChart, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown } from "lucide-react"
+import { Bot, Target, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, History } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -33,11 +33,60 @@ const TypingText = memo(({ text, speed = 5, onComplete }: { text: string; speed?
 
 TypingText.displayName = "TypingText"
 
+const DynamicInsightValue = ({ value, isNew, onComplete }: { value: any, isNew: boolean, onComplete?: () => void }) => {
+  if (typeof value === 'string') {
+    return isNew ? <TypingText text={value} onComplete={onComplete} /> : <>{value}</>
+  }
+  if (Array.isArray(value)) {
+    return (
+      <ul className="list-disc pl-4 space-y-1">
+        {value.map((item, idx) => (
+          <li key={idx} className="text-sm text-gray-700 leading-relaxed">
+            <DynamicInsightValue
+              value={item}
+              isNew={isNew}
+              onComplete={idx === value.length - 1 ? onComplete : undefined}
+            />
+          </li>
+        ))}
+      </ul>
+    )
+  }
+  if (typeof value === 'object' && value !== null) {
+    const entries = Object.entries(value).filter(([key]) =>
+      !['id', 'created_at', 'selected_transition_id', 'target_workflow_id', 'target_workflow_name'].includes(key)
+    );
+
+    return (
+      <div className="space-y-4">
+        {entries.map(([key, val], idx) => (
+          <div key={key} className="flex flex-col gap-1.5">
+            <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest flex items-center gap-1.5">
+              <span className="w-1 h-1 rounded-full bg-indigo-200"></span>
+              {key.replace(/_/g, ' ')}
+            </div>
+            <div className="pl-2.5 border-l border-indigo-100/50">
+              <DynamicInsightValue
+                value={val}
+                isNew={isNew}
+                onComplete={idx === entries.length - 1 ? onComplete : undefined}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (onComplete) onComplete();
+  return <span className="text-sm font-medium text-gray-900">{String(value)}</span>
+}
+
 export function AiThinkingChat({ insights, isLoading, onSubmitFeedback, onRate }: AiThinkingChatProps) {
   const [feedback, setFeedback] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [expandedIndices, setExpandedIndices] = useState<number[]>([])
   const [hasAnimated, setHasAnimated] = useState<string | null>(null) // Tracks last animated unique state
+  const [showHistory, setShowHistory] = useState(false) // Toggle for chat history visibility
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const [localRatings, setLocalRatings] = useState<Record<string, boolean | null>>({})
@@ -129,10 +178,23 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback, onRate }
   const isNew = insights.isNew && hasAnimated !== animationKey
 
   return (
-    <div className="mt-6 flex flex-col gap-4">
-      <div className="flex items-center gap-2 px-1">
-        <Sparkles className="h-4 w-4 text-indigo-500" />
-        <h4 className="text-sm font-semibold text-gray-900">AI Assistant Thinking</h4>
+    <div className="bg-white rounded-lg p-3 sm:p-5 shadow-sm mb-4 flex flex-col gap-4">
+      <div className="flex items-center justify-between px-1">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-indigo-500" />
+          <h4 className="text-sm font-semibold text-gray-900">AI Assistant Thinking</h4>
+        </div>
+        {history.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowHistory(!showHistory)}
+            className="text-xs text-gray-500 hover:text-gray-700 h-7 px-2 gap-1.5"
+          >
+            <History className="h-3.5 w-3.5" />
+            {showHistory ? "Ẩn lịch sử" : `Xem lịch sử (${history.length})`}
+          </Button>
+        )}
       </div>
 
       <div className="flex flex-col gap-6">
@@ -141,8 +203,8 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback, onRate }
           ref={scrollRef}
           className="max-h-[500px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-indigo-200 scrollbar-track-transparent space-y-6"
         >
-          {/* History Loop */}
-          {history.map((item, idx) => {
+          {/* History Loop - Only show when showHistory is true */}
+          {showHistory && history.map((item, idx) => {
             const isExpanded = expandedIndices.includes(idx)
             return (
               <div key={idx} className="space-y-4">
@@ -160,38 +222,32 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback, onRate }
                       {isExpanded ? <ChevronUp className="h-3 w-3 text-gray-400" /> : <ChevronDown className="h-3 w-3 text-gray-400 group-hover:text-indigo-400" />}
                     </div>
 
-                    <p className={`font-medium mb-1 ${isExpanded ? '' : 'line-clamp-1'}`}>
-                      {item.ai_insight_summary.current_intent_detected}
-                    </p>
-                    <p className={`italic ${isExpanded ? '' : 'line-clamp-1'}`}>
-                      {item.ai_insight_summary.price_gap_evaluation}
-                    </p>
+                    <div className={isExpanded ? 'mt-2' : ''}>
+                      {isExpanded ? (
+                        <DynamicInsightValue value={item.ai_insight_summary} isNew={false} />
+                      ) : (
+                        <p className="line-clamp-1 font-medium">
+                          {typeof item.ai_insight_summary === 'object'
+                            ? (Object.values(item.ai_insight_summary)[0] as any)?.toString() || "Previous Thought"
+                            : "Previous Thought"}
+                        </p>
+                      )}
+                    </div>
 
-                    {isExpanded && item.ai_insight_summary.fit_score !== undefined && (
-                      <div className="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between">
-                        <span className="text-[10px] text-gray-400">Fit Score: {item.ai_insight_summary.fit_score}%</span>
-                        <div className="flex items-center gap-4">
-                          <div className="w-16 h-1 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-indigo-300"
-                              style={{ width: `${item.ai_insight_summary.fit_score}%` }}
-                            />
-                          </div>
-                          <div className="flex items-center gap-1 ml-2 border-l pl-2 border-gray-100">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleRate(item.id, true, true); }}
-                              className={`p-1 hover:bg-green-50 rounded transition-colors group/rate-up ${(localRatings[`hist-${item.id}`] ?? item.is_positive) === true ? 'text-green-600 bg-green-50' : 'text-gray-300 hover:text-green-500'}`}
-                            >
-                              <ThumbsUp className="h-3 w-3" />
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleRate(item.id, true, false); }}
-                              className={`p-1 hover:bg-red-50 rounded transition-colors group/rate-down ${(localRatings[`hist-${item.id}`] ?? item.is_positive) === false ? 'text-red-500 bg-red-50' : 'text-gray-300 hover:text-red-400'}`}
-                            >
-                              <ThumbsDown className="h-3 w-3" />
-                            </button>
-                          </div>
-                        </div>
+                    {isExpanded && (
+                      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-end gap-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleRate(item.id, true, true); }}
+                          className={`p-1.5 hover:bg-green-50 rounded transition-colors group/rate-up ${(localRatings[`hist-${item.id}`] ?? item.is_positive) === true ? 'text-green-600 bg-green-50' : 'text-gray-300 hover:text-green-500'}`}
+                        >
+                          <ThumbsUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleRate(item.id, true, false); }}
+                          className={`p-1.5 hover:bg-red-50 rounded transition-colors group/rate-down ${(localRatings[`hist-${item.id}`] ?? item.is_positive) === false ? 'text-red-500 bg-red-50' : 'text-gray-300 hover:text-red-400'}`}
+                        >
+                          <ThumbsDown className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     )}
                   </div>
@@ -232,79 +288,54 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback, onRate }
                   )}
                 </div>
 
-                <div className="space-y-4">
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600">
-                      <Target className="h-3 w-3" />
-                      Dự đoán ý định
+                <div className="py-2">
+                  <DynamicInsightValue
+                    value={analysis}
+                    isNew={!!isNew}
+                    onComplete={() => {
+                      setHasAnimated(animationKey)
+                    }}
+                  />
+                </div>
+
+                {analysis.fit_score !== undefined && (
+                  <div className="mt-2 pt-3 border-t border-indigo-100 flex items-center justify-between">
+                    <div className="flex-1 flex flex-col gap-0.5">
+                      <span className="text-xs text-gray-500 font-bold">Độ phù hợp (Fit Score)</span>
+                      <span className="text-[10px] text-gray-400">Confidence based on context</span>
                     </div>
-                    <div className="text-sm text-gray-900 leading-relaxed font-semibold bg-white/50 p-2 rounded-lg border border-indigo-50 min-h-[40px]">
-                      {isNew ? (
-                        <TypingText
-                          text={analysis.current_intent_detected}
+                    <div className="flex items-center gap-3 bg-white px-3 py-1.5 rounded-full border border-indigo-50 shadow-sm ml-4">
+                      <div className="w-16 h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-1000 ${analysis.fit_score > 70 ? 'bg-emerald-500' : analysis.fit_score > 40 ? 'bg-amber-500' : 'bg-rose-500'
+                            }`}
+                          style={{ width: `${analysis.fit_score}%` }}
                         />
-                      ) : (
-                        analysis.current_intent_detected
-                      )}
+                      </div>
+                      <span className={`text-sm font-black ${analysis.fit_score > 70 ? 'text-emerald-600' : analysis.fit_score > 40 ? 'text-amber-600' : 'text-rose-600'
+                        }`}>
+                        {analysis.fit_score}%
+                      </span>
                     </div>
                   </div>
+                )}
 
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600">
-                      <BarChart className="h-3 w-3" />
-                      Đánh giá khoảng giá
-                    </div>
-                    <div className="text-sm text-gray-800 leading-relaxed italic border-l-2 border-indigo-200 pl-3 min-h-[20px]">
-                      {isNew ? (
-                        <TypingText
-                          text={analysis.price_gap_evaluation}
-                          onComplete={() => {
-                            setHasAnimated(animationKey)
-                          }}
-                        />
-                      ) : (
-                        analysis.price_gap_evaluation
-                      )}
-                    </div>
+                <div className="mt-4 pt-4 border-t border-indigo-100 flex items-center justify-between">
+                  <span className="text-[10px] text-gray-400 font-medium">Was this analysis helpful?</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => insights.aiInsightId && handleRate(insights.aiInsightId, false, true)}
+                      className={`p-2 hover:bg-green-50 rounded-lg transition-all ${(localRatings[`current-${insights.aiInsightId}`] ?? insights.is_positive) === true ? 'text-green-600 bg-green-50 ring-1 ring-green-200 shadow-sm' : 'text-gray-400 hover:text-green-500'}`}
+                    >
+                      <ThumbsUp className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => insights.aiInsightId && handleRate(insights.aiInsightId, false, false)}
+                      className={`p-2 hover:bg-red-50 rounded-lg transition-all ${(localRatings[`current-${insights.aiInsightId}`] ?? insights.is_positive) === false ? 'text-red-500 bg-red-50 ring-1 ring-red-200 shadow-sm' : 'text-gray-400 hover:text-red-400'}`}
+                    >
+                      <ThumbsDown className="h-4 w-4" />
+                    </button>
                   </div>
-
-                  {analysis.fit_score !== undefined && (
-                    <div className="mt-2 pt-3 border-t border-indigo-100 flex items-center justify-between">
-                      <div className="flex-1 flex flex-col gap-0.5">
-                        <span className="text-xs text-gray-500 font-bold">Độ phù hợp (Fit Score)</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-gray-400">Confidence based on context</span>
-                          <div className="flex items-center gap-1 ml-auto border-l pl-2 border-indigo-100">
-                            <button
-                              onClick={() => insights.aiInsightId && handleRate(insights.aiInsightId, false, true)}
-                              className={`p-1.5 hover:bg-green-50 rounded-md transition-colors ${(localRatings[`current-${insights.aiInsightId}`] ?? insights.is_positive) === true ? 'text-green-600 bg-green-50 ring-1 ring-green-200' : 'text-gray-400 hover:text-green-500 hover:ring-1 hover:ring-green-100'}`}
-                            >
-                              <ThumbsUp className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => insights.aiInsightId && handleRate(insights.aiInsightId, false, false)}
-                              className={`p-1.5 hover:bg-red-50 rounded-md transition-colors ${(localRatings[`current-${insights.aiInsightId}`] ?? insights.is_positive) === false ? 'text-red-500 bg-red-50 ring-1 ring-red-200' : 'text-gray-400 hover:text-red-400 hover:ring-1 hover:ring-red-100'}`}
-                            >
-                              <ThumbsDown className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 bg-white px-3 py-1.5 rounded-full border border-indigo-50 shadow-sm ml-4">
-                        <div className="w-16 h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full transition-all duration-1000 ${analysis.fit_score > 70 ? 'bg-emerald-500' : analysis.fit_score > 40 ? 'bg-amber-500' : 'bg-rose-500'
-                              }`}
-                            style={{ width: `${analysis.fit_score}%` }}
-                          />
-                        </div>
-                        <span className={`text-sm font-black ${analysis.fit_score > 70 ? 'text-emerald-600' : analysis.fit_score > 40 ? 'text-amber-600' : 'text-rose-600'
-                          }`}>
-                          {analysis.fit_score}%
-                        </span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -320,7 +351,7 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback, onRate }
             <Textarea
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
-              placeholder="Nhập phản hồi hoặc yêu cầu AI đánh giá lại..."
+              placeholder="Nhập thêm thông tin thực tế để AI tối ưu kịch bản... (Ví dụ: Khách đang rất cứng giá, không thích nhắn tin nhiều, thích nói chuyện ngoài lề, gap giá 20tr, giá dealer căng nhất rồi, tiếp theo gọi điện chốt lịch tối nay"
               className="pr-12 min-h-[90px] text-sm focus-visible:ring-indigo-500 border-indigo-100 shadow-sm resize-none rounded-xl"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {

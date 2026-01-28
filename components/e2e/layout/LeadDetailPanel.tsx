@@ -617,50 +617,50 @@ export function LeadDetailPanel({
 
                   if (carImageUrl) {
                     return (
-                      <>
-                        <img
-                          src={carImageUrl}
-                          alt={`${selectedLead.brand || ''} ${selectedLead.model || ''}`}
-                          className="w-full h-full object-cover"
-                          onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
-                            // Replace with placeholder on error
-                            e.currentTarget.style.display = 'none';
-                            e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                          }}
-                        />
-                        {/* Hover overlay */}
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <div className="flex gap-6">
-                            <div
-                              className="flex flex-col items-center text-white cursor-pointer hover:text-blue-400 transition-colors"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (galleryImages.length > 0) {
-                                  handleThumbnailClick();
-                                }
-                              }}
-                            >
-                              <Images className="h-6 w-6 mb-1" />
-                              <span className="text-xs font-medium">Xem ảnh</span>
-                            </div>
-                            <div
-                              className="flex flex-col items-center text-white cursor-pointer hover:text-blue-400 transition-colors"
-                              onClick={handleUploadClick}
-                            >
-                              {uploading ? (
-                                <Loader2 className="h-6 w-6 mb-1 animate-spin" />
-                              ) : (
-                                <Upload className="h-6 w-6 mb-1" />
-                              )}
-                              <span className="text-xs font-medium">Tải ảnh</span>
-                            </div>
-                          </div>
-                        </div>
-                      </>
+                      <img
+                        src={carImageUrl}
+                        alt={`${selectedLead.brand || ''} ${selectedLead.model || ''}`}
+                        className="w-full h-full object-cover"
+                        onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                          // Replace with placeholder on error
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
                     );
                   }
                   return null;
                 })()}
+
+                {/* Hover overlay - Always visible on hover */}
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10">
+                  <div className="flex gap-6">
+                    <div
+                      className={`flex flex-col items-center text-white cursor-pointer hover:text-blue-400 transition-colors ${galleryImages.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (galleryImages.length > 0) {
+                          handleThumbnailClick();
+                        }
+                      }}
+                    >
+                      <Images className="h-6 w-6 mb-1" />
+                      <span className="text-xs font-medium">Xem ảnh</span>
+                    </div>
+                    <div
+                      className="flex flex-col items-center text-white cursor-pointer hover:text-blue-400 transition-colors"
+                      onClick={handleUploadClick}
+                    >
+                      {uploading ? (
+                        <Loader2 className="h-6 w-6 mb-1 animate-spin" />
+                      ) : (
+                        <Upload className="h-6 w-6 mb-1" />
+                      )}
+                      <span className="text-xs font-medium">Tải ảnh</span>
+                    </div>
+                  </div>
+                </div>
+
                 <div className={`flex flex-col items-center justify-center ${selectedLead.image || selectedLead.additional_images ? 'hidden' : ''}`}>
                   <Car className="h-8 w-8 text-gray-400" />
                   <span className="text-[10px] text-gray-400 mt-1">No image</span>

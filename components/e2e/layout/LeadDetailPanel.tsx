@@ -214,32 +214,80 @@ export function LeadDetailPanel({
     const files = e.target.files
     if (!files || files.length === 0 || !selectedLead) return
 
+    const MAX_SINGLE_SIZE = 4 * 1024 * 1024 // 4MB per request to be safe with Vercel
+    const leadPhone = selectedLead.phone || selectedLead.additional_phone || ""
+    const carInfo = formatCarInfo(selectedLead)
+
     setUploading(true)
-    const formData = new FormData()
-    for (let i = 0; i < files.length; i++) {
-      formData.append("files", files[i])
-    }
-    formData.append("phone", selectedLead.phone || selectedLead.additional_phone || "")
-    formData.append("displayName", formatCarInfo(selectedLead))
-    formData.append("senderName", picName)
+    let successCount = 0
 
     try {
-      const response = await fetch("/api/e2e/upload-image", {
-        method: "POST",
-        body: formData,
-      })
+      // 1. Upload images one by one
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
 
-      const result = await response.json()
+        if (file.size > MAX_SINGLE_SIZE) {
+          toast({
+            title: "Cảnh báo",
+            description: `Ảnh thứ ${i + 1} (${(file.size / 1024 / 1024).toFixed(2)}MB) vượt quá giới hạn 4MB. Một số ảnh có thể không tải lên được.`,
+            variant: "destructive",
+          })
+        }
 
-      if (response.ok) {
+        const formData = new FormData()
+        formData.append("file", file)
+        formData.append("phone", leadPhone)
+        formData.append("displayName", carInfo)
+        formData.append("senderName", picName)
+        formData.append("index", (i + 1).toString())
+
+        const response = await fetch("/api/e2e/upload-image", {
+          method: "POST",
+          body: formData,
+        })
+
+        let result: any
+        const contentType = response.headers.get("content-type")
+
+        if (contentType && contentType.includes("application/json")) {
+          result = await response.json()
+        } else {
+          const text = await response.text()
+          if (response.status === 413) {
+            throw new Error(`Ảnh thứ ${i + 1} quá lớn. Vui lòng giảm kích thước ảnh.`)
+          }
+          throw new Error(text || `Lỗi hệ thống (${response.status}) khi tải ảnh ${i + 1}.`)
+        }
+
+        if (response.ok) {
+          successCount++
+        } else {
+          throw new Error(result?.error || `Tải ảnh ${i + 1} thất bại`)
+        }
+      }
+
+      // 2. All images uploaded, now send the customer phone
+      if (successCount > 0) {
+        const phoneResponse = await fetch("/api/e2e/webhook-text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: leadPhone,
+            senderName: picName
+          }),
+        })
+
+        if (!phoneResponse.ok) {
+          console.error("Failed to send phone webhook after uploads")
+        }
+
         toast({
           title: "Thành công",
-          description: `Đã tải lên ${result.count} ảnh thành công`,
+          description: `Đã tải lên ${successCount} ảnh thành công`,
         })
-        // Show choice dialog after successful upload and phone submission
+
+        // Show choice dialog
         setShowChoiceDialog(true)
-      } else {
-        throw new Error(result.error || "Tải ảnh thất bại")
       }
     } catch (error) {
       console.error("[Upload Error]:", error)

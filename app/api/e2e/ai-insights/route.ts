@@ -208,6 +208,9 @@ async function returnWithHistory(insight: any, isNew: boolean = false) {
     [insight.id]
   )
 
+  const { getLatestAiNote } = await import("@/lib/ai-notes-service")
+  const currentDiary = await getLatestAiNote("insight-generator")
+
   const workflowResult = await e2eQuery(
     `SELECT name FROM workflows WHERE id = $1`,
     [insight.target_workflow_id]
@@ -223,5 +226,6 @@ async function returnWithHistory(insight: any, isNew: boolean = false) {
     is_positive: insight.is_positive,
     history: historyResult.rows,
     isNew: isNew,
+    currentDiary: currentDiary, // Include the Knowledge Diary for the UI
   })
 }

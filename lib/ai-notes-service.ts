@@ -25,7 +25,7 @@ export async function updateAiNoteFromFeedback(params: {
   const today = new Date().toISOString().split('T')[0];
 
   const prompt = `
-You are an expert AI system prompt engineer. Your task is to maintain a "Knowledge Diary" for an AI assistant. This diary is a cumulative list of instructions and lessons learned that are used in the AI's system prompt to make it smarter over time.
+You are an expert AI system prompt engineer. Your task is to maintain a "Knowledge Diary" for an AI assistant. This diary is a cumulative list of instructions, patterns, and lessons learned that are used in the AI's system prompt to make it smarter over time.
 
 Today's Date: ${today}
 
@@ -45,15 +45,20 @@ ${userFeedback}
 
 Goal:
 1. Review the Current Knowledge Diary.
-2. Identify what new lesson, rule, or instruction should be added based on the LATEST INTERACTION.
-3. Output the ENTIRE updated Knowledge Diary, which includes all previous content PLUS the new entry.
-4. Use a format like "**Entry [Date]**: [Description of lesson/instruction]" or "**New Instruction**: [Details]" to keep it organized like a diary.
+2. **Extract the Generalized Pattern**: Look at the LATEST INTERACTION and find the underlying principle or heuristic that was missed. 
+3. **Draft Reusable Instructions**: Do NOT focus on the specific names, IDs, or unique details of this case. Instead, describe the **Pattern** of the situation and the **Instruction** the AI should follow whenever that pattern occurs.
+4. Output the ENTIRE updated Knowledge Diary, which includes previous content PLUS the new entry.
+5. If the pattern is already in the diary, you should update the existing pattern instead of adding a new one.
+6. Use a structured format like:
+   **Entry [Date]**: 
+   - **Pattern**: [Description of the general scenario/context]
+   - **Instruction**: [Actionable, reusable rule for the AI to follow in the future]
 
 The diary should track:
-- Corrected mistakes.
-- Specific thresholds to watch (e.g. price gaps).
-- New output requirements (e.g. "recommended_actions").
-- Nuanced understanding of user needs.
+- Logic patterns for corrected mistakes.
+- Heuristics for specific thresholds (e.g. price gaps, client sentiment).
+- Component-level requirements (e.g. structural shifts, new fields).
+- Strategic understanding of generalized user needs.
 
 Output only the full text of the updated Knowledge Diary:
   `.trim();

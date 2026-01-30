@@ -18,7 +18,7 @@ import { useToast } from "@/hooks/use-toast"
 interface ImageUploadServiceProps {
   lead: Lead | null
   senderName: string
-  renderTrigger: (uploading: boolean, handleTrigger: (e: React.MouseEvent) => void) => React.ReactNode
+  renderTrigger: (uploading: boolean, handleTrigger: (e: React.MouseEvent | React.TouchEvent) => void) => React.ReactNode
 }
 
 export function ImageUploadService({
@@ -32,7 +32,7 @@ export function ImageUploadService({
   const [sendingChoice, setSendingChoice] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleTrigger = (e: React.MouseEvent) => {
+  const handleTrigger = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation()
     if (!lead) return
     fileInputRef.current?.click()

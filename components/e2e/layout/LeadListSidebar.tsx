@@ -588,26 +588,28 @@ export function LeadListSidebar({
                       )}
 
                       {/* Bot check biển upload button - Always visible */}
-                      <ImageUploadService
-                        lead={lead}
-                        senderName={picName}
-                        renderTrigger={(uploading, handleTrigger) => (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-6 px-2 text-[10px] ml-auto border-blue-200 text-blue-700 hover:bg-blue-50"
-                            onClick={(e) => handleTrigger(e)}
-                            disabled={uploading}
-                          >
-                            {uploading ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <Upload className="h-3 w-3 mr-1" />
-                            )}
-                            Bot che biển
-                          </Button>
-                        )}
-                      />
+                      <div className="ml-auto" onClick={(e) => e.stopPropagation()}>
+                        <ImageUploadService
+                          lead={lead}
+                          senderName={picName}
+                          renderTrigger={(uploading, handleTrigger) => (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 px-2 text-[10px] border-blue-200 text-blue-700 hover:bg-blue-50"
+                              onClick={(e) => handleTrigger(e)}
+                              disabled={uploading}
+                            >
+                              {uploading ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Upload className="h-3 w-3 mr-1" />
+                              )}
+                              Bot che biển
+                            </Button>
+                          )}
+                        />
+                      </div>
                     </div>
                     {/* Inspection Schedule Badge */}
                     {lead.inspection_schedule && (

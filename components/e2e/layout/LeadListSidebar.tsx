@@ -7,7 +7,7 @@ import { vi } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SearchInput } from "@/components/ui/search-input"
-import { User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star, X, SlidersHorizontal, Play, CheckCircle, Download, Loader2, Activity, Copy, Calendar, MapPin, Clock } from "lucide-react"
+import { User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star, X, SlidersHorizontal, Play, CheckCircle, Download, Loader2, Activity, Copy, Calendar, MapPin, Clock, Upload } from "lucide-react"
 import { Lead } from "../types"
 import { formatCarInfo, formatPriceShort, calculateCampaignProgress, calculateRemainingTime, formatRelativeTime, getActivityFreshness, getActivityFreshnessClass } from "../utils"
 import { useToast } from "@/hooks/use-toast"
@@ -20,19 +20,8 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { ExportReportDialog } from "../dialogs/ExportReportDialog"
 import { DateRangePickerWithPresets } from "../common/DateRangePickerWithPresets"
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogAction,
-  AlertDialogCancel
-} from "@/components/ui/alert-dialog"
-import { Upload } from "lucide-react"
+import { ImageUploadService } from "../common/ImageUploadService"
 import { useAccounts } from "@/contexts/AccountsContext"
-import { useRef } from "react"
 
 interface LeadListSidebarProps {
   // Display props
@@ -159,98 +148,6 @@ export function LeadListSidebar({
   const { accounts } = useAccounts()
   const currentPIC = accounts.find(a => a.uid === selectedAccount)
   const picName = currentPIC?.name || "Khả Nhi Vucar"
-
-  const [activeUploadLead, setActiveUploadLead] = useState<Lead | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const [showChoiceDialog, setShowChoiceDialog] = useState(false)
-  const [sendingChoice, setSendingChoice] = useState(false)
-
-  const handleUploadClick = (lead: Lead, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setActiveUploadLead(lead)
-    // Wait a tick for state to update then click input
-    setTimeout(() => {
-      fileInputRef.current?.click()
-    }, 0)
-  }
-
-  const handleChoiceSelect = async (choice: 'dealer' | 'Ok') => {
-    setSendingChoice(true)
-    try {
-      const response = await fetch("/api/e2e/webhook-text", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: choice,
-          senderName: picName
-        }),
-      })
-
-      if (response.ok) {
-        toast({
-          title: "Thành công",
-          description: `Đã gửi lựa chọn "${choice}" thành công`,
-        })
-        setShowChoiceDialog(false)
-      } else {
-        throw new Error("Gửi lựa chọn thất bại")
-      }
-    } catch (error) {
-      console.error("[Choice Error]:", error)
-      toast({
-        title: "Lỗi",
-        description: error instanceof Error ? error.message : "Có lỗi xảy ra khi gửi lựa chọn",
-        variant: "destructive",
-      })
-    } finally {
-      setSendingChoice(false)
-    }
-  }
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0 || !activeUploadLead) return
-
-    setUploading(true)
-    const formData = new FormData()
-    for (let i = 0; i < files.length; i++) {
-      formData.append("files", files[i])
-    }
-    formData.append("phone", activeUploadLead.phone || activeUploadLead.additional_phone || "")
-    formData.append("displayName", formatCarInfo(activeUploadLead))
-    formData.append("senderName", picName)
-
-    try {
-      const response = await fetch("/api/e2e/upload-image", {
-        method: "POST",
-        body: formData,
-      })
-
-      const result = await response.json()
-
-      if (response.ok) {
-        toast({
-          title: "Thành công",
-          description: `Đã tải lên ${result.count} ảnh thành công`,
-        })
-        setShowChoiceDialog(true)
-      } else {
-        throw new Error(result.error || "Tải ảnh thất bại")
-      }
-    } catch (error) {
-      console.error("[Upload Error]:", error)
-      toast({
-        title: "Lỗi",
-        description: error instanceof Error ? error.message : "Có lỗi xảy ra khi tải ảnh",
-        variant: "destructive",
-      })
-    } finally {
-      setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ""
-      // Keep activeUploadLead for the choice dialog
-    }
-  }
   // --- Upload & Bot Logic End ---
 
   // Truncate car ID: show first 8 chars + "..." if longer than 12
@@ -691,20 +588,26 @@ export function LeadListSidebar({
                       )}
 
                       {/* Bot check biển upload button - Always visible */}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 px-2 text-[10px] ml-auto border-blue-200 text-blue-700 hover:bg-blue-50"
-                        onClick={(e) => handleUploadClick(lead, e)}
-                        disabled={uploading && activeUploadLead?.id === lead.id}
-                      >
-                        {uploading && activeUploadLead?.id === lead.id ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Upload className="h-3 w-3 mr-1" />
+                      <ImageUploadService
+                        lead={lead}
+                        senderName={picName}
+                        renderTrigger={(uploading, handleTrigger) => (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 px-2 text-[10px] ml-auto border-blue-200 text-blue-700 hover:bg-blue-50"
+                            onClick={(e) => handleTrigger(e)}
+                            disabled={uploading}
+                          >
+                            {uploading ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Upload className="h-3 w-3 mr-1" />
+                            )}
+                            Bot che biển
+                          </Button>
                         )}
-                        Bot che biển
-                      </Button>
+                      />
                     </div>
                     {/* Inspection Schedule Badge */}
                     {lead.inspection_schedule && (
@@ -825,53 +728,6 @@ export function LeadListSidebar({
         open={exportDialogOpen}
         onOpenChange={setExportDialogOpen}
         leads={currentPageLeads}
-      />
-
-      {/* Post-Upload Choice Dialog */}
-      <AlertDialog open={showChoiceDialog} onOpenChange={setShowChoiceDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Chọn hành động tiếp theo</AlertDialogTitle>
-            <AlertDialogDescription>
-              Bạn muốn gửi thông báo nào tiếp theo cho lead này?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => handleChoiceSelect('dealer')}
-              disabled={sendingChoice}
-            >
-              {sendingChoice ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                'dealer'
-              )}
-            </Button>
-            <Button
-              className="flex-1 bg-blue-600 hover:bg-blue-700"
-              onClick={() => handleChoiceSelect('Ok')}
-              disabled={sendingChoice}
-            >
-              {sendingChoice ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                'Ok'
-              )}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Hidden File Input for Upload */}
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileChange}
-        multiple
-        accept="image/*"
-        className="hidden"
       />
     </div>
   )

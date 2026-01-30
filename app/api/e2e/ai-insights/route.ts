@@ -39,14 +39,15 @@ export async function POST(request: Request) {
       console.log(`[AI Insights] User feedback received. Archiving current insight ${existingInsight.id}`)
 
       // 2a. Archive current insight to old_ai_insights
-      await e2eQuery(
+      const archiveResult = await e2eQuery(
         `INSERT INTO old_ai_insights (
             ai_insight_id,
             ai_insight_summary,
             user_feedback,
             is_positive,
             created_at
-          ) VALUES ($1, $2, $3, $4, NOW())`,
+          ) VALUES ($1, $2, $3, $4, NOW())
+          RETURNING id`,
         [
           existingInsight.id,
           JSON.stringify(existingInsight.ai_insight_summary),
@@ -54,8 +55,21 @@ export async function POST(request: Request) {
           existingInsight.is_positive
         ]
       )
+      const feedbackInsightId = archiveResult.rows[0].id
 
-      // 2b. Reset current insight to processing state (will be updated after webhook)
+      // 2b. Trigger AI Note Update in parallel
+      // We use a separate block name for this context
+      import("@/lib/ai-notes-service").then(({ updateAiNoteFromFeedback }) => {
+        updateAiNoteFromFeedback({
+          block: "insight-generator",
+          aiResponse: JSON.stringify(existingInsight.ai_insight_summary),
+          userFeedback,
+          feedbackType: "text",
+          feedbackInsightId
+        }).catch(err => console.error("[AI Note Update] Background error:", err))
+      })
+
+      // 2c. Reset current insight to processing state (will be updated after webhook)
       await e2eQuery(
         `UPDATE ai_insights 
          SET ai_insight_summary = $1, 
@@ -116,6 +130,10 @@ export async function POST(request: Request) {
       [insightIdToUpdate]
     )
 
+    // Fetch latest note for this block to improve AI performance
+    const { getLatestAiNote } = await import("@/lib/ai-notes-service")
+    const latestNote = await getLatestAiNote("insight-generator")
+
     // Call AI Webhook
     const aiWebhookUrl = `https://n8n.vucar.vn/webhook/c87920ee-2cc1-4493-a692-a5e4df64569e/a692-a5e4df64569e-c87920ee-2cc1-4493/${phoneNumber}`
 
@@ -128,7 +146,8 @@ export async function POST(request: Request) {
           sourceInstanceId,
           phoneNumber,
           previousInsight: existingInsight?.ai_insight_summary, // Most recent insight from ai_insights table
-          feedback: userFeedback      // Current user feedback
+          feedback: userFeedback,      // Current user feedback
+          aiNote: latestNote           // Persisted learning from previous sessions
         })
       })
 
@@ -189,6 +208,9 @@ async function returnWithHistory(insight: any, isNew: boolean = false) {
     [insight.id]
   )
 
+  const { getLatestAiNote } = await import("@/lib/ai-notes-service")
+  const currentDiary = await getLatestAiNote("insight-generator")
+
   const workflowResult = await e2eQuery(
     `SELECT name FROM workflows WHERE id = $1`,
     [insight.target_workflow_id]
@@ -204,5 +226,6 @@ async function returnWithHistory(insight: any, isNew: boolean = false) {
     is_positive: insight.is_positive,
     history: historyResult.rows,
     isNew: isNew,
+    currentDiary: currentDiary, // Include the Knowledge Diary for the UI
   })
 }

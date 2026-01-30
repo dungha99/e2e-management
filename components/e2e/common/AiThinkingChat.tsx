@@ -1,9 +1,17 @@
 import { useState, useRef, useEffect, memo } from "react"
-import { Bot, Target, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, History } from "lucide-react"
+import { Bot, Target, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, History, BrainCircuit } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { AiInsight } from "../types"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { ScrollArea } from "@/components/ui/scroll-area"
 
 interface AiThinkingChatProps {
   insights: AiInsight | null
@@ -184,17 +192,47 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback, onRate }
           <Sparkles className="h-4 w-4 text-indigo-500" />
           <h4 className="text-sm font-semibold text-gray-900">AI Assistant Thinking</h4>
         </div>
-        {history.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowHistory(!showHistory)}
-            className="text-xs text-gray-500 hover:text-gray-700 h-7 px-2 gap-1.5"
-          >
-            <History className="h-3.5 w-3.5" />
-            {showHistory ? "Ẩn lịch sử" : `Xem lịch sử (${history.length})`}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {history.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowHistory(!showHistory)}
+              className="text-xs text-gray-500 hover:text-gray-700 h-7 px-2 gap-1.5"
+            >
+              <History className="h-3.5 w-3.5" />
+              {showHistory ? "Ẩn lịch sử" : `Xem lịch sử (${history.length})`}
+            </Button>
+          )}
+
+          {insights?.currentDiary && (
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50"
+                  title="Xem nhật ký tri thức (AI Memory)"
+                >
+                  <BrainCircuit className="h-4 w-4" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <BrainCircuit className="h-5 w-5 text-indigo-500" />
+                    Knowledge Diary
+                  </DialogTitle>
+                </DialogHeader>
+                <ScrollArea className="flex-1 mt-4 pr-4">
+                  <div className="whitespace-pre-wrap text-sm text-gray-700 leading-relaxed font-mono bg-gray-50 p-4 rounded-xl border border-gray-100 italic">
+                    {insights.currentDiary}
+                  </div>
+                </ScrollArea>
+              </DialogContent>
+            </Dialog>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col gap-6">

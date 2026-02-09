@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -322,42 +322,57 @@ export function WorkflowTrackerTab({
   const [aiInsights, setAiInsights] = useState<any>(null)
   const [fetchingAiInsights, setFetchingAiInsights] = useState(false)
 
-  // Auto-select first active/running workflow on load
+  // Track last selected lead to detect when to force reset the view
+  const lastLeadIdRef = useRef<string | null>(null)
+
+  // Auto-select workflow on load: Latest Completed > WF0
   useEffect(() => {
-    if (!workflowInstancesData?.data || workflowInstancesData.data.length === 0) {
+    if (!workflowInstancesData?.allWorkflows || workflowInstancesData.allWorkflows.length === 0 || !selectedLead) {
       return
     }
 
-    // Check if current view is already showing a valid workflow
-    const currentWorkflow = workflowInstancesData.allWorkflows?.find(w => w.id === activeWorkflowView)
-    if (currentWorkflow) {
-      // Already viewing a valid workflow, don't override
+    const leadChanged = lastLeadIdRef.current !== selectedLead.id
+    lastLeadIdRef.current = selectedLead.id
+
+    // Only skip auto-selection if lead hasn't changed AND current view is valid
+    if (!leadChanged) {
+      const isValidView = activeWorkflowView === "purchase" ||
+        activeWorkflowView === "seeding" ||
+        workflowInstancesData.allWorkflows.some((w: any) => w.id === activeWorkflowView)
+      if (isValidView) {
+        return
+      }
+    }
+
+    // Priority 1: Find the most recently completed workflow instance
+    const completedWorkflows = (workflowInstancesData.data || [])
+      .filter((i: any) => i.instance.status === "completed" && i.instance.completed_at)
+      .sort((a: any, b: any) => {
+        const dateA = new Date(a.instance.completed_at!).getTime()
+        const dateB = new Date(b.instance.completed_at!).getTime()
+        return dateB - dateA // Most recent first
+      })
+
+    if (completedWorkflows.length > 0) {
+      const mostRecentCompleted = completedWorkflows[0]
+      console.log(`[WorkflowTracker] Auto-selecting most recently completed workflow: ${mostRecentCompleted.instance.workflow_id}`)
+      onWorkflowViewChange(mostRecentCompleted.instance.workflow_id)
       return
     }
 
-    // Find first running workflow
-    const runningWorkflow = workflowInstancesData.data.find(i => i.instance.status === "running")
-    if (runningWorkflow) {
-      console.log(`[WorkflowTracker] Auto-selecting running workflow: ${runningWorkflow.instance.workflow_id}`)
-      onWorkflowViewChange(runningWorkflow.instance.workflow_id)
+    // Priority 2: Select WF0
+    const wf0 = workflowInstancesData.allWorkflows.find((w: any) => w.name === "WF0")
+    if (wf0) {
+      console.log(`[WorkflowTracker] Auto-selecting WF0 as fallback`)
+      onWorkflowViewChange(wf0.id)
       return
     }
 
-    // Fallback: Find first completed workflow
-    const completedWorkflow = workflowInstancesData.data.find(i => i.instance.status === "completed")
-    if (completedWorkflow) {
-      console.log(`[WorkflowTracker] Auto-selecting completed workflow: ${completedWorkflow.instance.workflow_id}`)
-      onWorkflowViewChange(completedWorkflow.instance.workflow_id)
-      return
+    // Fallback: First available workflow
+    if (workflowInstancesData.allWorkflows[0]) {
+      onWorkflowViewChange(workflowInstancesData.allWorkflows[0].id)
     }
-
-    // Fallback: Select first available workflow if no running/completed ones
-    if (workflowInstancesData.allWorkflows && workflowInstancesData.allWorkflows.length > 0) {
-      const firstWorkflow = workflowInstancesData.allWorkflows[0]
-      console.log(`[WorkflowTracker] Auto-selecting first available workflow: ${firstWorkflow.id}`)
-      onWorkflowViewChange(firstWorkflow.id)
-    }
-  }, [workflowInstancesData, activeWorkflowView, onWorkflowViewChange])
+  }, [workflowInstancesData, activeWorkflowView, onWorkflowViewChange, selectedLead])
 
   // Join data
   const currentInstance = workflowInstancesData?.data?.find(i => i.instance.workflow_id === activeWorkflowView)
@@ -567,6 +582,53 @@ ${dealerBidsStr}`
 
   return (
     <>
+      {/* AI Insight Thinking Chat - Above Workflow Tracker */}
+      <AiThinkingChat
+        insights={aiInsights}
+        isLoading={fetchingAiInsights}
+        onSubmitFeedback={async (feedback) => {
+          if (!selectedLead.car_id || !currentInstance?.instance.id) return
+          const phoneNumber = selectedLead.phone || selectedLead.additional_phone
+          if (!phoneNumber) return
+
+          setFetchingAiInsights(true)
+          try {
+            const newInsights = await fetchAiInsights(
+              selectedLead.car_id,
+              currentInstance.instance.id,
+              phoneNumber,
+              feedback
+            )
+            setAiInsights(newInsights)
+          } catch (error) {
+            console.error("[WorkflowTracker] Failed to submit AI feedback:", error)
+          } finally {
+            setFetchingAiInsights(false)
+          }
+        }}
+        onRate={async (id, isHistory, isPositive) => {
+          if (!aiInsights) return
+
+          // Update parent state directly for sync
+          setAiInsights((prev: AiInsight | null) => {
+            if (!prev) return prev
+
+            if (!isHistory && prev.aiInsightId === id) {
+              return { ...prev, is_positive: isPositive }
+            }
+
+            if (prev.history) {
+              const newHistory = prev.history.map((h: AiInsightHistory) =>
+                h.id === id ? { ...h, is_positive: isPositive } : h
+              )
+              return { ...prev, history: newHistory }
+            }
+
+            return prev
+          })
+        }}
+      />
+
       {/* Workflow Tracker */}
       <div className="bg-white rounded-lg p-3 sm:p-5 shadow-sm">
         {/* Header - Stack on mobile */}
@@ -784,53 +846,6 @@ ${dealerBidsStr}`
             )
           })()
         ) : null}
-
-        {/* AI Insight Thinking Chat */}
-        <AiThinkingChat
-          insights={aiInsights}
-          isLoading={fetchingAiInsights}
-          onSubmitFeedback={async (feedback) => {
-            if (!selectedLead.car_id || !currentInstance?.instance.id) return
-            const phoneNumber = selectedLead.phone || selectedLead.additional_phone
-            if (!phoneNumber) return
-
-            setFetchingAiInsights(true)
-            try {
-              const newInsights = await fetchAiInsights(
-                selectedLead.car_id,
-                currentInstance.instance.id,
-                phoneNumber,
-                feedback
-              )
-              setAiInsights(newInsights)
-            } catch (error) {
-              console.error("[WorkflowTracker] Failed to submit AI feedback:", error)
-            } finally {
-              setFetchingAiInsights(false)
-            }
-          }}
-          onRate={async (id, isHistory, isPositive) => {
-            if (!aiInsights) return
-
-            // Update parent state directly for sync
-            setAiInsights((prev: AiInsight | null) => {
-              if (!prev) return prev
-
-              if (!isHistory && prev.aiInsightId === id) {
-                return { ...prev, is_positive: isPositive }
-              }
-
-              if (prev.history) {
-                const newHistory = prev.history.map((h: AiInsightHistory) =>
-                  h.id === id ? { ...h, is_positive: isPositive } : h
-                )
-                return { ...prev, history: newHistory }
-              }
-
-              return prev
-            })
-          }}
-        />
       </div>
 
       {/* Additional Info Cards */}

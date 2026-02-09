@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -18,7 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car, Images, MapPin, Send, Activity, ArrowLeft, Bell } from "lucide-react"
+import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car, Images, MapPin, Send, Activity, ArrowLeft, Bell, Upload } from "lucide-react"
 import { Lead } from "../types"
 import { formatCarInfo, formatPrice, formatDate, formatRelativeTime, getActivityFreshness, getActivityFreshnessClass } from "../utils"
 import { WorkflowTrackerTab } from "../tabs/WorkflowTrackerTab"
@@ -27,9 +27,11 @@ import { RecentActivityTab } from "../tabs/RecentActivityTab"
 import { DecoyHistoryTab } from "../tabs/DecoyHistoryTab"
 import { Workflow2Dialog } from "../dialogs/Workflow2Dialog"
 import { ImageGalleryModal } from "../dialogs/ImageGalleryModal"
+import { ImageUploadService } from "../common/ImageUploadService"
 import { useToast } from "@/hooks/use-toast"
 import { useWorkflowInstances } from "@/hooks/use-leads"
 import { useDecoySignals } from "@/hooks/use-decoy-signals"
+import { useAccounts } from "@/contexts/AccountsContext"
 
 interface LeadDetailPanelProps {
   selectedAccount: string | null
@@ -156,51 +158,69 @@ export function LeadDetailPanel({
   // Gallery state
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+  const [showOverlayOnMobile, setShowOverlayOnMobile] = useState(false)
 
   // Toast notifications
   const { toast } = useToast()
 
+  // Accounts for PIC display name
+  const { accounts } = useAccounts()
+  const currentPIC = accounts.find(a => a.uid === selectedAccount)
+  const picName = currentPIC?.name || "Khả Nhi Vucar"
+
+
+  // Track last selected lead to detect when to force reset the view
+  const lastLeadIdRef = useRef<string | null>(null)
+
   // Fetch workflow instances for beta tracking
   const { data: workflowInstancesData } = useWorkflowInstances(selectedLead?.car_id)
 
-  // Set default view: prioritize running workflow, then WF0, then WF1
+  // Set default view: prioritize latest completed, then fallback to WF0
   useEffect(() => {
-    if (!workflowInstancesData?.allWorkflows || workflowInstancesData.allWorkflows.length === 0) {
+    if (!workflowInstancesData?.allWorkflows || workflowInstancesData.allWorkflows.length === 0 || !selectedLead) {
       return
     }
 
-    // Check if current view is already valid
-    const isValidView = workflowInstancesData.allWorkflows.some(w => w.id === activeWorkflowView)
-    if (isValidView) {
-      return // Already viewing a valid workflow
+    const leadChanged = lastLeadIdRef.current !== selectedLead.id
+    lastLeadIdRef.current = selectedLead.id
+
+    // Only skip auto-selection if lead hasn't changed AND current view is valid
+    if (!leadChanged) {
+      const isValidView = activeWorkflowView === "purchase" ||
+        activeWorkflowView === "seeding" ||
+        workflowInstancesData.allWorkflows.some((w: any) => w.id === activeWorkflowView)
+      if (isValidView) {
+        return
+      }
     }
 
-    // Priority 1: Find first running workflow
-    const runningWorkflow = workflowInstancesData.data?.find(i => i.instance.status === "running")
-    if (runningWorkflow) {
-      onWorkflowViewChange(runningWorkflow.instance.workflow_id)
+    // Priority 1: Find the most recently completed workflow instance
+    const completedWorkflows = (workflowInstancesData.data || [])
+      .filter((i: any) => i.instance.status === "completed" && i.instance.completed_at)
+      .sort((a: any, b: any) => {
+        const dateA = new Date(a.instance.completed_at!).getTime()
+        const dateB = new Date(b.instance.completed_at!).getTime()
+        return dateB - dateA // Most recent first
+      })
+
+    if (completedWorkflows.length > 0) {
+      const mostRecentCompleted = completedWorkflows[0]
+      onWorkflowViewChange(mostRecentCompleted.instance.workflow_id)
       return
     }
 
     // Priority 2: Find WF0
-    const wf0 = workflowInstancesData.allWorkflows.find(w => w.name === "WF0")
+    const wf0 = workflowInstancesData.allWorkflows.find((w: any) => w.name === "WF0")
     if (wf0) {
       onWorkflowViewChange(wf0.id)
       return
     }
 
-    // Priority 3: Find WF1
-    const wf1 = workflowInstancesData.allWorkflows.find(w => w.name === "WF1")
-    if (wf1) {
-      onWorkflowViewChange(wf1.id)
-      return
-    }
-
-    // Fallback: First available workflow
+    // Priority 3: First available workflow
     if (workflowInstancesData.allWorkflows[0]) {
       onWorkflowViewChange(workflowInstancesData.allWorkflows[0].id)
     }
-  }, [workflowInstancesData, activeWorkflowView, onWorkflowViewChange])
+  }, [workflowInstancesData, activeWorkflowView, onWorkflowViewChange, selectedLead])
 
   // Decoy signals for new reply detection
   const { hasNewReplies, markAsRead } = useDecoySignals()
@@ -479,8 +499,14 @@ export function LeadDetailPanel({
             <div className="flex flex-col sm:flex-row items-start gap-3 md:gap-4 w-full sm:w-auto sm:flex-1">
               {/* Car Image Thumbnail - Full width on mobile */}
               <div
-                className={`w-full sm:w-28 md:w-40 aspect-[3/2] rounded-lg border-2 border-gray-200 bg-gray-100 overflow-hidden flex items-center justify-center shadow-sm relative group flex-shrink-0 ${galleryImages.length > 0 ? 'cursor-pointer hover:border-blue-400 transition-colors' : ''}`}
-                onClick={handleThumbnailClick}
+                className={`w-full sm:w-28 md:w-40 aspect-[3/2] rounded-lg border-2 border-gray-200 bg-gray-100 overflow-hidden flex items-center justify-center shadow-sm relative group flex-shrink-0 ${galleryImages.length > 0 ? 'cursor-pointer sm:hover:border-blue-400 transition-colors' : ''}`}
+                onClick={(e) => {
+                  if (isMobile) {
+                    setShowOverlayOnMobile(!showOverlayOnMobile);
+                  } else {
+                    handleThumbnailClick();
+                  }
+                }}
                 title={galleryImages.length > 0 ? "Nhấn để xem tất cả ảnh" : undefined}
               >
                 {(() => {
@@ -511,31 +537,54 @@ export function LeadDetailPanel({
 
                   if (carImageUrl) {
                     return (
-                      <>
-                        <img
-                          src={carImageUrl}
-                          alt={`${selectedLead.brand || ''} ${selectedLead.model || ''}`}
-                          className="w-full h-full object-cover"
-                          onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
-                            // Replace with placeholder on error
-                            e.currentTarget.style.display = 'none';
-                            e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                          }}
-                        />
-                        {/* Hover overlay */}
-                        {galleryImages.length > 0 && (
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <div className="flex flex-col items-center text-white">
-                              <Images className="h-6 w-6 mb-1" />
-                              <span className="text-xs font-medium">Xem ảnh</span>
-                            </div>
-                          </div>
-                        )}
-                      </>
+                      <img
+                        src={carImageUrl}
+                        alt={`${selectedLead.brand || ''} ${selectedLead.model || ''}`}
+                        className="w-full h-full object-cover"
+                        onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                          // Replace with placeholder on error
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
                     );
                   }
                   return null;
                 })()}
+
+                {/* Hover overlay - Always visible on hover or toggle on mobile tap */}
+                <div className={`absolute inset-0 bg-black/50 transition-all flex items-center justify-center z-10 ${isMobile ? (showOverlayOnMobile ? 'opacity-100 visible' : 'opacity-0 invisible pointer-events-none') : 'opacity-0 group-hover:opacity-100'}`}>
+                  <div className="flex gap-8 sm:gap-6">
+                    <div
+                      className={`flex flex-col items-center text-white cursor-pointer hover:text-blue-400 transition-colors ${galleryImages.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleThumbnailClick();
+                      }}
+                    >
+                      <Images className="h-7 w-7 sm:h-6 sm:h-6 mb-1.5 sm:mb-1" />
+                      <span className="text-xs font-semibold sm:font-medium">Xem ảnh</span>
+                    </div>
+                    <ImageUploadService
+                      lead={selectedLead}
+                      senderName={picName}
+                      renderTrigger={(uploading, handleTrigger) => (
+                        <div
+                          className="flex flex-col items-center text-white cursor-pointer hover:text-blue-400 touch-target transition-colors"
+                          onClick={(e) => handleTrigger(e)}
+                        >
+                          {uploading ? (
+                            <Loader2 className="h-7 w-7 sm:h-6 sm:w-6 mb-1.5 sm:mb-1 animate-spin" />
+                          ) : (
+                            <Upload className="h-7 w-7 sm:h-6 sm:w-6 mb-1.5 sm:mb-1" />
+                          )}
+                          <span className="text-xs font-semibold sm:font-medium">Tải ảnh</span>
+                        </div>
+                      )}
+                    />
+                  </div>
+                </div>
+
                 <div className={`flex flex-col items-center justify-center ${selectedLead.image || selectedLead.additional_images ? 'hidden' : ''}`}>
                   <Car className="h-8 w-8 text-gray-400" />
                   <span className="text-[10px] text-gray-400 mt-1">No image</span>

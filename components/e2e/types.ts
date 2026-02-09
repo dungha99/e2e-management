@@ -302,9 +302,7 @@ export interface WorkflowInstanceWithDetails {
 }
 
 export interface AiInsightAnalysis {
-  current_intent_detected: string;
-  price_gap_evaluation: string;
-  fit_score: number;
+  [key: string]: any;
 }
 
 export interface AiInsightHistory {
@@ -330,4 +328,5 @@ export interface AiInsight {
   isNew?: boolean;
   // Joined data
   targetWorkflowName?: string;
+  currentDiary?: string | null;
 }

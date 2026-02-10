@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
-import { e2eQuery } from "@/lib/db"
+import { e2eQuery, vucarV2Query } from "@/lib/db"
+import { findSimilarLeads } from "@/lib/vector-search"
 
 export async function POST(request: Request) {
   try {
@@ -130,25 +131,85 @@ export async function POST(request: Request) {
       [insightIdToUpdate]
     )
 
-    // Fetch latest note for this block to improve AI performance
-    const { getLatestAiNote } = await import("@/lib/ai-notes-service")
-    const latestNote = await getLatestAiNote("insight-generator")
+    // --- Step 4a: Vector search for similar leads context ---
+    let similarLeadsContext = "";
+    let currentContext = "";
+    try {
+      const leadResult = await vucarV2Query(
+        `SELECT c.brand, c.model, c.variant, c.year, c.location, c.mileage,
+                ss.price_customer, ss.price_highest_bid, ss.stage, ss.qualified,
+                ss.intention, ss.negotiation_ability, l.source, ss.notes, l.customer_feedback
+         FROM cars c
+         LEFT JOIN leads l ON l.id = c.lead_id
+         LEFT JOIN sale_status ss ON ss.car_id = c.id
+         WHERE c.id = $1 LIMIT 1`,
+        [carId]
+      );
+      if (leadResult.rows.length > 0) {
+        const vectorResult = await findSimilarLeads(leadResult.rows[0]);
+        similarLeadsContext = vectorResult.similarLeadsContext;
+        currentContext = vectorResult.currentContext;
+      }
+    } catch (err) {
+      console.error("[AI Insights] Vector search failed (non-blocking):", err);
+    }
 
-    // Call AI Webhook
-    const aiWebhookUrl = `https://n8n.vucar.vn/webhook/c87920ee-2cc1-4493-a692-a5e4df64569e/a692-a5e4df64569e-c87920ee-2cc1-4493/${phoneNumber}`
+    // Step 4b: Query api_connectors table for AI webhook configuration
+    const connectorName = "AI_INSIGHTS_WEBHOOK"
+    const connectorResult = await e2eQuery(
+      `SELECT * FROM api_connectors WHERE name = $1 LIMIT 1`,
+      [connectorName]
+    )
+
+    if (connectorResult.rows.length === 0) {
+      console.error(`[AI Insights] Connector "${connectorName}" not found in api_connectors table`)
+      return NextResponse.json(
+        { error: `Connector "${connectorName}" not configured. Please add it to api_connectors table.` },
+        { status: 500 }
+      )
+    }
+
+    const connector = connectorResult.rows[0]
+    const { base_url, method, auth_config, input_schema } = connector
+
+    // Build payload
+    const payload = {
+      carId,
+      sourceInstanceId,
+      phoneNumber,
+      previousInsight: existingInsight?.ai_insight_summary, // Most recent insight from ai_insights table
+      feedback: userFeedback,      // Current user feedback
+      currentContext,        // template sentence used as the vector search query
+      similarLeadsContext,  // formatted text string of win/failed cases
+    }
+
+    // Optional: Validate payload against input_schema if provided
+    if (input_schema) {
+      console.log("[AI Insights] input_schema available for validation:", input_schema)
+      // TODO: Add JSON schema validation library (e.g., ajv) if strict validation is needed
+    }
+
+    // Build headers using auth_config from connector
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    }
+
+    if (auth_config?.type === "bearer" && auth_config?.token) {
+      headers["Authorization"] = `Bearer ${auth_config.token}`
+      console.log("[AI Insights] Using bearer token authentication from api_connectors")
+    } else if (auth_config?.type === "api_key" && auth_config?.key && auth_config?.header) {
+      headers[auth_config.header] = auth_config.key
+      console.log(`[AI Insights] Using API key authentication (${auth_config.header}) from api_connectors`)
+    }
+
+    // Call AI Webhook using connector configuration
+    console.log(`[AI Insights] Calling connector "${connectorName}": ${method || "POST"} ${base_url}`)
 
     try {
-      const response = await fetch(aiWebhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          carId,
-          sourceInstanceId,
-          phoneNumber,
-          previousInsight: existingInsight?.ai_insight_summary, // Most recent insight from ai_insights table
-          feedback: userFeedback,      // Current user feedback
-          aiNote: latestNote           // Persisted learning from previous sessions
-        })
+      const response = await fetch(base_url, {
+        method: method || "POST",
+        headers,
+        body: JSON.stringify(payload)
       })
 
       if (!response.ok) throw new Error(`AI Webhook failed: ${response.status}`)

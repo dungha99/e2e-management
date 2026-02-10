@@ -330,3 +330,24 @@ export interface AiInsight {
   targetWorkflowName?: string;
   currentDiary?: string | null;
 }
+
+export interface InputSchemaField {
+  name: string
+  label: string
+  type: "text" | "textarea" | "number" | "select" | "date"
+  required?: boolean
+  hidden?: boolean
+  default_value?: any
+  placeholder?: string
+  options?: string[]
+}
+
+export interface ApiConnectorType {
+  id: string
+  name: string
+  base_url: string
+  method: string
+  auth_config?: any
+  input_schema?: InputSchemaField[]
+  output_schema?: any
+}

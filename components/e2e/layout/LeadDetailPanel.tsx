@@ -935,6 +935,7 @@ export function LeadDetailPanel({
           <div className="py-6">
             <WorkflowTrackerTab
               selectedLead={selectedLead}
+              currentUserId={selectedAccount}
               activeWorkflowView={activeWorkflowView}
               onWorkflowViewChange={onWorkflowViewChange}
               onSendFirstMessage={() => onSendFirstMessage("Hello")}

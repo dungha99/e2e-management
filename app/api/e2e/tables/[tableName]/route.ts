@@ -10,6 +10,7 @@ const ALLOWED_TABLES = [
     "workflow_transitions",
     "step_executions",
     "api_connectors",
+    "dict_variables",
 ]
 
 // Field configurations for each table

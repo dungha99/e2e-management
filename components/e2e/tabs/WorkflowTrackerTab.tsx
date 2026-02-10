@@ -225,6 +225,7 @@ function WorkflowStep({ icon, title, status, isCompleted = false, onClick }: Wor
 interface WorkflowTrackerTabProps {
   selectedLead: Lead
   activeWorkflowView: string // Can be "purchase", "seeding", or workflow ID
+  currentUserId: string | null
   onWorkflowViewChange: (view: string) => void
 
   // Purchase workflow handlers
@@ -268,6 +269,7 @@ interface WorkflowTrackerTabProps {
 
 export function WorkflowTrackerTab({
   selectedLead,
+  currentUserId,
   activeWorkflowView,
   onWorkflowViewChange,
   onSendFirstMessage,
@@ -613,6 +615,8 @@ ${dealerBidsStr}`
         onSendScript={handleSendScript}
         onExecuteConnector={handleExecuteConnector}
         carId={selectedLead.car_id || undefined}
+        currentUserId={currentUserId}
+        leadPhone={selectedLead.phone || selectedLead.additional_phone || undefined}
         onSubmitFeedback={async (feedback) => {
           if (!selectedLead.car_id || !currentInstance?.instance.id) return
           const phoneNumber = selectedLead.phone || selectedLead.additional_phone

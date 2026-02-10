@@ -112,7 +112,7 @@ const DynamicInsightValue = ({ value, isNew, onComplete, onSendScript, onExecute
                 const defaultValues: Record<string, any> = {};
                 if (currentUserId) defaultValues.picId = currentUserId;
                 if (leadPhone) defaultValues.customer_phone = leadPhone;
-                if (value.script) defaultValues.messages = value.script;
+                if (value.script) defaultValues.messages = [value.script];
 
                 // Use connector ID for Send Message to Customer (05b6afa5-786f-4062-9d53-de9cb89450ee)
                 onExecuteConnector('05b6afa5-786f-4062-9d53-de9cb89450ee', defaultValues, 'Gửi Script');

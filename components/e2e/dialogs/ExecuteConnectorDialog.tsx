@@ -13,7 +13,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Loader2, AlertCircle, Send, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react"
+import { Loader2, AlertCircle, Send, CheckCircle2, ChevronDown, ChevronUp, X, Plus } from "lucide-react"
 
 interface SchemaProperty {
   type?: string
@@ -319,6 +319,8 @@ export function ExecuteConnectorDialog({
         values[field.name] = field.default
       } else if (field.type === 'dict' || field.type === 'object') {
         values[field.name] = {}  // Initialize dict/object fields as empty objects
+      } else if (field.type === 'array') {
+        values[field.name] = []
       } else {
         values[field.name] = ""
       }
@@ -350,6 +352,29 @@ export function ExecuteConnectorDialog({
     } else {
       setFormValues((prev) => ({ ...prev, [name]: value }))
     }
+  }
+
+  const handleAddArrayItem = (name: string) => {
+    setFormValues((prev) => {
+      const current = Array.isArray(prev[name]) ? prev[name] : []
+      return { ...prev, [name]: [...current, ""] }
+    })
+  }
+
+  const handleArrayItemChange = (name: string, index: number, value: string) => {
+    setFormValues((prev) => {
+      const current = [...(Array.isArray(prev[name]) ? prev[name] : [])]
+      current[index] = value
+      return { ...prev, [name]: current }
+    })
+  }
+
+  const handleRemoveArrayItem = (name: string, index: number) => {
+    setFormValues((prev) => {
+      const current = [...(Array.isArray(prev[name]) ? prev[name] : [])]
+      current.splice(index, 1)
+      return { ...prev, [name]: current }
+    })
   }
 
   const handleSubmit = async () => {
@@ -407,6 +432,45 @@ export function ExecuteConnectorDialog({
       value = formValues[field.name]
     }
     value = value ?? ""
+
+    // Array → dynamic list of inputs
+    if (field.type === "array") {
+      const arrayItems = Array.isArray(value) ? value : []
+      return (
+        <div className="space-y-2">
+          {arrayItems.map((item, idx) => (
+            <div key={idx} className="flex gap-2">
+              <Textarea
+                value={item}
+                onChange={(e) => handleArrayItemChange(field.name, idx, e.target.value)}
+                disabled={field.readOnly}
+                className="min-h-[60px] text-xs"
+              />
+              {!field.readOnly && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleRemoveArrayItem(field.name, idx)}
+                  className="h-8 w-8 text-red-500 hover:text-red-700 shrink-0"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          ))}
+          {!field.readOnly && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleAddArrayItem(field.name)}
+              className="w-full text-[10px] h-7 border-dashed border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+            >
+              <Plus className="h-3 w-3 mr-1" /> Thêm item
+            </Button>
+          )}
+        </div>
+      )
+    }
 
     // Boolean → select dropdown with true/false
     if (field.type === "boolean" || field.type === "bool") {

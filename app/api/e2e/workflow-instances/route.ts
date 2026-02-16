@@ -30,15 +30,15 @@ export async function GET(request: Request) {
       FROM workflow_instances wi
       LEFT JOIN workflows w ON w.id = wi.workflow_id
       LEFT JOIN workflow_stages ws ON ws.id = w.stage_id
-      WHERE wi.car_id = $1
+      WHERE wi.car_id = $1 AND (w.type != 'AI' OR w.type IS NULL)
       ORDER BY wi.started_at ASC`, // Changed to ASC for chronological tree building
       [carId]
     )
 
     const instances = instancesResult.rows
 
-    // Fetch all workflows
-    const allWorkflowsResult = await e2eQuery(`SELECT id, name, description, tooltip FROM workflows WHERE is_active = true`)
+    // Fetch all workflows (excluding AI type)
+    const allWorkflowsResult = await e2eQuery(`SELECT id, name, description, tooltip FROM workflows WHERE is_active = true AND (type != 'AI' OR type IS NULL)`)
     const allWorkflows = allWorkflowsResult.rows
 
     // Fetch all workflow transitions
@@ -46,6 +46,7 @@ export async function GET(request: Request) {
       SELECT vt.*, w.name as to_workflow_name
       FROM workflow_transitions vt
       JOIN workflows w ON w.id = vt.to_workflow_id
+      WHERE (w.type != 'AI' OR w.type IS NULL)
     `)
     const allTransitions = allTransitionsResult.rows
 

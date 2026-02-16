@@ -21,7 +21,7 @@ const TABLE_FIELDS: Record<string, {
 }> = {
     workflows: {
         required: ["name", "stage_id", "sla_hours"],
-        optional: ["description", "is_active", "tooltip"],
+        optional: ["description", "is_active", "tooltip", "type"],
         generated: ["id"],
     },
     workflow_stages: {
@@ -46,7 +46,7 @@ const TABLE_FIELDS: Record<string, {
     },
     step_executions: {
         required: ["instance_id", "step_id"],
-        optional: ["status", "error_message"],
+        optional: ["status", "error_message", "scheduled_at", "request_payload"],
         generated: ["id", "executed_at"],
     },
     api_connectors: {

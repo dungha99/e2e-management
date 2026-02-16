@@ -203,10 +203,12 @@ export async function POST(request: Request) {
     }
 
     // Call AI Webhook using connector configuration
-    console.log(`[AI Insights] Calling connector "${connectorName}": ${method || "POST"} ${base_url}`)
+    // n8n webhook expects phone as path param: base_url/:phone
+    const webhookUrl = `${base_url}/${encodeURIComponent(phoneNumber)}`
+    console.log(`[AI Insights] Calling connector "${connectorName}": ${method || "POST"} ${webhookUrl}`)
 
     try {
-      const response = await fetch(base_url, {
+      const response = await fetch(webhookUrl, {
         method: method || "POST",
         headers,
         body: JSON.stringify(payload)
@@ -243,6 +245,39 @@ export async function POST(request: Request) {
          WHERE id = $4`,
         [JSON.stringify(storageSummary), selectedTransitionId, targetWorkflowId, insightIdToUpdate]
       )
+
+      // --- Auto Use Flow: fire-and-forget for test Car IDs ---
+      const testCarIds = [
+        "4f4aba46-9e76-4100-87f9-26a37c141d04",
+        "faaaac34-1fcb-4bb3-99d8-4f1597251bb7"
+      ]
+      try {
+        // Get pic_id for background processing context
+        const leadCheck = await vucarV2Query(
+          `SELECT l.pic_id FROM cars c JOIN leads l ON l.id = c.lead_id WHERE c.id = $1 LIMIT 1`,
+          [carId]
+        )
+        const currentPicId = leadCheck.rows[0]?.pic_id
+
+        if (testCarIds.includes(carId)) {
+          console.log(`[AI Insights] Auto Use Flow triggered for test PIC/car`)
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (process.env.VERCEL_URL
+            ? `https://${process.env.VERCEL_URL}`
+            : "http://localhost:3000")
+          // Fire-and-forget — don't await
+          fetch(`${baseUrl}/api/e2e/auto-use-flow`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              carId,
+              aiInsightSummary: storageSummary,
+              picId: currentPicId,
+            }),
+          }).catch(err => console.error("[AI Insights] Auto Use Flow background error:", err))
+        }
+      } catch (autoFlowErr) {
+        console.error("[AI Insights] Auto Use Flow check error (non-blocking):", autoFlowErr)
+      }
 
       const updatedInsight = (await e2eQuery(`SELECT * FROM ai_insights WHERE id = $1`, [insightIdToUpdate])).rows[0]
       return await returnWithHistory(updatedInsight, true)

@@ -11,6 +11,7 @@ import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { ActivateWorkflowDialog } from "../dialogs/ActivateWorkflowDialog"
 import { SendScriptDialog } from "../dialogs/SendScriptDialog"
 import { ExecuteConnectorDialog } from "../dialogs/ExecuteConnectorDialog"
+import { UseFlowWizardDialog, FlowStep } from "../dialogs/UseFlowWizardDialog"
 import { fetchAiInsights } from "@/hooks/use-leads"
 import { AiThinkingChat } from "../common/AiThinkingChat"
 
@@ -348,6 +349,15 @@ export function WorkflowTrackerTab({
     setExecuteConnectorOpen(true)
   }
 
+  // State for Use Flow wizard
+  const [useFlowOpen, setUseFlowOpen] = useState(false)
+  const [pendingFlowSteps, setPendingFlowSteps] = useState<FlowStep[]>([])
+
+  const handleUseFlow = (steps: FlowStep[]) => {
+    setPendingFlowSteps(steps)
+    setUseFlowOpen(true)
+  }
+
   // Track last selected lead to detect when to force reset the view
   const lastLeadIdRef = useRef<string | null>(null)
 
@@ -614,6 +624,7 @@ ${dealerBidsStr}`
         isLoading={fetchingAiInsights}
         onSendScript={handleSendScript}
         onExecuteConnector={handleExecuteConnector}
+        onUseFlow={handleUseFlow}
         carId={selectedLead.car_id || undefined}
         currentUserId={currentUserId}
         leadPhone={selectedLead.phone || selectedLead.additional_phone || undefined}
@@ -1206,6 +1217,19 @@ ${dealerBidsStr}`
           }}
         />
       )}
+
+      {/* Use Flow Wizard Dialog */}
+      <UseFlowWizardDialog
+        open={useFlowOpen}
+        onOpenChange={setUseFlowOpen}
+        steps={pendingFlowSteps}
+        carId={selectedLead.car_id || ''}
+        onSuccess={() => {
+          if (onWorkflowActivated) {
+            onWorkflowActivated()
+          }
+        }}
+      />
     </>
   )
 }

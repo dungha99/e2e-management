@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server"
 import { e2eQuery } from "@/lib/db"
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /**
  * GET /api/e2e/process-ai-workflows
  *

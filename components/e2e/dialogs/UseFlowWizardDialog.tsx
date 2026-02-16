@@ -21,6 +21,7 @@ import {
   initFormValues as initFormValuesFromFields,
   applyFieldChange,
 } from "./connectorFormUtils"
+import { createAiWorkflowAction } from "@/app/actions/workflow"
 
 /** A single step extracted from the AI analysis */
 export interface FlowStep {
@@ -431,15 +432,10 @@ export function UseFlowWizardDialog({
         }),
       }
 
-      const res = await fetch("/api/e2e/create-ai-workflow", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      })
+      const res = await createAiWorkflowAction(payload)
 
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to create workflow")
+      if (!res.success) {
+        throw new Error(res.error || "Failed to create workflow")
       }
 
       setSuccess(true)

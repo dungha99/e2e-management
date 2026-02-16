@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { findSimilarLeads } from "@/lib/vector-search"
+import { handleAutoUseFlow } from "@/lib/workflow-service"
 
 export async function POST(request: Request) {
   try {
@@ -261,21 +262,11 @@ export async function POST(request: Request) {
 
         if (testCarIds.includes(carId)) {
           console.log(`[AI Insights] Auto Use Flow triggered for test PIC/car`)
-          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (process.env.VERCEL_URL
-            ? `https://${process.env.VERCEL_URL}`
-            : "http://localhost:3000")
-          // Fire-and-forget — don't await
-          fetch(`${baseUrl}/api/e2e/auto-use-flow`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-api-secret": process.env.VUCAR_API_SECRET || ""
-            },
-            body: JSON.stringify({
-              carId,
-              aiInsightSummary: storageSummary,
-              picId: currentPicId,
-            }),
+          // Call the service directly - zero HTTP overhead, zero 401s
+          handleAutoUseFlow({
+            carId,
+            aiInsightSummary: storageSummary,
+            picId: currentPicId,
           }).catch(err => console.error("[AI Insights] Auto Use Flow background error:", err))
         }
       } catch (autoFlowErr) {

@@ -287,8 +287,12 @@ async function fetchLeadContext(carId: string): Promise<string> {
   return parts.join("\n")
 }
 
-// --- Internal Helper: Connector schemas ---
+// --- Internal Helper: Connector schemas (with simple memoization to prevent parallel query bursts) ---
+const connectorSchemaCache = new Map<string, any>()
+
 async function loadConnectorSchema(connectorId: string) {
+  if (connectorSchemaCache.has(connectorId)) return connectorSchemaCache.get(connectorId)
+
   const res = await e2eQuery(`SELECT * FROM api_connectors WHERE id = $1`, [connectorId])
   if (res.rows.length === 0) return { fields: [] }
   const connector = res.rows[0]
@@ -302,7 +306,10 @@ async function loadConnectorSchema(connectorId: string) {
     type: prop.type || "string",
     hidden: prop.hidden === true,
   }))
-  return { fields }
+
+  const result = { fields }
+  connectorSchemaCache.set(connectorId, result)
+  return result
 }
 
 // --- Internal Helper: Gemini ---

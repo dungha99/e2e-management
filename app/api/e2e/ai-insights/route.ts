@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { NextResponse, after } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { findSimilarLeads } from "@/lib/vector-search"
 import { handleAutoUseFlow } from "@/lib/workflow-service"
@@ -262,12 +262,15 @@ export async function POST(request: Request) {
 
         if (testCarIds.includes(carId)) {
           console.log(`[AI Insights] Auto Use Flow triggered for test PIC/car`)
-          // Call the service directly - zero HTTP overhead, zero 401s
-          handleAutoUseFlow({
-            carId,
-            aiInsightSummary: storageSummary,
-            picId: currentPicId,
-          }).catch(err => console.error("[AI Insights] Auto Use Flow background error:", err))
+          // Use after() in Next.js 15+ to ensure background processing completes 
+          // without blocking the main response or getting killed by Lambda timeout.
+          after(() => {
+            handleAutoUseFlow({
+              carId,
+              aiInsightSummary: storageSummary,
+              picId: currentPicId,
+            }).catch(err => console.error("[AI Insights] Auto Use Flow background error:", err))
+          })
         }
       } catch (autoFlowErr) {
         console.error("[AI Insights] Auto Use Flow check error (non-blocking):", autoFlowErr)

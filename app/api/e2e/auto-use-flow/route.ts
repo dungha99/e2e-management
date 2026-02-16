@@ -467,6 +467,15 @@ Do NOT include any text outside the JSON array.`
 export async function POST(request: Request) {
   const startTime = Date.now()
 
+  // --- 0. Authentication Check ---
+  const authHeader = request.headers.get("x-api-secret")
+  const apiSecret = process.env.VUCAR_API_SECRET
+
+  if (apiSecret && authHeader !== apiSecret) {
+    console.warn("[Auto Use Flow] Unauthorized attempt - missing or invalid x-api-secret")
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
   try {
     const body = await request.json()
     const { carId, aiInsightSummary, picId } = body

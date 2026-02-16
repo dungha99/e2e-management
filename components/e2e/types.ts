@@ -328,6 +328,7 @@ export interface AiInsight {
   isNew?: boolean;
   // Joined data
   targetWorkflowName?: string;
+  currentDiary?: string | null;
 }
 
 export interface InputSchemaField {

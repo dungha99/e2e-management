@@ -27,6 +27,7 @@ import { RecentActivityTab } from "../tabs/RecentActivityTab"
 import { DecoyHistoryTab } from "../tabs/DecoyHistoryTab"
 import { Workflow2Dialog } from "../dialogs/Workflow2Dialog"
 import { ImageGalleryModal } from "../dialogs/ImageGalleryModal"
+import { ImageUploadService } from "../common/ImageUploadService"
 import { useToast } from "@/hooks/use-toast"
 import { useWorkflowInstances } from "@/hooks/use-leads"
 import { useDecoySignals } from "@/hooks/use-decoy-signals"
@@ -157,6 +158,7 @@ export function LeadDetailPanel({
   // Gallery state
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+  const [showOverlayOnMobile, setShowOverlayOnMobile] = useState(false)
 
   // Toast notifications
   const { toast } = useToast()
@@ -165,94 +167,6 @@ export function LeadDetailPanel({
   const { accounts } = useAccounts()
   const currentPIC = accounts.find(a => a.uid === selectedAccount)
   const picName = currentPIC?.name || "Khả Nhi Vucar"
-
-  // Upload state
-  const [uploading, setUploading] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const [showChoiceDialog, setShowChoiceDialog] = useState(false)
-  const [sendingChoice, setSendingChoice] = useState(false)
-
-  const handleUploadClick = (e: React.MouseEvent) => {
-    e.stopPropagation() // Prevent opening gallery
-    fileInputRef.current?.click()
-  }
-
-  const handleChoiceSelect = async (choice: 'dealer' | 'Ok') => {
-    setSendingChoice(true)
-    try {
-      const response = await fetch("/api/e2e/webhook-text", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: choice,
-          senderName: picName
-        }),
-      })
-
-      if (response.ok) {
-        toast({
-          title: "Thành công",
-          description: `Đã gửi lựa chọn "${choice}" thành công`,
-        })
-        setShowChoiceDialog(false)
-      } else {
-        throw new Error("Gửi lựa chọn thất bại")
-      }
-    } catch (error) {
-      console.error("[Choice Error]:", error)
-      toast({
-        title: "Lỗi",
-        description: error instanceof Error ? error.message : "Có lỗi xảy ra khi gửi lựa chọn",
-        variant: "destructive",
-      })
-    } finally {
-      setSendingChoice(false)
-    }
-  }
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0 || !selectedLead) return
-
-    setUploading(true)
-    const formData = new FormData()
-    for (let i = 0; i < files.length; i++) {
-      formData.append("files", files[i])
-    }
-    formData.append("phone", selectedLead.phone || selectedLead.additional_phone || "")
-    formData.append("displayName", formatCarInfo(selectedLead))
-    formData.append("senderName", picName)
-
-    try {
-      const response = await fetch("/api/e2e/upload-image", {
-        method: "POST",
-        body: formData,
-      })
-
-      const result = await response.json()
-
-      if (response.ok) {
-        toast({
-          title: "Thành công",
-          description: `Đã tải lên ${result.count} ảnh thành công`,
-        })
-        // Show choice dialog after successful upload and phone submission
-        setShowChoiceDialog(true)
-      } else {
-        throw new Error(result.error || "Tải ảnh thất bại")
-      }
-    } catch (error) {
-      console.error("[Upload Error]:", error)
-      toast({
-        title: "Lỗi",
-        description: error instanceof Error ? error.message : "Có lỗi xảy ra khi tải ảnh",
-        variant: "destructive",
-      })
-    } finally {
-      setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ""
-    }
-  }
 
 
   // Track last selected lead to detect when to force reset the view
@@ -585,8 +499,14 @@ export function LeadDetailPanel({
             <div className="flex flex-col sm:flex-row items-start gap-3 md:gap-4 w-full sm:w-auto sm:flex-1">
               {/* Car Image Thumbnail - Full width on mobile */}
               <div
-                className={`w-full sm:w-28 md:w-40 aspect-[3/2] rounded-lg border-2 border-gray-200 bg-gray-100 overflow-hidden flex items-center justify-center shadow-sm relative group flex-shrink-0 ${galleryImages.length > 0 ? 'cursor-pointer hover:border-blue-400 transition-colors' : ''}`}
-                onClick={handleThumbnailClick}
+                className={`w-full sm:w-28 md:w-40 aspect-[3/2] rounded-lg border-2 border-gray-200 bg-gray-100 overflow-hidden flex items-center justify-center shadow-sm relative group flex-shrink-0 ${galleryImages.length > 0 ? 'cursor-pointer sm:hover:border-blue-400 transition-colors' : ''}`}
+                onClick={(e) => {
+                  if (isMobile) {
+                    setShowOverlayOnMobile(!showOverlayOnMobile);
+                  } else {
+                    handleThumbnailClick();
+                  }
+                }}
                 title={galleryImages.length > 0 ? "Nhấn để xem tất cả ảnh" : undefined}
               >
                 {(() => {
@@ -632,32 +552,36 @@ export function LeadDetailPanel({
                   return null;
                 })()}
 
-                {/* Hover overlay - Always visible on hover */}
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10">
-                  <div className="flex gap-6">
+                {/* Hover overlay - Always visible on hover or toggle on mobile tap */}
+                <div className={`absolute inset-0 bg-black/50 transition-all flex items-center justify-center z-10 ${isMobile ? (showOverlayOnMobile ? 'opacity-100 visible' : 'opacity-0 invisible pointer-events-none') : 'opacity-0 group-hover:opacity-100'}`}>
+                  <div className="flex gap-8 sm:gap-6">
                     <div
                       className={`flex flex-col items-center text-white cursor-pointer hover:text-blue-400 transition-colors ${galleryImages.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (galleryImages.length > 0) {
-                          handleThumbnailClick();
-                        }
+                        handleThumbnailClick();
                       }}
                     >
-                      <Images className="h-6 w-6 mb-1" />
-                      <span className="text-xs font-medium">Xem ảnh</span>
+                      <Images className="h-7 w-7 sm:h-6 sm:h-6 mb-1.5 sm:mb-1" />
+                      <span className="text-xs font-semibold sm:font-medium">Xem ảnh</span>
                     </div>
-                    <div
-                      className="flex flex-col items-center text-white cursor-pointer hover:text-blue-400 transition-colors"
-                      onClick={handleUploadClick}
-                    >
-                      {uploading ? (
-                        <Loader2 className="h-6 w-6 mb-1 animate-spin" />
-                      ) : (
-                        <Upload className="h-6 w-6 mb-1" />
+                    <ImageUploadService
+                      lead={selectedLead}
+                      senderName={picName}
+                      renderTrigger={(uploading, handleTrigger) => (
+                        <div
+                          className="flex flex-col items-center text-white cursor-pointer hover:text-blue-400 touch-target transition-colors"
+                          onClick={(e) => handleTrigger(e)}
+                        >
+                          {uploading ? (
+                            <Loader2 className="h-7 w-7 sm:h-6 sm:w-6 mb-1.5 sm:mb-1 animate-spin" />
+                          ) : (
+                            <Upload className="h-7 w-7 sm:h-6 sm:w-6 mb-1.5 sm:mb-1" />
+                          )}
+                          <span className="text-xs font-semibold sm:font-medium">Tải ảnh</span>
+                        </div>
                       )}
-                      <span className="text-xs font-medium">Tải ảnh</span>
-                    </div>
+                    />
                   </div>
                 </div>
 
@@ -1114,53 +1038,6 @@ export function LeadDetailPanel({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-
-        {/* Post-Upload Choice Dialog */}
-        <AlertDialog open={showChoiceDialog} onOpenChange={setShowChoiceDialog}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Chọn hành động tiếp theo</AlertDialogTitle>
-              <AlertDialogDescription>
-                Bạn muốn gửi thông báo nào tiếp theo cho lead này?
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => handleChoiceSelect('dealer')}
-                disabled={sendingChoice}
-              >
-                {sendingChoice ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  'dealer'
-                )}
-              </Button>
-              <Button
-                className="flex-1 bg-blue-600 hover:bg-blue-700"
-                onClick={() => handleChoiceSelect('Ok')}
-                disabled={sendingChoice}
-              >
-                {sendingChoice ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  'Ok'
-                )}
-              </Button>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        {/* Hidden File Input for Upload */}
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileChange}
-          multiple
-          accept="image/*"
-          className="hidden"
-        />
       </div>
 
       {/* Mobile Bottom Action Bar - App-like navigation */}

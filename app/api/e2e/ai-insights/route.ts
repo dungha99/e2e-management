@@ -267,7 +267,10 @@ export async function POST(request: Request) {
           // Fire-and-forget — don't await
           fetch(`${baseUrl}/api/e2e/auto-use-flow`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-secret": process.env.VUCAR_API_SECRET || ""
+            },
             body: JSON.stringify({
               carId,
               aiInsightSummary: storageSummary,

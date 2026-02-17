@@ -58,13 +58,30 @@ export function extractStepsFromAnalysis(analysis: any): ExtractedStep[] {
       action.includes("đấu giá") ||
       action.includes("bidding")
 
-    if (isScript || isBidding) {
-      console.log(`[extractStepsFromAnalysis] Found actionable item:`, { isScript, isBidding, action })
+    // Emit SEPARATE steps for script and bidding — a single AI node can have both
+    if (isScript) {
+      console.log(`[extractStepsFromAnalysis] Found SCRIPT step:`, { action })
       steps.push({
-        stepName: isScript ? CONNECTOR_MAP.script.stepName : CONNECTOR_MAP.bidding.stepName,
-        connectorId: isScript ? CONNECTOR_MAP.script.connectorId : CONNECTOR_MAP.bidding.connectorId,
-        connectorLabel: isScript ? "Gửi Script" : "Tạo phiên đấu giá",
-        rawContext: isScript ? obj.script : obj.action,
+        stepName: CONNECTOR_MAP.script.stepName,
+        connectorId: CONNECTOR_MAP.script.connectorId,
+        connectorLabel: "Gửi Script",
+        rawContext: obj.script,
+        aiAction: obj.action,
+        expectedReaction: obj.expected_customer_reaction || obj.expected_reaction,
+        successSignal: obj.success_signal,
+        failureSignal: obj.failure_signal,
+        ifSuccess: obj.if_success,
+        ifFailure: obj.if_failure,
+      })
+    }
+
+    if (isBidding) {
+      console.log(`[extractStepsFromAnalysis] Found BIDDING step:`, { action })
+      steps.push({
+        stepName: CONNECTOR_MAP.bidding.stepName,
+        connectorId: CONNECTOR_MAP.bidding.connectorId,
+        connectorLabel: "Tạo phiên đấu giá",
+        rawContext: obj.action,
         aiAction: obj.action,
         expectedReaction: obj.expected_customer_reaction || obj.expected_reaction,
         successSignal: obj.success_signal,

@@ -59,6 +59,7 @@ export function extractStepsFromAnalysis(analysis: any): ExtractedStep[] {
       action.includes("bidding")
 
     if (isScript || isBidding) {
+      console.log(`[extractStepsFromAnalysis] Found actionable item:`, { isScript, isBidding, action })
       steps.push({
         stepName: isScript ? CONNECTOR_MAP.script.stepName : CONNECTOR_MAP.bidding.stepName,
         connectorId: isScript ? CONNECTOR_MAP.script.connectorId : CONNECTOR_MAP.bidding.connectorId,
@@ -171,83 +172,97 @@ export async function handleAutoUseFlow(params: {
 }) {
   const { carId, aiInsightSummary, picId } = params
 
-  // 1. Extract steps
-  const extractedSteps = extractStepsFromAnalysis(aiInsightSummary)
-  if (extractedSteps.length === 0) return { success: true, message: "No actionable steps" }
-
-  // 2. Fetch context
-  const leadContext = await fetchLeadContext(carId)
-  const phoneResult = await vucarV2Query(
-    `SELECT l.phone, l.additional_phone FROM cars c
-     JOIN leads l ON l.id = c.lead_id
-     WHERE c.id = $1 LIMIT 1`,
-    [carId]
-  )
-  const phoneNumber = phoneResult.rows[0]?.phone || phoneResult.rows[0]?.additional_phone || ""
-
-  // 3. Load connector schemas
-  const stepSchemas = await Promise.all(
-    extractedSteps.map(step => loadConnectorSchema(step.connectorId))
-  )
-
-  // 4. Call Gemini for parameters
-  const geminiResults = await callGeminiForParameters(
-    extractedSteps,
-    stepSchemas,
-    leadContext,
-    picId || "",
-    carId,
-    phoneNumber
-  )
-
-  // 5. Build payload
-  const workflowName = `AI Auto Flow ${new Date().toLocaleDateString('vi-VN')}`
-  const stepsPayload: StepInput[] = extractedSteps.map((step, idx) => {
-    const geminiStep = geminiResults[idx] || {}
-    const actualValues = geminiStep.parameters || {}
-    const fields = stepSchemas[idx]?.fields || []
-
-    const genericMapping: Record<string, string> = {}
-    if (fields.length > 0) {
-      for (const field of fields) {
-        if (field.hidden) continue
-        genericMapping[field.name] = `{{${field.name}}}`
-      }
-    } else {
-      for (const key of Object.keys(actualValues)) {
-        genericMapping[key] = `{{${key}}}`
-      }
+  try {
+    // 1. Extract steps
+    const extractedSteps = extractStepsFromAnalysis(aiInsightSummary)
+    console.log(`[handleAutoUseFlow] Extracted steps count: ${extractedSteps.length}`)
+    if (extractedSteps.length === 0) {
+      console.log(`[handleAutoUseFlow] No actionable steps found in summary:`, JSON.stringify(aiInsightSummary).substring(0, 500))
+      return { success: true, message: "No actionable steps" }
     }
 
-    const nextStep = extractedSteps[idx + 1]
-    const description = [
-      step.aiAction ? `Action: ${step.aiAction}` : null,
-      step.expectedReaction ? `Expected Customer Reaction: ${step.expectedReaction}` : null,
-      step.successSignal ? `Success Signal: ${step.successSignal}` : null,
-      step.failureSignal ? `Failure Signal: ${step.failureSignal}` : null,
-      step.ifSuccess ? `If Success: ${step.ifSuccess}` : null,
-      step.ifFailure ? `If Failure: ${step.ifFailure}` : null,
-      nextStep?.aiAction ? `Ở bước kế tiếp, mục tiêu sẽ là ${nextStep.aiAction}` : null,
-    ].filter(Boolean).join('\n')
+    // 2. Fetch context
+    const leadContext = await fetchLeadContext(carId)
+    const phoneResult = await vucarV2Query(
+      `SELECT l.phone, l.additional_phone FROM cars c
+       JOIN leads l ON l.id = c.lead_id
+       WHERE c.id = $1 LIMIT 1`,
+      [carId]
+    )
+    const phoneNumber = phoneResult.rows[0]?.phone || phoneResult.rows[0]?.additional_phone || ""
 
-    return {
-      stepName: step.stepName,
-      stepOrder: idx + 1,
-      connectorId: step.connectorId,
-      inputMapping: genericMapping,
-      requestPayload: actualValues,
-      scheduledAt: geminiStep.scheduled_at || null,
-      description
-    }
-  })
+    // 3. Load connector schemas
+    const stepSchemas = await Promise.all(
+      extractedSteps.map(step => loadConnectorSchema(step.connectorId))
+    )
 
-  // 6. Save to DB
-  return await persistWorkflow({
-    name: workflowName,
-    description: `Auto-created from AI analysis for car ${carId}`,
-    carId,
-    steps: stepsPayload
-  })
+    // 4. Call Gemini for parameters
+    console.log(`[handleAutoUseFlow] Calling Gemini for parameters for ${extractedSteps.length} steps...`)
+    const geminiResults = await callGeminiForParameters(
+      extractedSteps,
+      stepSchemas,
+      leadContext,
+      picId || "",
+      carId,
+      phoneNumber
+    )
+    console.log(`[handleAutoUseFlow] Gemini returned ${geminiResults?.length} results`)
+
+    // 5. Build payload
+    const workflowName = `AI Auto Flow ${new Date().toLocaleDateString('vi-VN')}`
+    const stepsPayload: StepInput[] = extractedSteps.map((step, idx) => {
+      const geminiStep = geminiResults[idx] || {}
+      const actualValues = geminiStep.parameters || {}
+      const fields = stepSchemas[idx]?.fields || []
+
+      const genericMapping: Record<string, string> = {}
+      if (fields.length > 0) {
+        for (const field of fields) {
+          if (field.hidden) continue
+          genericMapping[field.name] = `{{${field.name}}}`
+        }
+      } else {
+        for (const key of Object.keys(actualValues)) {
+          genericMapping[key] = `{{${key}}}`
+        }
+      }
+
+      const nextStep = extractedSteps[idx + 1]
+      const description = [
+        step.aiAction ? `Action: ${step.aiAction}` : null,
+        step.expectedReaction ? `Expected Customer Reaction: ${step.expectedReaction}` : null,
+        step.successSignal ? `Success Signal: ${step.successSignal}` : null,
+        step.failureSignal ? `Failure Signal: ${step.failureSignal}` : null,
+        step.ifSuccess ? `If Success: ${step.ifSuccess}` : null,
+        step.ifFailure ? `If Failure: ${step.ifFailure}` : null,
+        nextStep?.aiAction ? `Ở bước kế tiếp, mục tiêu sẽ là ${nextStep.aiAction}` : null,
+      ].filter(Boolean).join('\n')
+
+      return {
+        stepName: step.stepName,
+        stepOrder: idx + 1,
+        connectorId: step.connectorId,
+        inputMapping: genericMapping,
+        requestPayload: actualValues,
+        scheduledAt: geminiStep.scheduled_at || null,
+        description
+      }
+    })
+
+    // 6. Save to DB
+    console.log(`[handleAutoUseFlow] Persisting workflow for car ${carId}...`)
+    const result = await persistWorkflow({
+      name: workflowName,
+      description: `Auto-created from AI analysis for car ${carId}`,
+      carId,
+      steps: stepsPayload
+    })
+    console.log(`[handleAutoUseFlow] Persistence success:`, result)
+    return result
+  } catch (err) {
+    console.error(`[handleAutoUseFlow] CRITICAL ERROR for car ${carId}:`, err)
+    throw err
+  }
 }
 
 // --- Internal Helper: Fetch context ---

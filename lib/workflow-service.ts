@@ -173,28 +173,52 @@ export async function handleAutoUseFlow(params: {
   const { carId, aiInsightSummary, picId } = params
 
   try {
+    console.log(`[handleAutoUseFlow] DEBUG: carId=${carId}, hasSummary=${!!aiInsightSummary}, picId=${picId}`)
+    const envKeys = Object.keys(process.env).filter(k => k.includes("DB_") || k.includes("VUCAR_") || k.includes("GEMINI"))
+    console.log(`[handleAutoUseFlow] Available Env Keys: ${envKeys.join(", ")}`)
+    console.log(`[handleAutoUseFlow] DB CONFIG CHECK: V2_HOST=${process.env.VUCAR_V2_DB_HOST ? "SET" : "MISSING"}, E2E_HOST=${process.env.E2E_DB_HOST ? "SET" : "MISSING"}`)
+
+    // Helper for timeout
+    const withTimeout = (promise: Promise<any>, timeoutMs: number, label: string) => {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`TIMEOUT: ${label} exceeded ${timeoutMs}ms`)), timeoutMs))
+      ])
+    }
+
     // 1. Extract steps
     const extractedSteps = extractStepsFromAnalysis(aiInsightSummary)
     console.log(`[handleAutoUseFlow] Extracted steps count: ${extractedSteps.length}`)
     if (extractedSteps.length === 0) {
-      console.log(`[handleAutoUseFlow] No actionable steps found in summary:`, JSON.stringify(aiInsightSummary).substring(0, 500))
+      console.log(`[handleAutoUseFlow] No actionable steps found in summary. First 500 chars:`, JSON.stringify(aiInsightSummary).substring(0, 500))
       return { success: true, message: "No actionable steps" }
     }
 
     // 2. Fetch context
-    const leadContext = await fetchLeadContext(carId)
-    const phoneResult = await vucarV2Query(
+    console.log(`[handleAutoUseFlow] Starting fetchLeadContext for car ${carId}...`)
+    const contextStart = Date.now()
+    const leadContext = await withTimeout(fetchLeadContext(carId), 10000, "fetchLeadContext")
+    console.log(`[handleAutoUseFlow] fetchLeadContext finished in ${Date.now() - contextStart}ms. Context length: ${leadContext.length}`)
+
+    console.log(`[handleAutoUseFlow] Fetching phone number from V2 DB...`)
+    const phoneStart = Date.now()
+    const phoneResult = await withTimeout(vucarV2Query(
       `SELECT l.phone, l.additional_phone FROM cars c
        JOIN leads l ON l.id = c.lead_id
        WHERE c.id = $1 LIMIT 1`,
       [carId]
-    )
+    ), 10000, "vucarV2Query-Phone")
+    console.log(`[handleAutoUseFlow] Phone query finished in ${Date.now() - phoneStart}ms`)
     const phoneNumber = phoneResult.rows[0]?.phone || phoneResult.rows[0]?.additional_phone || ""
+    console.log(`[handleAutoUseFlow] Phone found: ${phoneNumber ? "YES" : "NO"}`)
 
     // 3. Load connector schemas
+    console.log(`[handleAutoUseFlow] Loading connector schemas...`)
+    const schemaStart = Date.now()
     const stepSchemas = await Promise.all(
       extractedSteps.map(step => loadConnectorSchema(step.connectorId))
     )
+    console.log(`[handleAutoUseFlow] Schemas loaded in ${Date.now() - schemaStart}ms`)
 
     // 4. Call Gemini for parameters
     console.log(`[handleAutoUseFlow] Calling Gemini for parameters for ${extractedSteps.length} steps...`)

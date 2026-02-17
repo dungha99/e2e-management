@@ -1,4 +1,4 @@
-import { NextResponse, after } from "next/server"
+import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { findSimilarLeads } from "@/lib/vector-search"
 import { handleAutoUseFlow } from "@/lib/workflow-service"
@@ -262,15 +262,19 @@ export async function POST(request: Request) {
 
         if (testCarIds.includes(carId)) {
           console.log(`[AI Insights] Auto Use Flow triggered for test PIC/car`)
-          // Use after() in Next.js 15+ to ensure background processing completes 
-          // without blocking the main response or getting killed by Lambda timeout.
-          after(() => {
-            handleAutoUseFlow({
+          // Await inline — after() requires experimental.after config which is not enabled.
+          // This adds ~5-10s to the response but guarantees completion on Vercel.
+          try {
+            console.log(`[AI Insights] Starting handleAutoUseFlow for car ${carId}...`)
+            await handleAutoUseFlow({
               carId,
               aiInsightSummary: storageSummary,
               picId: currentPicId,
-            }).catch(err => console.error("[AI Insights] Auto Use Flow background error:", err))
-          })
+            })
+            console.log(`[AI Insights] handleAutoUseFlow finished successfully for car ${carId}`)
+          } catch (err) {
+            console.error(`[AI Insights] handleAutoUseFlow FAILED for car ${carId}:`, err)
+          }
         }
       } catch (autoFlowErr) {
         console.error("[AI Insights] Auto Use Flow check error (non-blocking):", autoFlowErr)

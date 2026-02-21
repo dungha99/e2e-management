@@ -285,8 +285,75 @@ async function fetchLeadContext(carId: string): Promise<string> {
 }
 
 // ========================================================================
-// Call Gemini 2.5 Flash to decide parameters
+// Call Gemini 2.5 Flash to decide parameters (one step at a time)
 // ========================================================================
+
+function buildFieldDescriptions(fields: ParsedField[]): string {
+  return fields
+    .filter(f => !f.hidden)
+    .map(f => {
+      let desc = `  - "${f.name}" (type: ${f.type}${f.required ? ', REQUIRED' : ''}): ${f.description || f.label}`
+      if (f.default !== undefined) desc += ` [default: ${JSON.stringify(f.default)}]`
+      if (f.enumValues) desc += ` [options: ${f.enumValues.join(', ')}]`
+      if (f.subFields) {
+        desc += `\n    Sub-fields:`
+        f.subFields.filter(sf => !sf.hidden).forEach(sf => {
+          desc += `\n      - "${sf.name.split('.').pop()}" (${sf.type}${sf.required ? ', REQUIRED' : ''}): ${sf.description || sf.label}`
+        })
+      }
+      return desc
+    })
+    .join('\n')
+}
+
+function parseGeminiJson(rawText: string): any {
+  // Parse JSON from response (may be wrapped in code block)
+  const jsonMatch = rawText.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) {
+    throw new Error(`Gemini did not return valid JSON. Response: ${rawText.slice(0, 300)}`)
+  }
+
+  let jsonStr = jsonMatch[0]
+
+  // Try parsing directly first
+  try {
+    return JSON.parse(jsonStr)
+  } catch {
+    console.warn("[Auto Use Flow] JSON parse failed, attempting repair...")
+  }
+
+  // Repair truncated JSON
+  jsonStr = jsonStr.replace(/,\s*"[^"]*$/, '')
+  jsonStr = jsonStr.replace(/:\s*"[^"]*$/, ': ""')
+
+  let openBraces = 0, openBrackets = 0
+  let inString = false, escape = false
+  for (const ch of jsonStr) {
+    if (escape) { escape = false; continue }
+    if (ch === '\\') { escape = true; continue }
+    if (ch === '"') { inString = !inString; continue }
+    if (inString) continue
+    if (ch === '{') openBraces++
+    if (ch === '}') openBraces--
+    if (ch === '[') openBrackets++
+    if (ch === ']') openBrackets--
+  }
+
+  if (inString) jsonStr += '"'
+  for (let i = 0; i < openBraces; i++) jsonStr += '}'
+  for (let i = 0; i < openBrackets; i++) jsonStr += ']'
+
+  try {
+    const parsed = JSON.parse(jsonStr)
+    console.log("[Auto Use Flow] Successfully repaired truncated JSON")
+    return parsed
+  } catch (repairErr) {
+    console.error("[Auto Use Flow] JSON repair also failed:", repairErr)
+  }
+
+  throw new Error(`Could not parse Gemini response as JSON. Raw: ${rawText.slice(0, 500)}`)
+}
+
 async function callGeminiForParameters(
   steps: ExtractedStep[],
   stepSchemas: { fields: ParsedField[] }[],
@@ -302,49 +369,47 @@ async function callGeminiForParameters(
     throw new Error("GEMINI_API_KEY is not configured")
   }
 
-  // Build current datetime info for precise scheduling
   const now = new Date()
   const vnTime = new Date(now.getTime() + 7 * 60 * 60 * 1000)
   const todayInfo = `Current date and time (Vietnam UTC+7): ${vnTime.toISOString().replace('T', ' ').slice(0, 19)}, ${['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][vnTime.getUTCDay()]}`
 
-  // Build step descriptions for Gemini
-  const stepDescriptions = steps.map((step, idx) => {
-    const schema = stepSchemas[idx]
-    const fieldDescriptions = schema.fields
-      .filter(f => !f.hidden)
-      .map(f => {
-        let desc = `  - "${f.name}" (type: ${f.type}${f.required ? ', REQUIRED' : ''}): ${f.description || f.label}`
-        if (f.default !== undefined) desc += ` [default: ${JSON.stringify(f.default)}]`
-        if (f.enumValues) desc += ` [options: ${f.enumValues.join(', ')}]`
-        if (f.subFields) {
-          desc += `\n    Sub-fields:`
-          f.subFields.filter(sf => !sf.hidden).forEach(sf => {
-            desc += `\n      - "${sf.name.split('.').pop()}" (${sf.type}${sf.required ? ', REQUIRED' : ''}): ${sf.description || sf.label}`
-          })
-        }
-        return desc
-      })
-      .join('\n')
+  const url = `${geminiHost}/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`
 
-    return `
-STEP ${idx + 1}: "${step.stepName}" (connector: ${step.connectorLabel})
+  const results: any[] = []
+
+  for (let idx = 0; idx < steps.length; idx++) {
+    const step = steps[idx]
+    const schema = stepSchemas[idx]
+    const fieldDescriptions = buildFieldDescriptions(schema.fields)
+
+    // Build previous step context (if any)
+    let previousStepContext = ""
+    if (idx > 0) {
+      const prevStep = steps[idx - 1]
+      const prevResult = results[idx - 1]
+      previousStepContext = `
+=== PREVIOUS STEP (already decided) ===
+Step ${idx}: "${prevStep.stepName}" (connector: ${prevStep.connectorLabel})
+AI's instruction: "${prevStep.rawContext}"
+Decided scheduled_at: ${prevResult.scheduled_at ? `"${prevResult.scheduled_at}"` : "null (immediate)"}
+Decided parameters: ${JSON.stringify(prevResult.parameters, null, 2)}
+`
+    }
+
+    const prompt = `You are an AI assistant that decides execution parameters for a single workflow automation step.
+
+${todayInfo}
+
+${leadContext}
+${previousStepContext}
+=== CURRENT STEP TO FILL (Step ${idx + 1} of ${steps.length}) ===
+"${step.stepName}" (connector: ${step.connectorLabel})
 AI's instruction/context for this step:
 """
 ${step.rawContext}
 """
 Required fields schema:
 ${fieldDescriptions || '  (no schema fields - provide raw payload)'}
-`
-  }).join('\n---\n')
-
-  const prompt = `You are an AI assistant that decides execution parameters for workflow automation steps.
-
-${todayInfo}
-
-${leadContext}
-
-=== WORKFLOW STEPS TO FILL ===
-${stepDescriptions}
 
 === KNOWN VALUES ===
 - picId (sale person ID): "${picId}"
@@ -352,12 +417,12 @@ ${stepDescriptions}
 - customer_phone: "${phoneNumber}"
 
 === INSTRUCTIONS ===
-For each step, you must decide:
+Decide the following for THIS step:
 1. **scheduled_at**: ISO datetime string (Vietnam time UTC+7) for when to execute this step.
    - If the step should run immediately, set to null.
    - If the AI's instruction mentions timing (e.g., "gửi sau 2 giờ", "sáng mai", "Ngày 1"), calculate the exact datetime.
    - For relative day offsets like "Ngày X", treat it as an offset from today (Ngày 1 = tomorrow, Ngày 2 = 2 days from now, "Ngày 1-2" = between tomorrow and 2 days from now).
-   - Consider business hours (8:00-18:00 Vietnam time) and today's schedule.
+   - Consider business hours (8:00-18:00 Vietnam time) and today's schedule.${idx > 0 ? `\n   - This step should be scheduled AFTER the previous step's scheduled_at.` : ''}
 2. **parameters**: The values for each field in the schema.
    - For "messages" arrays: Fill in the actual script text. Replace any placeholder like "X", "Y", "Z" or "[...]" with appropriate values from the lead context.
    - **Tone & Terminology**:
@@ -372,94 +437,42 @@ For each step, you must decide:
    - For "duration": Decide based on the context (typical bidding duration).
    - For any dict/object fields: Fill sub-fields appropriately.
 
-Return ONLY valid JSON array with one object per step:
-[
-  {
-    "scheduled_at": "2026-02-12T16:00:00+07:00" or null,
-    "parameters": { "fieldName": "value", ... }
-  }
-]
+Return ONLY a single valid JSON object (NOT an array):
+{
+  "scheduled_at": "2026-02-12T16:00:00+07:00" or null,
+  "parameters": { "fieldName": "value", ... }
+}
 
-Do NOT include any text outside the JSON array.`
+Do NOT include any text outside the JSON object.`
 
-  const url = `${geminiHost}/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`
+    console.log(`[Auto Use Flow] Calling Gemini for step ${idx + 1}/${steps.length}: "${step.stepName}"...`)
 
-  console.log(`[Auto Use Flow] Calling Gemini 2.5 Flash for ${steps.length} steps...`)
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 16384,
+        },
+      }),
+    })
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 65536,
-      },
-    }),
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Gemini API failed (${response.status}): ${errorText}`)
-  }
-
-  const data = await response.json()
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || ""
-  console.log("[Auto Use Flow] Gemini raw response:", rawText.slice(0, 500))
-
-  // Parse JSON from response (may be wrapped in code block)
-  const jsonMatch = rawText.match(/\[[\s\S]*\]/)
-  if (!jsonMatch) {
-    throw new Error(`Gemini did not return valid JSON array. Response: ${rawText.slice(0, 300)}`)
-  }
-
-  let jsonStr = jsonMatch[0]
-
-  // Try parsing directly first
-  try {
-    const parsed = JSON.parse(jsonStr)
-    if (Array.isArray(parsed)) return parsed
-  } catch {
-    // JSON might be truncated — try to repair it
-    console.warn("[Auto Use Flow] JSON parse failed, attempting repair...")
-  }
-
-  // Repair truncated JSON: close any unclosed strings, arrays, objects
-  // Remove trailing incomplete string value
-  jsonStr = jsonStr.replace(/,\s*"[^"]*$/, '')  // remove trailing incomplete key-value
-  jsonStr = jsonStr.replace(/:\s*"[^"]*$/, ': ""')  // close incomplete string value
-
-  // Count and close unclosed brackets
-  let openBraces = 0, openBrackets = 0
-  let inString = false, escape = false
-  for (const ch of jsonStr) {
-    if (escape) { escape = false; continue }
-    if (ch === '\\') { escape = true; continue }
-    if (ch === '"') { inString = !inString; continue }
-    if (inString) continue
-    if (ch === '{') openBraces++
-    if (ch === '}') openBraces--
-    if (ch === '[') openBrackets++
-    if (ch === ']') openBrackets--
-  }
-
-  // Close unclosed strings
-  if (inString) jsonStr += '"'
-  // Close unclosed braces and brackets
-  for (let i = 0; i < openBraces; i++) jsonStr += '}'
-  for (let i = 0; i < openBrackets; i++) jsonStr += ']'
-
-  try {
-    const parsed = JSON.parse(jsonStr)
-    if (Array.isArray(parsed)) {
-      console.log("[Auto Use Flow] Successfully repaired truncated JSON")
-      return parsed
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Gemini API failed for step ${idx + 1} (${response.status}): ${errorText}`)
     }
-  } catch (repairErr) {
-    console.error("[Auto Use Flow] JSON repair also failed:", repairErr)
+
+    const data = await response.json()
+    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || ""
+    console.log(`[Auto Use Flow] Gemini response for step ${idx + 1}:`, rawText.slice(0, 300))
+
+    const parsed = parseGeminiJson(rawText)
+    results.push(parsed)
   }
 
-  throw new Error(`Could not parse Gemini response as JSON. Raw: ${rawText.slice(0, 500)}`)
+  return results
 }
 
 // ========================================================================

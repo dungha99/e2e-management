@@ -1,5 +1,6 @@
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { findSimilarLeads } from "@/lib/vector-search"
+import { handleAutoUseFlow } from "@/lib/workflow-service"
 
 /**
  * Shared service for submitting AI feedback and triggering re-analysis.
@@ -211,6 +212,38 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
     )
 
     console.log(`[InsightFeedback] Successfully updated insight ${insightIdToUpdate}`)
+
+    // --- 6. Auto Use Flow: fire-and-forget for test Car IDs ---
+    const testCarIds = [
+      "4f4aba46-9e76-4100-87f9-26a37c141d04",
+      "faaaac34-1fcb-4bb3-99d8-4f1597251bb7"
+    ]
+    try {
+      // Get pic_id for background processing context
+      const leadCheck = await vucarV2Query(
+        `SELECT l.pic_id FROM cars c JOIN leads l ON l.id = c.lead_id WHERE c.id = $1 LIMIT 1`,
+        [carId]
+      )
+      const currentPicId = leadCheck.rows[0]?.pic_id
+
+      if (testCarIds.includes(carId)) {
+        console.log(`[InsightFeedback] Auto Use Flow triggered for test PIC/car`)
+        // Inline await for stability on Vercel
+        try {
+          console.log(`[InsightFeedback] Starting handleAutoUseFlow for car ${carId}...`)
+          await handleAutoUseFlow({
+            carId,
+            aiInsightSummary: storageSummary,
+            picId: currentPicId,
+          })
+          console.log(`[InsightFeedback] handleAutoUseFlow finished successfully for car ${carId}`)
+        } catch (err) {
+          console.error(`[InsightFeedback] handleAutoUseFlow FAILED for car ${carId}:`, err)
+        }
+      }
+    } catch (autoFlowErr) {
+      console.error("[InsightFeedback] Auto Use Flow check error (non-blocking):", autoFlowErr)
+    }
 
     return {
       success: true,

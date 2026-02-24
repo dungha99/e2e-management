@@ -115,6 +115,13 @@ export async function persistWorkflow(params: {
 }) {
   const { name, description, carId, steps } = params
 
+  // 0. Terminate existing "running" instances for this car
+  console.log(`[Workflow Service] Terminating existing running workflows for car ${carId}...`)
+  await e2eQuery(
+    `UPDATE workflow_instances SET status = 'terminated' WHERE car_id = $1 AND status = 'running'`,
+    [carId]
+  )
+
   // 1. Create workflow
   const workflowResult = await e2eQuery(
     `INSERT INTO workflows (name, stage_id, is_active, description, type)

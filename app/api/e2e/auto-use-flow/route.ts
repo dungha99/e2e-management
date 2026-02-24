@@ -639,7 +639,7 @@ export async function POST(request: Request) {
         [
           instance.id,
           createdSteps[i].id,
-          toUtcFromVietnam(stepsPayload[i].scheduledAt),
+          stepsPayload[i].scheduledAt || null,
           JSON.stringify(stepsPayload[i].requestPayload),
         ]
       )

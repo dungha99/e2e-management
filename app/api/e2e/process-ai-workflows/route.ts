@@ -111,7 +111,12 @@ export async function GET() {
           }
 
           // --- 2b. Check scheduled_at ---
-          const scheduledAt = execution.scheduled_at ? new Date(execution.scheduled_at) : null
+          // scheduled_at is stored as Vietnam local time (UTC+7) without timezone info.
+          // Vercel runs in UTC, so new Date() on a bare datetime string treats it as UTC
+          // → 7 hours ahead of real time. Subtract 7h to get the true UTC equivalent.
+          const scheduledAt = execution.scheduled_at
+            ? new Date(new Date(execution.scheduled_at).getTime() - 7 * 60 * 60 * 1000)
+            : null
           const now = new Date()
 
           if (scheduledAt && scheduledAt > now) {

@@ -311,7 +311,7 @@ async function fetchLeadContext(carId: string): Promise<string> {
   const result = await vucarV2Query(
     `SELECT c.brand, c.model, c.variant, c.year, c.location, c.mileage, c.plate,
             ss.price_customer, ss.price_highest_bid, ss.stage, ss.qualified,
-            ss.intention, ss.negotiation_ability, ss.notes, ss.messages_zalo,
+            ss.intention, ss.negotiation_ability, ss.notes,
             l.name as customer_name, l.phone, l.additional_phone,
             l.customer_feedback, l.source
      FROM cars c
@@ -353,14 +353,20 @@ async function loadConnectorSchema(connectorId: string) {
   if (res.rows.length === 0) return { fields: [] }
   const connector = res.rows[0]
   let schema = connector.input_schema
-  if (typeof schema === "string") schema = JSON.parse(schema)
+  if (typeof schema === "string") {
+    try { schema = JSON.parse(schema) } catch { return { fields: [] } }
+  }
 
   const properties = schema?.properties || schema?.body?.properties || schema?.body || {}
+  const requiredFields: string[] = Array.isArray(schema?.required) ? schema.required : []
   const fields = Object.entries(properties).map(([name, prop]: [string, any]) => ({
     name,
     label: prop.description || name,
     type: prop.type || "string",
+    required: prop.required || requiredFields.includes(name),
     hidden: prop.hidden === true,
+    description: prop.description as string | undefined,
+    enumValues: prop.enum as string[] | undefined,
   }))
 
   const result = { fields }
@@ -368,7 +374,57 @@ async function loadConnectorSchema(connectorId: string) {
   return result
 }
 
-// --- Internal Helper: Gemini ---
+// --- Internal Helper: Build field-description string for Gemini prompts ---
+function buildFieldDescriptions(fields: { name: string; label: string; type: string; required?: boolean; hidden?: boolean; description?: string; enumValues?: string[] }[]): string {
+  return fields
+    .filter(f => !f.hidden)
+    .map(f => {
+      let desc = `  - "${f.name}" (type: ${f.type}${f.required ? ', REQUIRED' : ''}): ${f.description || f.label}`
+      if (f.enumValues) desc += ` [options: ${f.enumValues.join(', ')}]`
+      return desc
+    })
+    .join('\n')
+}
+
+// --- Internal Helper: Parse a single JSON object from Gemini's response ---
+function parseGeminiJsonObject(rawText: string): any {
+  const jsonMatch = rawText.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) {
+    throw new Error(`Gemini did not return valid JSON. Response: ${rawText.slice(0, 300)}`)
+  }
+
+  let jsonStr = jsonMatch[0]
+  try { return JSON.parse(jsonStr) } catch {
+    console.warn("[Workflow Service] JSON parse failed, attempting repair...")
+  }
+
+  // Repair truncated JSON
+  jsonStr = jsonStr.replace(/,\s*"[^"]*$/, '')
+  jsonStr = jsonStr.replace(/:\s*"[^"]*$/, ': ""')
+
+  let openBraces = 0, openBrackets = 0
+  let inString = false, escape = false
+  for (const ch of jsonStr) {
+    if (escape) { escape = false; continue }
+    if (ch === '\\') { escape = true; continue }
+    if (ch === '"') { inString = !inString; continue }
+    if (inString) continue
+    if (ch === '{') openBraces++
+    if (ch === '}') openBraces--
+    if (ch === '[') openBrackets++
+    if (ch === ']') openBrackets--
+  }
+
+  if (inString) jsonStr += '"'
+  for (let i = 0; i < openBraces; i++) jsonStr += '}'
+  for (let i = 0; i < openBrackets; i++) jsonStr += ']'
+
+  try { return JSON.parse(jsonStr) } catch {
+    throw new Error(`Could not parse Gemini response as JSON. Raw: ${rawText.slice(0, 500)}`)
+  }
+}
+
+// --- Internal Helper: Gemini (sequential – one Gemini call per step, with previous-step context) ---
 async function callGeminiForParameters(
   steps: ExtractedStep[],
   schemas: any[],
@@ -380,28 +436,126 @@ async function callGeminiForParameters(
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error("GEMINI_API_KEY missing")
 
+  const geminiHost = process.env.GEMINI_HOST || "https://generativelanguage.googleapis.com"
+  const url = `${geminiHost}/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
+
   const now = new Date()
   const vnTime = new Date(now.getTime() + 7 * 60 * 60 * 1000)
-  const todayInfo = `Current time (VN UTC+7): ${vnTime.toISOString().replace('T', ' ').slice(0, 19)}`
+  const dayNames = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
+  const todayInfo = `Current date and time (Vietnam UTC+7): ${vnTime.toISOString().replace('T', ' ').slice(0, 19)}, ${dayNames[vnTime.getUTCDay()]}`
 
-  const prompt = `You are filling workflow parameters.
-${todayInfo}
-${leadContext}
-Steps: ${JSON.stringify(steps.map((s, i) => ({ ...s, schema: schemas[i].fields })))}
-IDs: picId=${picId}, carId=${carId}, phone=${phoneNumber}
+  const baseSystemPrompt = `System Prompt cho Sales Agent Vucar
+Role: Bạn là một Trợ lý Bán hàng (Sales Agent) chuyên nghiệp tại Vucar – nền tảng mua bán ô tô cũ uy tín. Nhiệm vụ của bạn là hỗ trợ khách hàng, điều phối quy trình đấu giá và gửi các kịch bản tư vấn.
 
-Return JSON array of { "scheduled_at": ISO or null, "parameters": { ... } } only.`
+Objective:
+Dựa trên hội thoại với khách hàng hoặc yêu cầu từ hệ thống, bạn phải xác định đúng hành động (Action) và trích xuất các thông tin cần thiết để điền vào tham số (parameters) của API tương ứng.
 
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-  })
+1. Quy định về API
+API 1: Gửi Kịch Bản Tư Vấn (Gui Script)
+Sử dụng khi cần gửi tin nhắn chăm sóc khách hàng hoặc kịch bản bán hàng có sẵn.
+- picId (String): ID của nhân viên phụ trách.
+- messages (Array of Strings): Danh sách các câu thoại/tin nhắn cần gửi.
+- customer_phone (String): Số điện thoại khách hàng (định dạng Việt Nam).
 
-  if (!res.ok) throw new Error("Gemini failed")
-  const data = await res.json()
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || ""
-  const jsonMatch = rawText.match(/\[[\s\S]*\]/)
-  if (!jsonMatch) throw new Error("Invalid Gemini JSON")
-  return JSON.parse(jsonMatch[0])
+API 2: Tạo Phiên Đấu Giá (Create Bidding Session)
+Sử dụng khi bắt đầu đưa một chiếc xe lên sàn đấu giá.
+- carId (String): ID định danh của chiếc xe.
+- duration (Integer): Thời gian đấu giá (tính bằng giờ).
+- minPrice (Integer): Giá khởi điểm (VNĐ).
+- shouldGenerateMetadata (Object): Cấu hình tự động tạo nội dung.
+
+2. Nguyên tắc lập lịch (Scheduling)
+- scheduled_at: ISO datetime string với timezone offset "+07:00" (VD: "2026-02-24T18:00:00+07:00").
+- Nếu cần chạy ngay, đặt là null.
+- Tính toán mốc thời gian dựa trên yêu cầu (vd: "gửi sau 2 giờ", "Ngày 1" = ngày mai).
+- Tuân thủ giờ làm việc (8:00-22:00).
+
+3. Giọng văn & Thuật ngữ (Tone & Terminology)
+- Tự nhiên, thân thiện, giống người thật.
+- TUYỆT ĐỐI KHÔNG dùng từ "dealer". Hãy dùng "người mua".
+- Nhấn mạnh: Giúp khách bán giá CAO NHẤT, rủi ro THẤP NHẤT.
+- Ngắn gọn: Mỗi tin nhắn dưới 500 ký tự.
+- Không tự giới thiệu lại thông tin như "Chào anh Thinh, em là Huy Hồ từ Vucar"
+- Tránh giữ nguyên các biến số như: "[Dải giá thị trường hợp lý, ví dụ: từ 700-800 triệu VND nếu xe đẹp, hoặc thấp hơn nếu xe có vấn đề theo kiểm định và anh đã xác minh là do lỗi xe]"
+
+4. Định dạng đầu ra (Output Format)
+CHỈ trả về MỘT object JSON duy nhất:
+{
+  "scheduled_at": "ISO string hoặc null",
+  "parameters": { ... }
 }
+
+CHỈ TRẢ VỀ JSON, KHÔNG GIẢI THÍCH.`
+
+  const results: any[] = []
+
+  for (let idx = 0; idx < steps.length; idx++) {
+    const step = steps[idx]
+    const schema = schemas[idx]
+    const fieldDescriptions = buildFieldDescriptions(schema.fields || [])
+
+    // Build context from previously decided steps
+    let previousStepContext = ""
+    if (idx > 0) {
+      const prevStep = steps[idx - 1]
+      const prevResult = results[idx - 1]
+      previousStepContext = `
+=== PREVIOUS STEP (already decided) ===
+Step ${idx}: "${prevStep.stepName}" (connector: ${prevStep.connectorLabel})
+Instruction: "${prevStep.rawContext}"
+Decided scheduled_at: ${prevResult.scheduled_at ? `"${prevResult.scheduled_at}"` : "null (immediate)"}
+Decided parameters: ${JSON.stringify(prevResult.parameters, null, 2)}
+`
+    }
+
+    const systemPrompt = idx > 0
+      ? baseSystemPrompt + "\n- Phải được đặt SAU thời điểm của bước trước đó."
+      : baseSystemPrompt
+
+    const userPrompt = `
+${todayInfo}
+
+${leadContext}
+${previousStepContext}
+=== CURRENT STEP TO FILL (Step ${idx + 1} of ${steps.length}) ===
+"${step.stepName}" (connector: ${step.connectorLabel})
+Instruction: "${step.rawContext}"
+
+Required Fields:
+${fieldDescriptions || '  (no schema fields - provide raw payload)'}
+
+Context IDs:
+- picId: "${picId}"
+- carId: "${carId}"
+- customer_phone: "${phoneNumber}"
+
+Return JSON object.`
+
+    console.log(`[Workflow Service] Calling Gemini for step ${idx + 1}/${steps.length}: "${step.stepName}"...`)
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ parts: [{ text: userPrompt }] }],
+        generationConfig: { temperature: 0.2, maxOutputTokens: 16384 },
+      })
+    })
+
+    if (!res.ok) {
+      const errorText = await res.text()
+      throw new Error(`Gemini API failed for step ${idx + 1} (${res.status}): ${errorText}`)
+    }
+
+    const data = await res.json()
+    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || ""
+    console.log(`[Workflow Service] Gemini response for step ${idx + 1}:`, rawText.slice(0, 300))
+
+    const parsed = parseGeminiJsonObject(rawText)
+    results.push(parsed)
+  }
+
+  return results
+}
+

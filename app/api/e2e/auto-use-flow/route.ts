@@ -26,6 +26,20 @@ const CONNECTOR_MAP = {
 
 const DEFAULT_STAGE_ID = "456e0d0b-bd97-4ef6-893e-8674447ed882"
 
+/**
+ * Gemini returns scheduled_at as Vietnam local time (e.g. "2026-02-24T18:00:00").
+ * On Vercel (UTC server), new Date() would parse that as UTC → 7 hrs ahead.
+ * This helper ensures timezone offset is present, then converts to UTC ISO string.
+ */
+function toUtcFromVietnam(value: string | null | undefined): string | null {
+  if (!value) return null
+  // If there's already a timezone indicator (+, Z), trust it
+  const hasOffset = /[+\-]\d{2}:\d{2}$/.test(value) || value.endsWith('Z')
+  const withOffset = hasOffset ? value : `${value}+07:00`
+  const date = new Date(withOffset)
+  return isNaN(date.getTime()) ? null : date.toISOString()
+}
+
 // ========================================================================
 // Step extraction from analysis (mirrors AiThinkingChat logic)
 // ========================================================================
@@ -396,54 +410,52 @@ Decided parameters: ${JSON.stringify(prevResult.parameters, null, 2)}
 `
     }
 
-    const prompt = `You are an AI assistant that decides execution parameters for a single workflow automation step.
+    const systemPrompt = `System Prompt cho Sales Agent Vucar
+Role: Bạn là một Trợ lý Bán hàng (Sales Agent) chuyên nghiệp tại Vucar – nền tảng mua bán ô tô cũ uy tín. Nhiệm vụ của bạn là hỗ trợ khách hàng, điều phối quy trình đấu giá và gửi các kịch bản tư vấn.
 
+Objective:
+Dựa trên hội thoại với khách hàng hoặc yêu cầu từ hệ thống, bạn phải xác định đúng hành động (Action) và trích xuất các thông tin cần thiết để điền vào tham số (parameters) của API tương ứng cho một bước cụ thể trong workflow.
+
+1. Nguyên tắc lập lịch (Scheduling)
+- scheduled_at: ISO datetime string với timezone offset "+07:00" (VD: "2026-02-24T18:00:00+07:00").
+- Nếu cần chạy ngay, đặt là null.
+- Tính toán mốc thời gian dựa trên yêu cầu (vd: "gửi sau 2 giờ", "Ngày 1" = ngày mai) và thời gian hiện tại.
+- Tuân thủ giờ làm việc (8:00-18:00)${idx > 0 ? `\n- Phải được đặt SAU thời điểm của bước trước đó.` : ''}
+
+2. Giọng văn & Thuật ngữ (Tone & Terminology)
+- Tự nhiên, thân thiện, giống người thật.
+- TUYỆT ĐỐI KHÔNG dùng từ "dealer". Hãy dùng "người mua".
+- Nhấn mạnh: Giúp khách bán giá CAO NHẤT, rủi ro THẤP NHẤT.
+- Ngắn gọn: Mỗi tin nhắn dưới 500 ký tự. Tránh rườm rà.
+
+3. Định dạng đầu ra (Output Format)
+CHỈ trả về MỘT object JSON duy nhất:
+{
+  "scheduled_at": "ISO string hoặc null",
+  "parameters": { ... }
+}
+
+CHỈ TRẢ VỀ JSON, KHÔNG GIẢI THÍCH.`
+
+    const userPrompt = `
 ${todayInfo}
 
 ${leadContext}
 ${previousStepContext}
+
 === CURRENT STEP TO FILL (Step ${idx + 1} of ${steps.length}) ===
 "${step.stepName}" (connector: ${step.connectorLabel})
-AI's instruction/context for this step:
-"""
-${step.rawContext}
-"""
-Required fields schema:
+Instruction: "${step.rawContext}"
+
+Required Fields:
 ${fieldDescriptions || '  (no schema fields - provide raw payload)'}
 
-=== KNOWN VALUES ===
-- picId (sale person ID): "${picId}"
+Context IDs:
+- picId: "${picId}"
 - carId: "${carId}"
 - customer_phone: "${phoneNumber}"
 
-=== INSTRUCTIONS ===
-Decide the following for THIS step:
-1. **scheduled_at**: ISO datetime string (Vietnam time UTC+7) for when to execute this step.
-   - If the step should run immediately, set to null.
-   - If the AI's instruction mentions timing (e.g., "gửi sau 2 giờ", "sáng mai", "Ngày 1"), calculate the exact datetime.
-   - For relative day offsets like "Ngày X", treat it as an offset from today (Ngày 1 = tomorrow, Ngày 2 = 2 days from now, "Ngày 1-2" = between tomorrow and 2 days from now).
-   - Consider business hours (8:00-18:00 Vietnam time) and today's schedule.${idx > 0 ? `\n   - This step should be scheduled AFTER the previous step's scheduled_at.` : ''}
-2. **parameters**: The values for each field in the schema.
-   - For "messages" arrays: Fill in the actual script text. Replace any placeholder like "X", "Y", "Z" or "[...]" with appropriate values from the lead context.
-   - **Tone & Terminology**:
-     - Make messages feel NATURAL, HUMAN, and friendly (like a helpful consultant).
-     - NEVER use the word "dealer". Use "người mua" (buyer) instead.
-     - Always sound HELPFUL. Emphasize that we are helping the customer get the HIGHEST price with the SMALLEST risk (saving them time and cost).
-     - Avoid re-introducing yourself in every message. The customer already knows who you are, examples: "Chào anh Thinh, em là [Tên Sales] từ Vucar. Em thấy mình đang có nhu cầu bán chiếc BMW 3 Series 2022 rất đẹp và mong muốn bán nhanh." Instead only using simple thing like "Dạ anh ơi" is fine
-   - IMPORTANT: Keep each message string CONCISE (under 500 characters). Be direct and clear, do not write essays.
-   - For "picId": Use the known picId value.
-   - For "customer_phone": Use the known phone value.
-   - For "carId": Use the known carId value.
-   - For "duration": Decide based on the context (typical bidding duration).
-   - For any dict/object fields: Fill sub-fields appropriately.
-
-Return ONLY a single valid JSON object (NOT an array):
-{
-  "scheduled_at": "2026-02-12T16:00:00+07:00" or null,
-  "parameters": { "fieldName": "value", ... }
-}
-
-Do NOT include any text outside the JSON object.`
+Return JSON object.`
 
     console.log(`[Auto Use Flow] Calling Gemini for step ${idx + 1}/${steps.length}: "${step.stepName}"...`)
 
@@ -451,7 +463,12 @@ Do NOT include any text outside the JSON object.`
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        system_instruction: {
+          parts: [{ text: systemPrompt }]
+        },
+        contents: [{
+          parts: [{ text: userPrompt }]
+        }],
         generationConfig: {
           temperature: 0.2,
           maxOutputTokens: 16384,
@@ -622,7 +639,7 @@ export async function POST(request: Request) {
         [
           instance.id,
           createdSteps[i].id,
-          stepsPayload[i].scheduledAt || null,
+          toUtcFromVietnam(stepsPayload[i].scheduledAt),
           JSON.stringify(stepsPayload[i].requestPayload),
         ]
       )

@@ -1,4 +1,4 @@
-export async function callGemini(prompt: string, model: string = "gemini-1.5-flash") {
+export async function callGemini(prompt: string, model: string = "gemini-1.5-flash", systemPrompt?: string) {
   const apiKey = process.env.GEMINI_API_KEY;
   const host = process.env.GEMINI_HOST || "https://generativelanguage.googleapis.com";
   const url = `${host}/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -9,6 +9,9 @@ export async function callGemini(prompt: string, model: string = "gemini-1.5-fla
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
+      system_instruction: systemPrompt ? {
+        parts: [{ text: systemPrompt }]
+      } : undefined,
       contents: [
         {
           parts: [

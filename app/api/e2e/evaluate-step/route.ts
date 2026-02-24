@@ -221,28 +221,16 @@ async function callGeminiEvaluation(
 
   const geminiHost =
     process.env.GEMINI_HOST ||
-    "https://generativelanguage.googleapis.com/v1beta"
+    "https://generativelanguage.googleapis.com"
   const model = "gemini-2.5-flash"
-  const url = `${geminiHost}/models/${model}:generateContent?key=${apiKey}`
+  const url = `${geminiHost}/v1beta/models/${model}:generateContent?key=${apiKey}`
 
   const stepDescription = step.description || "Không có mô tả chi tiết cho bước này."
 
-  const prompt = `Bạn là 1 AI evaluator cho quy trình sales xe cũ VuCar.
+  const systemPrompt = `Bạn là 1 AI evaluator cho quy trình sales xe cũ VuCar.
 
 ## NHIỆM VỤ
 Đánh giá output từ hệ thống auto-chat và xác định liệu cuộc hội thoại có đang đi đúng hướng so với mục tiêu của bước workflow hiện tại hay không.
-
-## THÔNG TIN BƯỚC HIỆN TẠI
-Tên bước: ${step.step_name}
-Mô tả chi tiết:
-${stepDescription}
-
-## OUTPUT TỪ AUTO-CHAT
-Context Summary: ${autoChatOutput.context_summary || "N/A"}
-Actions: ${JSON.stringify(autoChatOutput.actions || [])}
-Message Suggestions: ${JSON.stringify(autoChatOutput.message_suggestions || [])}
-
-${existingInsight ? `## PHÂN TÍCH AI TRƯỚC ĐÓ\n${JSON.stringify(existingInsight, null, 2).substring(0, 2000)}` : ""}
 
 ## YÊU CẦU OUTPUT
 Trả về JSON duy nhất với format:
@@ -263,11 +251,26 @@ Verdict "on_track" khi:
 
 CHỈ TRẢ VỀ JSON, KHÔNG CÓ GÌ KHÁC.`
 
+  const userPrompt = `## THÔNG TIN BƯỚC HIỆN TẠI
+Tên bước: ${step.step_name}
+Mô tả chi tiết:
+${stepDescription}
+
+## OUTPUT TỪ AUTO-CHAT
+Context Summary: ${autoChatOutput.context_summary || "N/A"}
+Actions: ${JSON.stringify(autoChatOutput.actions || [])}
+Message Suggestions: ${JSON.stringify(autoChatOutput.message_suggestions || [])}
+
+${existingInsight ? `## PHÂN TÍCH AI TRƯỚC ĐÓ\n${JSON.stringify(existingInsight, null, 2).substring(0, 2000)}` : ""}`
+
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
+      system_instruction: {
+        parts: [{ text: systemPrompt }]
+      },
+      contents: [{ parts: [{ text: userPrompt }] }],
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 2048,

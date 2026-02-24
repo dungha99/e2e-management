@@ -188,8 +188,14 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
       return undefined
     }
 
-    const selectedTransitionId = findNestedValue(aiResponse, "selected_transition_id")
-    const targetWorkflowId = findNestedValue(aiResponse, "target_workflow_id")
+    // Guard: the AI may return "N/A" or other non-UUID strings for ID fields.
+    // PostgreSQL will reject those — convert to null.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    const toUuidOrNull = (v: any): string | null =>
+      typeof v === "string" && UUID_RE.test(v) ? v : null
+
+    const selectedTransitionId = toUuidOrNull(findNestedValue(aiResponse, "selected_transition_id"))
+    const targetWorkflowId = toUuidOrNull(findNestedValue(aiResponse, "target_workflow_id"))
     const storageSummary = aiResponse.analysis || aiResponse
 
     await e2eQuery(

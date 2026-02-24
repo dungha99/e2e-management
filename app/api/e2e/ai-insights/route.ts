@@ -231,9 +231,14 @@ export async function POST(request: Request) {
         return undefined
       }
 
+      // Guard: AI may return "N/A" or other non-UUID strings — PostgreSQL will reject those
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      const toUuidOrNull = (v: any): string | null =>
+        typeof v === "string" && UUID_RE.test(v) ? v : null
+
       // Dynamic Extraction
-      const selectedTransitionId = findNestedValue(aiResponse, "selected_transition_id")
-      const targetWorkflowId = findNestedValue(aiResponse, "target_workflow_id")
+      const selectedTransitionId = toUuidOrNull(findNestedValue(aiResponse, "selected_transition_id"))
+      const targetWorkflowId = toUuidOrNull(findNestedValue(aiResponse, "target_workflow_id"))
 
       // Use the 'analysis' field if it exists (backwards compatibility), 
       // otherwise use the entire response as the summary

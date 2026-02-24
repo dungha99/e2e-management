@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo } from "react"
-import { Bot, Target, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, History, BrainCircuit } from "lucide-react"
+import { Bot, Target, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, History, BrainCircuit, Zap } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -18,6 +18,25 @@ interface AiThinkingChatProps {
   isLoading: boolean
   onSubmitFeedback: (feedback: string) => Promise<void>
   onRate?: (id: string, isHistory: boolean, isPositive: boolean | null) => Promise<void>
+  onSendScript?: (scriptText: string) => void
+  onExecuteConnector?: (connectorName: string, defaultValues: Record<string, any>, title: string) => void
+  onUseFlow?: (steps: {
+    stepName: string;
+    connectorId: string;
+    connectorLabel: string;
+    defaultValues: Record<string, any>;
+    aiMetadata?: {
+      action?: string
+      expectedReaction?: string
+      successSignal?: string
+      failureSignal?: string
+      ifSuccess?: string
+      ifFailure?: string
+    }
+  }[]) => void
+  carId?: string  // Current lead's car_id for default values
+  currentUserId?: string | null
+  leadPhone?: string
 }
 
 const TypingText = memo(({ text, speed = 5, onComplete }: { text: string; speed?: number; onComplete?: () => void }) => {
@@ -41,7 +60,16 @@ const TypingText = memo(({ text, speed = 5, onComplete }: { text: string; speed?
 
 TypingText.displayName = "TypingText"
 
-const DynamicInsightValue = ({ value, isNew, onComplete }: { value: any, isNew: boolean, onComplete?: () => void }) => {
+const DynamicInsightValue = ({ value, isNew, onComplete, onSendScript, onExecuteConnector, carId, currentUserId, leadPhone }: {
+  value: any,
+  isNew: boolean,
+  onComplete?: () => void,
+  onSendScript?: (scriptText: string) => void,
+  onExecuteConnector?: (connectorName: string, defaultValues: Record<string, any>, title: string) => void,
+  carId?: string,
+  currentUserId?: string | null,
+  leadPhone?: string
+}) => {
   if (typeof value === 'string') {
     return isNew ? <TypingText text={value} onComplete={onComplete} /> : <>{value}</>
   }
@@ -54,6 +82,11 @@ const DynamicInsightValue = ({ value, isNew, onComplete }: { value: any, isNew: 
               value={item}
               isNew={isNew}
               onComplete={idx === value.length - 1 ? onComplete : undefined}
+              onSendScript={onSendScript}
+              onExecuteConnector={onExecuteConnector}
+              carId={carId}
+              currentUserId={currentUserId}
+              leadPhone={leadPhone}
             />
           </li>
         ))}
@@ -78,10 +111,66 @@ const DynamicInsightValue = ({ value, isNew, onComplete }: { value: any, isNew: 
                 value={val}
                 isNew={isNew}
                 onComplete={idx === entries.length - 1 ? onComplete : undefined}
+                onSendScript={onSendScript}
+                onExecuteConnector={onExecuteConnector}
+                carId={carId}
+                currentUserId={currentUserId}
+                leadPhone={leadPhone}
               />
             </div>
           </div>
         ))}
+
+        {/* Action Buttons */}
+        <div className="flex flex-wrap gap-2 mt-3">
+          {/* Gửi Script Button */}
+          {typeof value.script === 'string' && value.script.trim() && onExecuteConnector && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+              onClick={(e) => {
+                e.stopPropagation();
+                const defaultValues: Record<string, any> = {};
+                if (currentUserId) defaultValues.picId = currentUserId;
+                if (leadPhone) defaultValues.customer_phone = leadPhone;
+                if (value.script) defaultValues.messages = [value.script];
+
+                // Use connector ID for Send Message to Customer (05b6afa5-786f-4062-9d53-de9cb89450ee)
+                onExecuteConnector('05b6afa5-786f-4062-9d53-de9cb89450ee', defaultValues, 'Gửi Script');
+              }}
+            >
+              <Send className="h-3 w-3 mr-1.5" />
+              Gửi Script
+            </Button>
+          )}
+
+          {/* Create Bidding Session Button */}
+          {typeof value.action === 'string' && (
+            value.action.toLowerCase().includes('tạo phiên đấu giá') ||
+            value.action.toLowerCase().includes('tạo phiên') ||
+            value.action.toLowerCase().includes('đấu giá') ||
+            value.action.toLowerCase().includes('bidding')
+          ) && onExecuteConnector && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs text-emerald-600 border-emerald-200 hover:bg-emerald-50"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // Use car_id from props (current lead)
+                  const defaultValues: Record<string, any> = {};
+                  if (carId) defaultValues.carId = carId;
+                  // Use connector ID instead of name to avoid string comparison issues
+                  onExecuteConnector('6e98e9e6-87a6-41b8-9694-294472419351', defaultValues, 'Tạo phiên đấu giá');
+                }}
+              >
+                <Target className="h-3 w-3 mr-1.5" />
+                Create Bidding Session
+              </Button>
+            )}
+
+        </div>
       </div>
     )
   }
@@ -89,7 +178,19 @@ const DynamicInsightValue = ({ value, isNew, onComplete }: { value: any, isNew: 
   return <span className="text-sm font-medium text-gray-900">{String(value)}</span>
 }
 
-export function AiThinkingChat({ insights, isLoading, onSubmitFeedback, onRate }: AiThinkingChatProps) {
+
+export function AiThinkingChat({
+  insights,
+  isLoading,
+  onSubmitFeedback,
+  onRate,
+  onSendScript,
+  onExecuteConnector,
+  onUseFlow,
+  carId,
+  currentUserId,
+  leadPhone
+}: AiThinkingChatProps) {
   const [feedback, setFeedback] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [expandedIndices, setExpandedIndices] = useState<number[]>([])
@@ -182,7 +283,8 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback, onRate }
 
   if (!insights || (!insights.analysis && !insights.history?.length)) return null
 
-  const { analysis, targetWorkflowName, history = [] } = insights
+  const analysis = insights.analysis as any
+  const { targetWorkflowName, history = [] } = insights
   const isNew = insights.isNew && hasAnimated !== animationKey
 
   return (
@@ -262,7 +364,14 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback, onRate }
 
                     <div className={isExpanded ? 'mt-2' : ''}>
                       {isExpanded ? (
-                        <DynamicInsightValue value={item.ai_insight_summary} isNew={false} />
+                        <DynamicInsightValue
+                          value={item.ai_insight_summary}
+                          isNew={false}
+                          onExecuteConnector={onExecuteConnector}
+                          carId={carId}
+                          currentUserId={currentUserId}
+                          leadPhone={leadPhone}
+                        />
                       ) : (
                         <p className="line-clamp-1 font-medium">
                           {typeof item.ai_insight_summary === 'object'
@@ -328,11 +437,27 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback, onRate }
 
                 <div className="py-2">
                   <DynamicInsightValue
-                    value={analysis}
+                    value={typeof analysis === 'object' && analysis !== null && !Array.isArray(analysis)
+                      ? (() => {
+                        const keys = Object.keys(analysis);
+                        const startIdx = keys.indexOf('final_synthesis');
+                        if (startIdx === -1) return analysis;
+                        return Object.fromEntries(
+                          keys.slice(startIdx)
+                            .filter(k => !['id', 'created_at', 'selected_transition_id', 'target_workflow_id', 'target_workflow_name'].includes(k))
+                            .map(k => [k, analysis[k]])
+                        );
+                      })()
+                      : analysis}
                     isNew={!!isNew}
                     onComplete={() => {
                       setHasAnimated(animationKey)
                     }}
+                    onSendScript={onSendScript}
+                    onExecuteConnector={onExecuteConnector}
+                    carId={carId}
+                    currentUserId={currentUserId}
+                    leadPhone={leadPhone}
                   />
                 </div>
 
@@ -375,6 +500,108 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback, onRate }
                     </button>
                   </div>
                 </div>
+
+                {/* Use Flow Button */}
+                {onUseFlow && !isLoading && analysis && (() => {
+                  // Extract steps from final_synthesis
+                  const extractSteps = () => {
+                    const flowSteps: {
+                      stepName: string;
+                      connectorId: string;
+                      connectorLabel: string;
+                      defaultValues: Record<string, any>;
+                      aiMetadata?: {
+                        action?: string
+                        expectedReaction?: string
+                        successSignal?: string
+                        failureSignal?: string
+                        ifSuccess?: string
+                        ifFailure?: string
+                      }
+                    }[] = []
+                    const synthesis = analysis.final_synthesis || analysis
+
+                    // Walk through the analysis looking for actionable steps
+                    const walkObject = (obj: any) => {
+                      if (!obj || typeof obj !== 'object') return
+
+                      // Detect script → Gửi Script connector
+                      if (typeof obj.script === 'string' && obj.script.trim()) {
+                        const defaults: Record<string, any> = {}
+                        if (currentUserId) defaults.picId = currentUserId
+                        if (leadPhone) defaults.customer_phone = leadPhone
+                        defaults.messages = [obj.script]
+                        flowSteps.push({
+                          stepName: 'Gửi Script',
+                          connectorId: '05b6afa5-786f-4062-9d53-de9cb89450ee',
+                          connectorLabel: 'Gửi Script',
+                          defaultValues: defaults,
+                          aiMetadata: {
+                            action: obj.action,
+                            expectedReaction: obj.expected_customer_reaction || obj.expected_reaction,
+                            successSignal: obj.success_signal,
+                            failureSignal: obj.failure_signal,
+                            ifSuccess: obj.if_success,
+                            ifFailure: obj.if_failure,
+                          }
+                        })
+                      }
+
+                      // Detect action → Create Bidding Session connector
+                      const action = typeof obj.action === 'string' ? obj.action.toLowerCase() : ""
+                      if (action.includes('tạo phiên đấu giá') ||
+                        action.includes('tạo phiên') ||
+                        action.includes('đấu giá') ||
+                        action.includes('bidding')) {
+                        const defaults: Record<string, any> = {}
+                        if (carId) defaults.carId = carId
+                        flowSteps.push({
+                          stepName: 'Tạo phiên đấu giá',
+                          connectorId: '6e98e9e6-87a6-41b8-9694-294472419351',
+                          connectorLabel: 'Tạo phiên đấu giá',
+                          defaultValues: defaults,
+                          aiMetadata: {
+                            action: obj.action,
+                            expectedReaction: obj.expected_customer_reaction || obj.expected_reaction,
+                            successSignal: obj.success_signal,
+                            failureSignal: obj.failure_signal,
+                            ifSuccess: obj.if_success,
+                            ifFailure: obj.if_failure,
+                          }
+                        })
+                      }
+
+                      // Recurse into arrays and objects
+                      if (Array.isArray(obj)) {
+                        obj.forEach(walkObject)
+                      } else {
+                        Object.values(obj).forEach(v => {
+                          if (typeof v === 'object' && v !== null) walkObject(v)
+                        })
+                      }
+                    }
+
+                    walkObject(synthesis)
+                    return flowSteps
+                  }
+
+                  const flowSteps = extractSteps()
+                  if (flowSteps.length === 0) return null
+
+                  return (
+                    <div className="mt-4 pt-4 border-t border-amber-100">
+                      <Button
+                        size="sm"
+                        onClick={() => onUseFlow(flowSteps)}
+                        className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-md text-xs h-9"
+                      >
+                        <Zap className="h-3.5 w-3.5 mr-1.5" />
+                        Use Flow ({flowSteps.length} bước)
+                      </Button>
+                    </div>
+                  )
+                })()}
+
               </div>
             </div>
           )}
@@ -411,6 +638,6 @@ export function AiThinkingChat({ insights, isLoading, onSubmitFeedback, onRate }
           </div>
         </div>
       </div>
-    </div>
+    </div >
   )
 }

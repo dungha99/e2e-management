@@ -9,6 +9,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition, WinCaseHistory, AiInsight, AiInsightHistory } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { ActivateWorkflowDialog } from "../dialogs/ActivateWorkflowDialog"
+import { SendScriptDialog } from "../dialogs/SendScriptDialog"
+import { ExecuteConnectorDialog } from "../dialogs/ExecuteConnectorDialog"
+import { UseFlowWizardDialog, FlowStep } from "../dialogs/UseFlowWizardDialog"
 import { fetchAiInsights } from "@/hooks/use-leads"
 import { AiThinkingChat } from "../common/AiThinkingChat"
 
@@ -223,6 +226,7 @@ function WorkflowStep({ icon, title, status, isCompleted = false, onClick }: Wor
 interface WorkflowTrackerTabProps {
   selectedLead: Lead
   activeWorkflowView: string // Can be "purchase", "seeding", or workflow ID
+  currentUserId: string | null
   onWorkflowViewChange: (view: string) => void
 
   // Purchase workflow handlers
@@ -266,6 +270,7 @@ interface WorkflowTrackerTabProps {
 
 export function WorkflowTrackerTab({
   selectedLead,
+  currentUserId,
   activeWorkflowView,
   onWorkflowViewChange,
   onSendFirstMessage,
@@ -321,6 +326,37 @@ export function WorkflowTrackerTab({
   // State for AI insights
   const [aiInsights, setAiInsights] = useState<any>(null)
   const [fetchingAiInsights, setFetchingAiInsights] = useState(false)
+
+  // State for Send Script dialog
+  const [sendScriptOpen, setSendScriptOpen] = useState(false)
+  const [pendingScript, setPendingScript] = useState("")
+
+  const handleSendScript = (scriptText: string) => {
+    setPendingScript(scriptText)
+    setSendScriptOpen(true)
+  }
+
+  // State for Execute Connector dialog
+  const [executeConnectorOpen, setExecuteConnectorOpen] = useState(false)
+  const [pendingConnector, setPendingConnector] = useState<{
+    name: string
+    defaultValues: Record<string, any>
+    title: string
+  } | null>(null)
+
+  const handleExecuteConnector = (connectorName: string, defaultValues: Record<string, any>, title: string) => {
+    setPendingConnector({ name: connectorName, defaultValues, title })
+    setExecuteConnectorOpen(true)
+  }
+
+  // State for Use Flow wizard
+  const [useFlowOpen, setUseFlowOpen] = useState(false)
+  const [pendingFlowSteps, setPendingFlowSteps] = useState<FlowStep[]>([])
+
+  const handleUseFlow = (steps: FlowStep[]) => {
+    setPendingFlowSteps(steps)
+    setUseFlowOpen(true)
+  }
 
   // Track last selected lead to detect when to force reset the view
   const lastLeadIdRef = useRef<string | null>(null)
@@ -586,6 +622,12 @@ ${dealerBidsStr}`
       <AiThinkingChat
         insights={aiInsights}
         isLoading={fetchingAiInsights}
+        onSendScript={handleSendScript}
+        onExecuteConnector={handleExecuteConnector}
+        onUseFlow={handleUseFlow}
+        carId={selectedLead.car_id || undefined}
+        currentUserId={currentUserId}
+        leadPhone={selectedLead.phone || selectedLead.additional_phone || undefined}
         onSubmitFeedback={async (feedback) => {
           if (!selectedLead.car_id || !currentInstance?.instance.id) return
           const phoneNumber = selectedLead.phone || selectedLead.additional_phone
@@ -1134,6 +1176,25 @@ ${dealerBidsStr}`
         </div>
       </div>
 
+      {/* Send Script Dialog */}
+      <SendScriptDialog
+        open={sendScriptOpen}
+        onOpenChange={setSendScriptOpen}
+        selectedLead={selectedLead}
+        scriptText={pendingScript}
+      />
+
+      {/* Execute Connector Dialog */}
+      {pendingConnector && (
+        <ExecuteConnectorDialog
+          open={executeConnectorOpen}
+          onOpenChange={setExecuteConnectorOpen}
+          connectorName={pendingConnector.name}
+          defaultValues={pendingConnector.defaultValues}
+          dialogTitle={pendingConnector.title}
+        />
+      )}
+
       {/* Workflow Activation Dialog */}
       {selectedTransition && (
         <ActivateWorkflowDialog
@@ -1156,6 +1217,19 @@ ${dealerBidsStr}`
           }}
         />
       )}
+
+      {/* Use Flow Wizard Dialog */}
+      <UseFlowWizardDialog
+        open={useFlowOpen}
+        onOpenChange={setUseFlowOpen}
+        steps={pendingFlowSteps}
+        carId={selectedLead.car_id || ''}
+        onSuccess={() => {
+          if (onWorkflowActivated) {
+            onWorkflowActivated()
+          }
+        }}
+      />
     </>
   )
 }

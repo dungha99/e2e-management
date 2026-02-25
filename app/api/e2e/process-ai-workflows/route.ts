@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
-import { e2eQuery } from "@/lib/db"
+import { e2eQuery, vucarV2Query } from "@/lib/db"
+import { submitAiFeedback } from "@/lib/insight-feedback-service"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -22,7 +23,7 @@ interface ProcessingResult {
   instanceId: string
   workflowName: string
   stepsProcessed: number
-  stoppedReason: "all_done" | "scheduled_future" | "step_failed" | "error"
+  stoppedReason: "all_done" | "scheduled_future" | "step_failed" | "error" | "customer_no_response"
   error?: string
 }
 
@@ -60,6 +61,24 @@ export async function GET() {
         workflowName: instance.workflow_name,
         stepsProcessed: 0,
         stoppedReason: "all_done",
+      }
+
+      // Resolve customer phone (additional_phone first) and pic_id for this instance
+      let customerPhone = ""
+      let picId = ""
+      try {
+        const contactResult = await vucarV2Query(
+          `SELECT l.phone, l.additional_phone, l.pic_id
+           FROM cars c
+           JOIN leads l ON l.id = c.lead_id
+           WHERE c.id = $1 LIMIT 1`,
+          [instance.car_id]
+        )
+        const contact = contactResult.rows[0]
+        customerPhone = contact?.additional_phone || contact?.phone || ""
+        picId = contact?.pic_id || ""
+      } catch (err) {
+        console.warn(`[Process AI Workflows] Could not resolve phone/picId for car ${instance.car_id}:`, err)
       }
 
       try {
@@ -125,6 +144,63 @@ export async function GET() {
             result.stoppedReason = "scheduled_future"
             continueLoop = false
             break
+          }
+
+          // --- 2b-ii. Customer engagement check (only for scheduled steps) ---
+          // If the step had a scheduled_at, the customer had time to respond.
+          // If they haven't replied in 2 days, skip and trigger re-analysis.
+          if (execution.scheduled_at && customerPhone && picId) {
+            console.log(`[Process AI Workflows] Checking customer response for "${execution.step_name}" (phone: ${customerPhone})...`)
+            let responded = false
+            try {
+              responded = await checkCustomerResponded(customerPhone, picId)
+            } catch (err) {
+              console.warn(`[Process AI Workflows] Engagement check failed (non-blocking):`, err)
+              responded = true // Default to proceeding if the check itself fails
+            }
+
+            if (!responded) {
+              console.log(`[Process AI Workflows] Customer has NOT responded in 2 days. Triggering re-analysis...`)
+
+              await e2eQuery(
+                `UPDATE step_executions SET status = 'skipped', error_message = $1 WHERE id = $2`,
+                ['Customer did not respond within 2 days — strategy re-analysis triggered', execution.id]
+              )
+
+              if (instance.car_id) {
+                const noResponseFeedback = `[Auto-Check] Khách hàng chưa phản hồi trong 2 ngày kể từ bước "${execution.step_name}". Cần điều chỉnh chiến lược tiếp cận.`
+
+                // 1. Update the AI Knowledge Diary so the model learns from this pattern
+                import("@/lib/ai-notes-service").then(({ updateAiNoteFromFeedback }) => {
+                  updateAiNoteFromFeedback({
+                    block: "insight-generator",
+                    aiResponse: `Workflow step "${execution.step_name}" was scheduled and executed, but the customer did not reply within 2 days.`,
+                    userFeedback: noResponseFeedback,
+                    feedbackType: "text",
+                  }).catch((err) => console.error(`[Process AI Workflows] AI Notes update failed:`, err))
+                }).catch(() => { })
+
+                // 2. Submit insight feedback → triggers AI re-analysis + new workflow creation
+                try {
+                  console.log(`[Process AI Workflows] Submitting feedback for car ${instance.car_id}...`)
+                  await submitAiFeedback({
+                    carId: instance.car_id,
+                    sourceInstanceId: instance.id,
+                    phoneNumber: customerPhone,
+                    feedback: noResponseFeedback,
+                  })
+                  console.log(`[Process AI Workflows] Re-analysis and new workflow triggered successfully.`)
+                } catch (err) {
+                  console.error(`[Process AI Workflows] submitAiFeedback failed:`, err)
+                }
+              }
+
+              result.stoppedReason = "customer_no_response"
+              continueLoop = false
+              break
+            }
+
+            console.log(`[Process AI Workflows] Customer HAS responded recently. Proceeding with step.`)
           }
 
           // --- 2c. Mark step as running ---
@@ -324,4 +400,78 @@ async function executeConnector(
   }
 
   return { success: true, data }
+}
+
+// =========================================================================
+// Helper: Check if customer has responded in the last 2 days via Zalo chat
+// =========================================================================
+async function checkCustomerResponded(phone: string, picId: string): Promise<boolean> {
+  const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000
+
+  // Step 1: Get shop_id from n8n webhook using pic_id
+  const n8nRes = await fetch(
+    "https://n8n.vucar.vn/webhook/f23b1b03-b198-4dc3-a196-d97a5cae8aff",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pic_id: picId }),
+    }
+  )
+
+  if (!n8nRes.ok) {
+    throw new Error(`n8n webhook failed: ${n8nRes.status}`)
+  }
+
+  let n8nData: any = await n8nRes.json()
+  if (Array.isArray(n8nData)) n8nData = n8nData[0]
+  const shopId: string | undefined = n8nData?.shop_id
+
+  if (!shopId) {
+    console.warn(`[checkCustomerResponded] No shop_id returned for picId=${picId}. Assuming responded.`)
+    return true
+  }
+
+  // Step 2: Fetch chat history from AkaBiz
+  const chatRes = await fetch(
+    "https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contacts_limit: 10,
+        contacts_max_pages: 10,
+        messages_limit: 20,
+        phone,
+        shop_id: shopId,
+      }),
+    }
+  )
+
+  if (!chatRes.ok) {
+    throw new Error(`AkaBiz chat history API failed: ${chatRes.status}`)
+  }
+
+  const chatData: any = await chatRes.json()
+  const chatHistory: any[] = chatData?.chat_history || []
+
+  if (chatHistory.length === 0) {
+    console.log(`[checkCustomerResponded] No chat history found for phone=${phone}`)
+    return false
+  }
+
+  // Step 3: Find any message from the CUSTOMER (senderName without "Vucar") within 2 days
+  const cutoff = new Date(Date.now() - TWO_DAYS_MS)
+  const customerReplied = chatHistory.some((msg) => {
+    const name: string = msg.senderName || ""
+    const isCustomer = !name.toLowerCase().includes("vucar")
+    if (!isCustomer) return false
+    const msgDate = new Date(msg.dateAction)
+    return msgDate >= cutoff
+  })
+
+  console.log(
+    `[checkCustomerResponded] phone=${phone}, shopId=${shopId}, ` +
+    `messages=${chatHistory.length}, customerRepliedIn2Days=${customerReplied}`
+  )
+  return customerReplied
 }

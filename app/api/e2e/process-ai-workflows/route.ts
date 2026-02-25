@@ -406,7 +406,7 @@ async function executeConnector(
 // Helper: Check if customer has responded in the last 2 days via Zalo chat
 // =========================================================================
 async function checkCustomerResponded(phone: string, picId: string): Promise<boolean> {
-  const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000
+  const SIX_HOURS_MS = 6 * 60 * 60 * 1000
 
   // Step 1: Get shop_id from n8n webhook using pic_id
   const n8nRes = await fetch(
@@ -459,8 +459,8 @@ async function checkCustomerResponded(phone: string, picId: string): Promise<boo
     return false
   }
 
-  // Step 3: Find any message from the CUSTOMER (senderName without "Vucar") within 2 days
-  const cutoff = new Date(Date.now() - TWO_DAYS_MS)
+  // Step 3: Find any message from the CUSTOMER (senderName without "Vucar") within 6 hours
+  const cutoff = new Date(Date.now() - SIX_HOURS_MS)
   const customerReplied = chatHistory.some((msg) => {
     const name: string = msg.senderName || ""
     const isCustomer = !name.toLowerCase().includes("vucar")

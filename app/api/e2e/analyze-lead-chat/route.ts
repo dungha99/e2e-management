@@ -254,7 +254,7 @@ Phản hồi phải đúng theo cấu trúc JSON duy nhất gồm 2 keys sau:
 }
 
 - Chọn action = "new_flow" nếu cần gửi thêm thông tin, kịch bản thuyết phục tự động, tin nhắn theo dõi, thiết lập dòng công việc mời chào khác.
-- Chọn action = "contact_sale" nếu lead đã ở giai đoạn cần nhân viên gọi điện can thiệp ngay lập tức, có câu hỏi cực kỳ phức tạp, đang rất bực tức, hoặc đã sẵn sàng chốt giá.
+- Chọn action = "contact_sale" nếu lead đã ở giai đoạn cần nhân viên chốt giá và gặp mặt khách trực tiếp.
 `
 
   const userPrompt = `Hãy phân tích đoạn hội thoại Zalo sau:

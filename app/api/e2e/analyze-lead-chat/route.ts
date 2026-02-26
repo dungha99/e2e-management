@@ -137,12 +137,16 @@ export async function POST(request: Request) {
 
       // Execute 'Send message to Sale' connector
       const connectorId = "6ee112d8-3d9b-406f-8b16-a2c4847efdb0"
-      const messageBody = `Lead Phone: ${phone}\n\nContext Summary: ${geminiResult.context_summary}`
+      // Ensure newlines from Gemini are correctly preserved as literal \n characters 
+      // when converted for the connector payload to prevent JSON breaking.
+      const safeContextSummary = geminiResult.context_summary.replace(/\r?\n/g, '\\n')
+      const messageBody = `Lead Phone: ${phone}\n\nContext Summary: ${safeContextSummary}`
 
       const payload = {
-        message: messageBody,
+        send_from_number: "84963041272",
         send_to_number: salePhone,
-        send_from_number: "84963041272"
+        message: messageBody,
+        action: ""
       }
 
       const connectorResult = await e2eQuery(
@@ -188,8 +192,14 @@ export async function POST(request: Request) {
         const res = await fetch(base_url, fetchOptions)
         clearTimeout(timeoutId)
 
+        const responseText = await res.text()
+        console.log(`[Analyze Lead Chat] Connector response status: ${res.status}`)
+        console.log(`[Analyze Lead Chat] Connector response data:`, responseText)
+
         if (!res.ok) {
-          console.error(`[Analyze Lead Chat] Connector failed:`, await res.text())
+          console.error(`[Analyze Lead Chat] Connector failed:`, responseText)
+        } else {
+          console.log(`[Analyze Lead Chat] Connector executed successfully for phone ${phone}`)
         }
       } catch (err) {
         clearTimeout(timeoutId)

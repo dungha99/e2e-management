@@ -373,33 +373,48 @@ async function executeConnector(
   // Call the connector
   console.log(`[Process AI Workflows] Calling connector: ${method} ${base_url}`)
 
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000) // 5 minutes
+
   const fetchOptions: RequestInit = {
     method: method || "POST",
     headers,
+    signal: controller.signal,
   }
 
   if (method !== "GET" && method !== "HEAD") {
     fetchOptions.body = JSON.stringify(payload)
   }
 
-  const response = await fetch(base_url, fetchOptions)
-  const responseText = await response.text()
-  let data: any
   try {
-    data = JSON.parse(responseText)
-  } catch {
-    data = responseText
-  }
+    const response = await fetch(base_url, fetchOptions)
+    clearTimeout(timeoutId)
 
-  if (!response.ok) {
-    return {
-      success: false,
-      data,
-      error: `Connector returned ${response.status}: ${typeof data === 'string' ? data : JSON.stringify(data).slice(0, 200)}`,
+    const responseText = await response.text()
+    let data: any
+    try {
+      data = JSON.parse(responseText)
+    } catch {
+      data = responseText
     }
-  }
 
-  return { success: true, data }
+    if (!response.ok) {
+      return {
+        success: false,
+        data,
+        error: `Connector returned ${response.status}: ${typeof data === 'string' ? data : JSON.stringify(data).slice(0, 200)}`,
+      }
+    }
+
+    return { success: true, data }
+  } catch (err) {
+    clearTimeout(timeoutId)
+    const errorMessage = err instanceof Error && err.name === 'AbortError'
+      ? 'Connector execution timed out after 5 minutes'
+      : (err instanceof Error ? err.message : String(err))
+
+    return { success: false, error: errorMessage }
+  }
 }
 
 // =========================================================================
@@ -409,23 +424,36 @@ async function checkCustomerResponded(phone: string, picId: string): Promise<boo
   const SIX_HOURS_MS = 6 * 60 * 60 * 1000
 
   // Step 1: Get shop_id from n8n webhook using pic_id
-  const n8nRes = await fetch(
-    "https://n8n.vucar.vn/webhook/f23b1b03-b198-4dc3-a196-d97a5cae8aff",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pic_id: picId }),
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000) // 5 minutes
+
+  let shopId: string | undefined
+
+  try {
+    const n8nRes = await fetch(
+      "https://n8n.vucar.vn/webhook/f23b1b03-b198-4dc3-a196-d97a5cae8aff",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pic_id: picId }),
+        signal: controller.signal,
+      }
+    )
+    clearTimeout(timeoutId)
+
+    if (!n8nRes.ok) {
+      throw new Error(`n8n webhook failed: ${n8nRes.status}`)
     }
-  )
 
-  if (!n8nRes.ok) {
-    throw new Error(`n8n webhook failed: ${n8nRes.status}`)
+    let n8nData: any = await n8nRes.json()
+    if (Array.isArray(n8nData)) n8nData = n8nData[0]
+    shopId = n8nData?.shop_id
+  } catch (err) {
+    clearTimeout(timeoutId)
+    console.error(`[checkCustomerResponded] n8n fetch error:`, err)
+    // Fallback: assume responded if we can't get shopId
+    return true
   }
-
-  let n8nData: any = await n8nRes.json()
-  if (Array.isArray(n8nData)) n8nData = n8nData[0]
-  const shopId: string | undefined = n8nData?.shop_id
-
   if (!shopId) {
     console.warn(`[checkCustomerResponded] No shop_id returned for picId=${picId}. Assuming responded.`)
     return true
@@ -471,7 +499,7 @@ async function checkCustomerResponded(phone: string, picId: string): Promise<boo
 
   console.log(
     `[checkCustomerResponded] phone=${phone}, shopId=${shopId}, ` +
-    `messages=${chatHistory.length}, customerRepliedIn2Days=${customerReplied}`
+    `messages=${chatHistory.length}, customerRepliedIn6Hours=${customerReplied}`
   )
   return customerReplied
 }

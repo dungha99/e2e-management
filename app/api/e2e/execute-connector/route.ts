@@ -86,9 +86,13 @@ export async function POST(request: Request) {
     // Step 3: Call the connector's URL
     console.log(`[Execute Connector] Calling ${connectorName}: ${method} ${base_url}`)
 
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000) // 5 minutes
+
     const fetchOptions: RequestInit = {
       method: method || "POST",
       headers,
+      signal: controller.signal,
     }
 
     // Only include body for methods that support it
@@ -96,35 +100,54 @@ export async function POST(request: Request) {
       fetchOptions.body = JSON.stringify(payload)
     }
 
-    const response = await fetch(base_url, fetchOptions)
-    const responseText = await response.text()
-    let data: any
     try {
-      data = JSON.parse(responseText)
-    } catch {
-      data = responseText
-    }
+      const response = await fetch(base_url, fetchOptions)
+      clearTimeout(timeoutId)
 
-    if (!response.ok) {
-      console.error(`[Execute Connector] ${connectorName} returned ${response.status}:`, data)
+      const responseText = await response.text()
+      let data: any
+      try {
+        data = JSON.parse(responseText)
+      } catch {
+        data = responseText
+      }
+
+      if (!response.ok) {
+        console.error(`[Execute Connector] ${connectorName} returned ${response.status}:`, data)
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Connector returned ${response.status}`,
+            connectorName,
+            response: data,
+          },
+          { status: 500 }
+        )
+      }
+
+      console.log(`[Execute Connector] ${connectorName} called successfully`)
+
+      return NextResponse.json({
+        success: true,
+        connectorName,
+        response: data,
+      })
+    } catch (err) {
+      clearTimeout(timeoutId)
+      const errorMessage = err instanceof Error && err.name === 'AbortError'
+        ? 'Connector execution timed out after 5 minutes'
+        : (err instanceof Error ? err.message : String(err))
+
+      console.error("[Execute Connector] Fetch Error:", err)
       return NextResponse.json(
         {
           success: false,
-          error: `Connector returned ${response.status}`,
+          error: errorMessage,
           connectorName,
-          response: data,
         },
         { status: 500 }
       )
     }
-
-    console.log(`[Execute Connector] ${connectorName} called successfully`)
-
-    return NextResponse.json({
-      success: true,
-      connectorName,
-      response: data,
-    })
   } catch (error) {
     console.error("[Execute Connector] Error:", error)
     return NextResponse.json(

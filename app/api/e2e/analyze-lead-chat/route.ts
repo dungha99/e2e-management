@@ -250,11 +250,8 @@ Xác định xem chúng ta có khả năng chốt sale ngay lúc này với mứ
 Phản hồi phải đúng theo cấu trúc JSON duy nhất gồm 2 keys sau:
 {
   "context_summary": "Tóm tắt tình hình hiện tại của lead, lý do tại sao có thể hoặc không thể chốt sale ngay, và chiến lược tiếp theo",
-  "action": "new_flow" hoặc "contact_sale"
+  "action": "new_flow"
 }
-
-- Chọn action = "new_flow" nếu cần gửi thêm thông tin, kịch bản thuyết phục tự động, tin nhắn theo dõi, thiết lập dòng công việc mời chào khác.
-- Chọn action = "contact_sale" nếu lead đã ở giai đoạn cần nhân viên chốt giá và gặp mặt khách trực tiếp.
 `
 
   const userPrompt = `Hãy phân tích đoạn hội thoại Zalo sau:

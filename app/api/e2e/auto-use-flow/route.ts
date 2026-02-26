@@ -83,6 +83,18 @@ function extractStepsFromAnalysis(analysis: any): ExtractedStep[] {
         ifSuccess: obj.if_success,
         ifFailure: obj.if_failure,
       })
+
+      if (isBidding) {
+        console.log(`[extractStepsFromAnalysis] Auto-appending SCRIPT step after BIDDING`)
+        steps.push({
+          stepName: CONNECTOR_MAP.script.stepName,
+          connectorId: CONNECTOR_MAP.script.connectorId,
+          connectorLabel: "Gửi Script",
+          rawContext: `YÊU CẦU BẮT BUỘC: Generate parameters với mảng messages chính xác chứa 1 phần tử là: "dạ e gửi link phiên đấu giá ạ: https://vucar.vn/phien-dau-gia/tin-xe/{{cars.sku}}" (giữ nguyên từng chữ, không di dịch).`,
+          aiAction: "Gửi link phiên đấu giá tự động cho khách",
+          expectedReaction: "Khách hàng nhận được link và xem phiên đấu giá",
+        })
+      }
     }
 
     if (Array.isArray(obj)) {
@@ -410,24 +422,33 @@ Decided parameters: ${JSON.stringify(prevResult.parameters, null, 2)}
 `
     }
 
-    const systemPrompt = `System Prompt cho Sales Agent Vucar
-Role: Bạn là một Trợ lý Bán hàng (Sales Agent) chuyên nghiệp tại Vucar – nền tảng mua bán ô tô cũ uy tín. Nhiệm vụ của bạn là hỗ trợ khách hàng, điều phối quy trình đấu giá và gửi các kịch bản tư vấn.
+    const systemPrompt = `Role: Bạn là một Trợ lý Bán hàng (Sales Agent) chuyên nghiệp tại Vucar. Nhiệm vụ của bạn là trích xuất dữ liệu từ kịch bản tư vấn để điều phối quy trình qua API.
 
-Objective:
-Dựa trên hội thoại với khách hàng hoặc yêu cầu từ hệ thống, bạn phải xác định đúng hành động (Action) và trích xuất các thông tin cần thiết để điền vào tham số (parameters) của API tương ứng cho một bước cụ thể trong workflow.
+Objective: Xác định đúng hành động (Action) và điền tham số (parameters). Đặc biệt lưu ý tính toán thời gian scheduled_at dựa trên trình tự các bước.
 
-1. Nguyên tắc lập lịch (Scheduling)
-- scheduled_at: ISO datetime string với timezone offset "+07:00" (VD: "2026-02-24T18:00:00+07:00").
-- Nếu cần chạy ngay, đặt là null.
-- Tính toán mốc thời gian dựa trên yêu cầu (vd: "gửi sau 2 giờ", "Ngày 1" = ngày mai) và thời gian hiện tại.
-- Tuân thủ giờ làm việc (8:00-18:00)${idx > 0 ? `\n- Phải được đặt SAU thời điểm của bước trước đó.` : ''}
+1. Nguyên tắc lập lịch (Scheduling Logic)
 
-2. Giọng văn & Thuật ngữ (Tone & Terminology)
-- Tự nhiên, thân thiện, giống người thật.
-- TUYỆT ĐỐI KHÔNG dùng từ "dealer". Hãy dùng "người mua".
-- Nhấn mạnh: Giúp khách bán giá CAO NHẤT, rủi ro THẤP NHẤT.
-- Ngắn gọn: Mỗi tin nhắn dưới 500 ký tự. Tránh rườm rà.
+Tham chiếu: scheduled_at phải dựa trên thời gian hiện tại (cho Step 1) hoặc thời gian của bước ngay trước đó (cho các Step sau). Ví dụ nếu step 2 có thời gian là "2026-02-24T18:00:00", thì step 3 với timing "Trong vòng 1-2 ngày sau khi gửi thông tin thị trường và báo cáo kiểm định" sẽ có scheduled vào "2026-02-25T18:00:00"
 
+Tính toán khoảng cách: * Dựa vào mục "timing" trong input (VD: "sau 1 ngày", "sau 2 giờ").
+
+Quy tắc Sub-steps: Nếu một Step yêu cầu 2 hành động (ví dụ: Gửi Script và Tạo phiên đấu giá), hành động thứ hai phải được đặt scheduled_at sau hành động thứ nhất đúng 30 phút.
+
+Ràng buộc thời gian: * Định dạng: ISO 8601 với offset +07:00 (VD: "2026-02-24T18:00:00+07:00").
+
+Chỉ đặt lịch trong khung 08:00 - 22:00. Nếu thời gian tính toán rơi vào sau 22:00, phải tự động dời sang 08:00 sáng ngày hôm sau.
+
+Nếu bước đầu tiên yêu cầu "Ngay lập tức", đặt scheduled_at: null.
+
+2. Giọng văn & Thuật ngữ
+
+Tự nhiên, thân thiện, giống người thật.
+
+TUYỆT ĐỐI KHÔNG dùng từ "dealer". Thay bằng "người mua".
+
+Mục tiêu: Giúp khách bán giá cao nhất, rủi ro thấp nhất.
+
+Độ dài: Tin nhắn dưới 500 ký tự.
 3. Định dạng đầu ra (Output Format)
 CHỈ trả về MỘT object JSON duy nhất:
 {

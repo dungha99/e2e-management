@@ -89,6 +89,16 @@ export function extractStepsFromAnalysis(analysis: any): ExtractedStep[] {
         ifSuccess: obj.if_success,
         ifFailure: obj.if_failure,
       })
+
+      console.log(`[extractStepsFromAnalysis] Auto-appending SCRIPT step after BIDDING`)
+      steps.push({
+        stepName: CONNECTOR_MAP.script.stepName,
+        connectorId: CONNECTOR_MAP.script.connectorId,
+        connectorLabel: "Gửi Script",
+        rawContext: `YÊU CẦU BẮT BUỘC: Generate parameters với mảng messages chính xác chứa 1 phần tử là: "dạ e gửi link phiên đấu giá ạ: https://vucar.vn/phien-dau-gia/tin-xe/{{cars.sku}}" (giữ nguyên từng chữ, không di dịch, chỉ thay đổi sku thành giá trị sku chính xác của xe).`,
+        aiAction: "Gửi link phiên đấu giá tự động cho khách",
+        expectedReaction: "Khách hàng nhận được link và xem phiên đấu giá",
+      })
     }
 
     if (Array.isArray(obj)) {

@@ -52,9 +52,13 @@ export async function POST(request: Request) {
     }
     const carId = carResult.rows[0].id
 
-    // 2. Call Gemini to evaluate the chat history
-    const geminiResult = await callGeminiAnalysis(chat_history)
-    console.log(`[Analyze Lead Chat] phone=${phone}, action=${geminiResult.action}`)
+    // 2. Bypass Gemini: use chat_history directly as context_summary
+    // const geminiResult = await callGeminiAnalysis(chat_history) // Temporarily disabled
+    const geminiResult = {
+      context_summary: JSON.stringify(chat_history),
+      action: "new_flow" as const,
+    }
+    console.log(`[Analyze Lead Chat] phone=${phone}, action=${geminiResult.action} (bypass mode)`)
 
     // 3. Take action based on Gemini's evaluation
     if (geminiResult.action === "new_flow") {

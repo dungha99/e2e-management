@@ -259,7 +259,8 @@ export async function POST(request: Request) {
         "6f38b1e4-4708-4547-bc04-46d5b9c6082b",
         "41a305f9-1742-4712-940b-fd84e714384c",
         "f360a4f8-5539-4a0e-9a9d-47e453058d58",
-        "eb268d8a-1763-460f-b773-4687d356879b"
+        "eb268d8a-1763-460f-b773-4687d356879b",
+        "b51dafce-845f-4cae-a55f-c5a7b8e7b2bf"
       ]
       try {
         // Get pic_id for background processing context

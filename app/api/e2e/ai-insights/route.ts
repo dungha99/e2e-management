@@ -270,7 +270,7 @@ export async function POST(request: Request) {
         )
         const currentPicId = leadCheck.rows[0]?.pic_id
 
-        if (testCarIds.includes(carId)) {
+        if (testCarIds.includes(carId) || currentPicId === "9ee91b08-448b-4cf4-8b3d-79c6f1c71fef") {
           console.log(`[AI Insights] Auto Use Flow triggered for test PIC/car`)
           // Await inline — after() requires experimental.after config which is not enabled.
           // This adds ~5-10s to the response but guarantees completion on Vercel.

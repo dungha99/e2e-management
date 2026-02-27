@@ -231,7 +231,7 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
       )
       const currentPicId = leadCheck.rows[0]?.pic_id
 
-      if (testCarIds.includes(carId) || currentPicId === "9ee91b08-448b-4cf4-8b3d-79c6f1c71fef") {
+      if (testCarIds.includes(carId)) {
         console.log(`[InsightFeedback] Auto Use Flow triggered for test PIC/car`)
         // Inline await for stability on Vercel
         try {

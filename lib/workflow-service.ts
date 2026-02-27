@@ -326,7 +326,7 @@ export async function handleAutoUseFlow(params: {
 // --- Internal Helper: Fetch context ---
 async function fetchLeadContext(carId: string): Promise<string> {
   const result = await vucarV2Query(
-    `SELECT c.brand, c.model, c.variant, c.year, c.location, c.mileage, c.plate, c.sku,
+    `SELECT c.brand, c.model, c.variant, c.year, c.location, c.mileage, c.plate, c.slug,
             ss.price_customer, ss.price_highest_bid, ss.stage, ss.qualified,
             ss.intention, ss.negotiation_ability, ss.notes,
             l.name as customer_name, l.phone, l.additional_phone,
@@ -345,8 +345,8 @@ async function fetchLeadContext(carId: string): Promise<string> {
   parts.push(`Customer: ${row.customer_name || "Unknown"}`)
   parts.push(`Phone: ${row.phone || "N/A"}`)
   parts.push(`Car: ${[row.brand, row.model, row.variant].filter(Boolean).join(" ")} ${row.year || ""}`)
-  parts.push(`Car SKU: ${row.sku || "N/A"} (use this exact value when referencing {{cars.sku}} in the bidding link)`)
-  parts.push(`Bidding Link: https://vucar.vn/phien-dau-gia/tin-xe/${row.sku || "{{cars.sku}}"}`)
+  parts.push(`Car Slug: ${row.slug || "N/A"} (use this exact value when referencing {{cars.slug}} in the bidding link)`)
+  parts.push(`Bidding Link: https://vucar.vn/phien-dau-gia/tin-xe/${row.slug || "{{cars.slug}}"}`)
   parts.push(`Price Highest Bid: ${row.price_highest_bid ? `${row.price_highest_bid} triệu` : "N/A"}`)
   parts.push(`Notes: ${row.notes || "N/A"}`)
 
@@ -463,13 +463,27 @@ async function callGeminiForParameters(
   const dayNames = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
   const todayInfo = `Current date and time (Vietnam UTC+7): ${vnTime.toISOString().replace('T', ' ').slice(0, 19)}, ${dayNames[vnTime.getUTCDay()]}`
 
-  const baseSystemPrompt = `System Prompt cho Sales Agent Vucar
-Role: Bạn là một Trợ lý Bán hàng (Sales Agent) chuyên nghiệp tại Vucar – nền tảng mua bán ô tô cũ uy tín. Nhiệm vụ của bạn là hỗ trợ khách hàng, điều phối quy trình đấu giá và gửi các kịch bản tư vấn.
+  const baseSystemPrompt = `Role: Bạn là một Trợ lý Bán hàng (Sales Agent) chuyên nghiệp tại Vucar. Nhiệm vụ của bạn là trích xuất dữ liệu từ kịch bản tư vấn để điều phối quy trình qua API.
 
-Objective:
-Dựa trên hội thoại với khách hàng hoặc yêu cầu từ hệ thống, bạn phải xác định đúng hành động (Action) và trích xuất các thông tin cần thiết để điền vào tham số (parameters) của API tương ứng.
+Objective: Xác định đúng hành động (Action) và điền tham số (parameters). Đặc biệt lưu ý tính toán thời gian scheduled_at dựa trên trình tự các bước.
 
-1. Quy định về API
+1. Nguyên tắc lập lịch (Scheduling Logic)
+
+Tham chiếu: scheduled_at phải dựa trên thời gian hiện tại và thời gian của bước ngay trước đó (cho các Step sau). Ví dụ ngày hiện tại là "2026-02-22T18:00:00" và timing là "1-2 ngày sau", thì scheduled_at là "2026-02-23T18:00:00". Ví dụ nếu step 2 có thời gian là "2026-02-23T18:00:00", thì step 3 với timing "Trong vòng 4-5 giờ sau khi gửi thông tin thị trường và báo cáo kiểm định" sẽ có scheduled vào "2026-02-23T22:00:00"
+
+Tuyệt đối luôn xem xét kĩ lưỡng scheduled_at, tránh bỏ trống dữ liệu này, điền dữ liệu cần hợp lí theo tham chiếu.
+
+Tính toán khoảng cách: * Dựa vào mục "timing" trong input (VD: "sau 1 ngày", "sau 2 giờ").
+
+Quy tắc Sub-steps: Nếu một Step yêu cầu 2 hành động (ví dụ: Gửi Script và Tạo phiên đấu giá), hành động thứ hai phải được đặt scheduled_at sau hành động thứ nhất đúng 30 phút.
+
+Ràng buộc thời gian: * Định dạng: ISO 8601 với offset +07:00 (VD: "2026-02-24T18:00:00+07:00").
+
+Chỉ đặt lịch trong khung 08:00 - 22:00. Nếu thời gian tính toán rơi vào sau 22:00, phải tự động dời sang 08:00 sáng ngày hôm sau.
+
+Nếu bước đầu tiên yêu cầu "Ngay lập tức", đặt scheduled_at: null.
+
+2. Quy định về API
 API 1: Gửi Kịch Bản Tư Vấn (Gui Script)
 Sử dụng khi cần gửi tin nhắn chăm sóc khách hàng hoặc kịch bản bán hàng có sẵn.
 - picId (String): ID của nhân viên phụ trách.
@@ -482,13 +496,6 @@ Sử dụng khi bắt đầu đưa một chiếc xe lên sàn đấu giá.
 - duration (Integer): Thời gian đấu giá (tính bằng giờ).
 - minPrice (Integer): Giá khởi điểm (VNĐ).
 - shouldGenerateMetadata (Object): Cấu hình tự động tạo nội dung.
-
-2. Nguyên tắc lập lịch (Scheduling)
-- scheduled_at: ISO datetime string với timezone offset "+07:00" (VD: "2026-02-24T18:00:00+07:00").
-- Nếu cần chạy ngay, đặt là null.
-- Tính toán mốc thời gian dựa trên yêu cầu (vd: "gửi sau 2 giờ", "Ngày 1" = ngày mai).
-- Tuyệt đối tuân theo thời gian gợi ý từ "AI Assistant Thinking", ví dụ nếu hôm nay là 2026-02-24T15:04:41+07:00, và gợi ý là 1 ngày sau thì phải tuyệt đối là 2026-02-25.
-- Tuân thủ giờ làm việc (8:00-22:00).
 
 3. Giọng văn & Thuật ngữ (Tone & Terminology)
 - Tự nhiên, thân thiện, giống người thật.

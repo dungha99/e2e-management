@@ -257,7 +257,7 @@ async function loadConnectorSchema(connectorId: string): Promise<{ connector: an
 async function fetchLeadContext(carId: string): Promise<string> {
   try {
     const result = await vucarV2Query(
-      `SELECT c.brand, c.model, c.variant, c.year, c.location, c.mileage, c.plate, c.sku,
+      `SELECT c.brand, c.model, c.variant, c.year, c.location, c.mileage, c.plate, c.slug,
               ss.price_customer, ss.price_highest_bid, ss.stage, ss.qualified,
               ss.intention, ss.negotiation_ability, ss.notes, ss.messages_zalo,
               l.name as customer_name, l.phone, l.additional_phone,
@@ -279,9 +279,9 @@ async function fetchLeadContext(carId: string): Promise<string> {
     parts.push(`Customer: ${row.customer_name || "Unknown"}`)
     parts.push(`Phone: ${row.phone || "N/A"}`)
     parts.push(`Car: ${[row.brand, row.model, row.variant].filter(Boolean).join(" ")} ${row.year || ""}`)
-    parts.push(`Car SKU: ${row.sku || "N/A"} (use this exact value when referencing {{cars.sku}} in the bidding link)`)
+    parts.push(`Car Slug: ${row.slug || "N/A"} (use this exact value when referencing {{cars.slug}} in the bidding link)`)
     parts.push(`Plate: ${row.plate || "N/A"}`)
-    parts.push(`Bidding Link: https://vucar.vn/phien-dau-gia/tin-xe/${row.sku || "{{cars.sku}}"}`)
+    parts.push(`Bidding Link: https://vucar.vn/phien-dau-gia/tin-xe/${row.slug || "{{cars.slug}}"}`)
     parts.push(`Location: ${row.location || "N/A"}`)
     parts.push(`Mileage: ${row.mileage ? `${row.mileage} km` : "N/A"}`)
     parts.push(`Price Customer: ${row.price_customer ? `${row.price_customer} triệu` : "N/A"}`)
@@ -444,16 +444,31 @@ Chỉ đặt lịch trong khung 08:00 - 22:00. Nếu thời gian tính toán rơ
 
 Nếu bước đầu tiên yêu cầu "Ngay lập tức", đặt scheduled_at: null.
 
-2. Giọng văn & Thuật ngữ
+2. Quy định về API
+API 1: Gửi Kịch Bản Tư Vấn (Gui Script)
+Sử dụng khi cần gửi tin nhắn chăm sóc khách hàng hoặc kịch bản bán hàng có sẵn.
+- picId (String): ID của nhân viên phụ trách.
+- messages (Array of Strings): Danh sách các câu thoại/tin nhắn cần gửi.
+- customer_phone (String): Số điện thoại khách hàng (định dạng Việt Nam).
 
-Tự nhiên, thân thiện, giống người thật.
+API 2: Tạo Phiên Đấu Giá (Create Bidding Session)
+Sử dụng khi bắt đầu đưa một chiếc xe lên sàn đấu giá.
+- carId (String): ID định danh của chiếc xe.
+- duration (Integer): Thời gian đấu giá (tính bằng giờ).
+- minPrice (Integer): Giá khởi điểm (VNĐ).
+- shouldGenerateMetadata (Object): Cấu hình tự động tạo nội dung.
 
-TUYỆT ĐỐI KHÔNG dùng từ "dealer". Thay bằng "người mua".
+3. Giọng văn & Thuật ngữ (Tone & Terminology)
+- Tự nhiên, thân thiện, giống người thật.
+- TUYỆT ĐỐI KHÔNG dùng từ "dealer". Hãy dùng "người mua".
+- Nhấn mạnh: Giúp khách bán giá CAO NHẤT, rủi ro THẤP NHẤT.
+- Ngắn gọn: Mỗi tin nhắn dưới 500 ký tự.
+- Tuyệt đối KHÔNG tự giới thiệu lại thông tin như "Chào anh, em là Huy Hồ từ Vucar"
+- Tránh giữ nguyên các biến số như: "[Dải giá thị trường hợp lý, ví dụ: từ 700-800 triệu VND nếu xe đẹp, hoặc thấp hơn nếu xe có vấn đề theo kiểm định và anh đã xác minh là do lỗi xe]"
+- Chỉ đổi giọng văn, phải tuân theo các giá trị từ thông tin của lead, không được đưa thông tin ảo, đặc biệt là về giá xe.
+- Nên tách các tin nhắn thành nhiều tin nhắn nhỏ, nếu tin nhắn gốc dài.
 
-Mục tiêu: Giúp khách bán giá cao nhất, rủi ro thấp nhất.
-
-Độ dài: Tin nhắn dưới 500 ký tự.
-3. Định dạng đầu ra (Output Format)
+4. Định dạng đầu ra (Output Format)
 CHỈ trả về MỘT object JSON duy nhất:
 {
   "scheduled_at": "ISO string hoặc null",

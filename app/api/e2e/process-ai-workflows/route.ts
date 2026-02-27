@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { submitAiFeedback } from "@/lib/insight-feedback-service"
+import { callGemini } from "@/lib/gemini"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -209,7 +210,97 @@ export async function GET() {
             [execution.id]
           )
 
-          // --- 2d. Execute the connector ---
+          // --- 2d. Pre-execution AI Script Evaluator (for "Gửi Script" only) ---
+          if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee") { // Gửi Script
+            console.log(`[Process AI Workflows] Triggering AI Script Evaluator for Gửi Script...`)
+            try {
+              let requestPayload = execution.request_payload
+              if (typeof requestPayload === "string") {
+                requestPayload = JSON.parse(requestPayload)
+              }
+
+              if (requestPayload && Array.isArray(requestPayload.messages) && customerPhone && picId) {
+                // Fetch shopId via n8n
+                let shopId: string | undefined
+                try {
+                  const n8nRes = await fetch("https://n8n.vucar.vn/webhook/f23b1b03-b198-4dc3-a196-d97a5cae8aff", {
+                    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pic_id: picId })
+                  })
+                  if (n8nRes.ok) {
+                    let n8nData: any = await n8nRes.json()
+                    if (Array.isArray(n8nData)) n8nData = n8nData[0]
+                    shopId = n8nData?.shop_id
+                  }
+                } catch (e) {
+                  console.warn(`[Process AI Workflows] AI Evaluator failed to get shopId for picId=${picId}`, e)
+                }
+
+                if (shopId) {
+                  // Fetch last 20 messages from CRM
+                  const historyRes = await fetch("https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "accept": "application/json" },
+                    body: JSON.stringify({ phone: customerPhone, shop_id: shopId }),
+                  })
+
+                  if (historyRes.ok) {
+                    const historyData = await historyRes.json()
+                    if (historyData.is_successful && historyData.chat_history) {
+                      const recentChat = historyData.chat_history.slice(-20)
+
+                      const systemPrompt = `Bạn là một chuyên gia về giao tiếp và tối ưu hóa hội thoại. Nhiệm vụ của bạn là xem xét 20 tin nhắn gần nhất trong lịch sử chat và tập hợp các tin nhắn dự kiến sắp gửi.
+
+Quy trình làm việc:
+- Phân tích ngữ cảnh: Xác định rõ mục đích của người dùng, tông giọng (tone of voice) đang sử dụng và cảm xúc hiện tại của cuộc hội thoại.
+- Đánh giá tin nhắn dự kiến: Kiểm tra xem các tin nhắn sắp gửi có:
+  + Tự nhiên: Không bị máy móc, lặp từ hoặc quá trang trọng/suồng sã so với ngữ cảnh.
+  + Đúng trọng tâm: Phản hồi trực tiếp các câu hỏi hoặc vấn đề người dùng vừa nêu.
+  + Tương tác: Tạo tiền đề hoặc gợi mở cho các tương tác tiếp theo thay vì đóng lại cuộc hội thoại.
+
+Quyết định:
+- Nếu tin nhắn dự kiến đã tối ưu, hãy giữ nguyên.
+- Nếu chưa, hãy viết lại chúng để đảm bảo sự tự nhiên, trôi chảy và phù hợp.
+
+Yêu cầu quan trọng:
+- Luôn giữ nguyên ý định ban đầu (intent) nhưng điều chỉnh cách diễn đạt cho giống người.
+- Kết quả trả về phải là định dạng JSON hợp lệ, không kèm thêm bất kỳ văn bản giải thích nào.
+
+Expected Output Schema:
+{
+  "messages": ["tin nhắn 1", "tin nhắn 2"]
+}`
+
+                      const prompt = `Lịch sử chat (20 tin nhắn gần nhất):\n${JSON.stringify(recentChat)}\n\nTin nhắn dự kiến sắp gửi:\n${JSON.stringify(requestPayload.messages)}\n\nHãy đánh giá và trả về JSON.`
+
+                      const geminiResult = await callGemini(prompt, "gemini-2.5-flash", systemPrompt)
+
+                      const jsonMatch = geminiResult.match(/\{[\s\S]*\}/)
+                      if (jsonMatch) {
+                        const parsed = JSON.parse(jsonMatch[0])
+                        if (parsed && Array.isArray(parsed.messages)) {
+                          requestPayload.messages = parsed.messages
+                          execution.request_payload = requestPayload // update in memory
+
+                          // Update in DB so we have a record of the rewritten payload
+                          await e2eQuery(
+                            `UPDATE step_executions SET request_payload = $1 WHERE id = $2`,
+                            [JSON.stringify(requestPayload), execution.id]
+                          )
+                          console.log(`[Process AI Workflows] AI Script Evaluator successfully rewrote messages.`)
+                        }
+                      }
+                    }
+                  } else {
+                    console.warn(`[Process AI Workflows] CRM history fetch failed with status ${historyRes.status}`)
+                  }
+                }
+              }
+            } catch (err) {
+              console.error(`[Process AI Workflows] AI Script Evaluator failed, falling back to original payload:`, err)
+            }
+          }
+
+          // --- 2e. Execute the connector ---
           console.log(`[Process AI Workflows] Executing step "${execution.step_name}" (connector: ${execution.connector_id})`)
 
           let connectorSuccess = false

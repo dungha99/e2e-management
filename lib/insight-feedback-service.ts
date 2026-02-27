@@ -216,7 +216,11 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
     // --- 6. Auto Use Flow: fire-and-forget for test Car IDs ---
     const testCarIds = [
       "4f4aba46-9e76-4100-87f9-26a37c141d04",
-      "faaaac34-1fcb-4bb3-99d8-4f1597251bb7"
+      "faaaac34-1fcb-4bb3-99d8-4f1597251bb7",
+      "6f38b1e4-4708-4547-bc04-46d5b9c6082b",
+      "41a305f9-1742-4712-940b-fd84e714384c",
+      "f360a4f8-5539-4a0e-9a9d-47e453058d58",
+      "eb268d8a-1763-460f-b773-4687d356879b"
     ]
     try {
       // Get pic_id for background processing context

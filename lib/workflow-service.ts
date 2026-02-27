@@ -326,7 +326,7 @@ export async function handleAutoUseFlow(params: {
 // --- Internal Helper: Fetch context ---
 async function fetchLeadContext(carId: string): Promise<string> {
   const result = await vucarV2Query(
-    `SELECT c.brand, c.model, c.variant, c.year, c.location, c.mileage, c.plate,
+    `SELECT c.brand, c.model, c.variant, c.year, c.location, c.mileage, c.plate, c.sku,
             ss.price_customer, ss.price_highest_bid, ss.stage, ss.qualified,
             ss.intention, ss.negotiation_ability, ss.notes,
             l.name as customer_name, l.phone, l.additional_phone,
@@ -345,6 +345,8 @@ async function fetchLeadContext(carId: string): Promise<string> {
   parts.push(`Customer: ${row.customer_name || "Unknown"}`)
   parts.push(`Phone: ${row.phone || "N/A"}`)
   parts.push(`Car: ${[row.brand, row.model, row.variant].filter(Boolean).join(" ")} ${row.year || ""}`)
+  parts.push(`Car SKU: ${row.sku || "N/A"} (use this exact value when referencing {{cars.sku}} in the bidding link)`)
+  parts.push(`Bidding Link: https://vucar.vn/phien-dau-gia/tin-xe/${row.sku || "{{cars.sku}}"}`)
   parts.push(`Price Highest Bid: ${row.price_highest_bid ? `${row.price_highest_bid} triệu` : "N/A"}`)
   parts.push(`Notes: ${row.notes || "N/A"}`)
 

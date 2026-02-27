@@ -257,7 +257,7 @@ async function loadConnectorSchema(connectorId: string): Promise<{ connector: an
 async function fetchLeadContext(carId: string): Promise<string> {
   try {
     const result = await vucarV2Query(
-      `SELECT c.brand, c.model, c.variant, c.year, c.location, c.mileage, c.plate,
+      `SELECT c.brand, c.model, c.variant, c.year, c.location, c.mileage, c.plate, c.sku,
               ss.price_customer, ss.price_highest_bid, ss.stage, ss.qualified,
               ss.intention, ss.negotiation_ability, ss.notes, ss.messages_zalo,
               l.name as customer_name, l.phone, l.additional_phone,
@@ -279,7 +279,9 @@ async function fetchLeadContext(carId: string): Promise<string> {
     parts.push(`Customer: ${row.customer_name || "Unknown"}`)
     parts.push(`Phone: ${row.phone || "N/A"}`)
     parts.push(`Car: ${[row.brand, row.model, row.variant].filter(Boolean).join(" ")} ${row.year || ""}`)
+    parts.push(`Car SKU: ${row.sku || "N/A"} (use this exact value when referencing {{cars.sku}} in the bidding link)`)
     parts.push(`Plate: ${row.plate || "N/A"}`)
+    parts.push(`Bidding Link: https://vucar.vn/phien-dau-gia/tin-xe/${row.sku || "{{cars.sku}}"}`)
     parts.push(`Location: ${row.location || "N/A"}`)
     parts.push(`Mileage: ${row.mileage ? `${row.mileage} km` : "N/A"}`)
     parts.push(`Price Customer: ${row.price_customer ? `${row.price_customer} triệu` : "N/A"}`)
@@ -428,7 +430,9 @@ Objective: Xác định đúng hành động (Action) và điền tham số (par
 
 1. Nguyên tắc lập lịch (Scheduling Logic)
 
-Tham chiếu: scheduled_at phải dựa trên thời gian hiện tại (cho Step 1) hoặc thời gian của bước ngay trước đó (cho các Step sau). Ví dụ nếu step 2 có thời gian là "2026-02-24T18:00:00", thì step 3 với timing "Trong vòng 1-2 ngày sau khi gửi thông tin thị trường và báo cáo kiểm định" sẽ có scheduled vào "2026-02-25T18:00:00"
+Tham chiếu: scheduled_at phải dựa trên thời gian hiện tại và thời gian của bước ngay trước đó (cho các Step sau). Ví dụ ngày hiện tại là "2026-02-22T18:00:00" và timing là "1-2 ngày sau", thì scheduled_at là "2026-02-23T18:00:00". Ví dụ nếu step 2 có thời gian là "2026-02-23T18:00:00", thì step 3 với timing "Trong vòng 4-5 giờ sau khi gửi thông tin thị trường và báo cáo kiểm định" sẽ có scheduled vào "2026-02-23T22:00:00"
+
+Tuyệt đối luôn xem xét kĩ lưỡng scheduled_at, tránh bỏ trống dữ liệu này, điền dữ liệu cần hợp lí theo tham chiếu.
 
 Tính toán khoảng cách: * Dựa vào mục "timing" trong input (VD: "sau 1 ngày", "sau 2 giờ").
 

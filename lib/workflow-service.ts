@@ -456,7 +456,7 @@ async function callGeminiForParameters(
   if (!apiKey) throw new Error("GEMINI_API_KEY missing")
 
   const geminiHost = process.env.GEMINI_HOST || "https://generativelanguage.googleapis.com"
-  const url = `${geminiHost}/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
+  const url = `${geminiHost}/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`
 
   const now = new Date()
   const vnTime = new Date(now.getTime() + 7 * 60 * 60 * 1000)

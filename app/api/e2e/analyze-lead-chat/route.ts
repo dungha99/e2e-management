@@ -52,10 +52,11 @@ export async function POST(request: Request) {
     }
     const carId = carResult.rows[0].id
 
-    // 2. Bypass Gemini: use chat_history directly as context_summary
+    // 2. Bypass Gemini: cap to 100 messages and use a generic summary
+    const historyToAnalyze = chat_history.slice(-100)
     // const geminiResult = await callGeminiAnalysis(chat_history) // Temporarily disabled
     const geminiResult = {
-      context_summary: JSON.stringify(chat_history),
+      context_summary: "Yêu cầu tự động tạo flow từ lịch sử chat",
       action: "new_flow" as const,
     }
     console.log(`[Analyze Lead Chat] phone=${phone}, action=${geminiResult.action} (bypass mode)`)
@@ -91,6 +92,7 @@ export async function POST(request: Request) {
         sourceInstanceId,
         phoneNumber: phone,
         feedback: `[Phân tích Chat] ${geminiResult.context_summary}`,
+        chat_history: historyToAnalyze,
       })
 
       return NextResponse.json({

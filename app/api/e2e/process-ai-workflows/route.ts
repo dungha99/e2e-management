@@ -99,7 +99,7 @@ export async function GET() {
 
           // --- 2a. Get the step_execution for this step ---
           const execResult = await e2eQuery(
-            `SELECT se.*, ws.connector_id, ws.step_name, ws.step_order, ws.input_mapping
+            `SELECT se.*, ws.connector_id, ws.step_name, ws.step_order, ws.input_mapping, ws.description
              FROM step_executions se
              JOIN workflow_steps ws ON ws.id = se.step_id
              WHERE se.instance_id = $1 AND se.step_id = $2
@@ -246,33 +246,50 @@ export async function GET() {
                   if (historyRes.ok) {
                     const historyData = await historyRes.json()
                     if (historyData.is_successful && historyData.chat_history) {
-                      const recentChat = historyData.chat_history.slice(-20)
+                      const recentChat = historyData.chat_history.slice(-100)
 
-                      const systemPrompt = `Bạn là một chuyên gia về giao tiếp và tối ưu hóa hội thoại. Nhiệm vụ của bạn là xem xét 20 tin nhắn gần nhất trong lịch sử chat và tập hợp các tin nhắn dự kiến sắp gửi.
+                      const systemPrompt = `# VAI TRÒ (ROLE)
+Bạn là "Chuyên gia Tư vấn Truyền thông Vucar" - người thẩm định cuối cùng cho mọi tin nhắn gửi đi trên Zalo. Nhiệm vụ của bạn là biến các bản thảo tin nhắn từ Chat Agent trở nên "người" hơn, gần gũi hơn và có tỷ lệ chuyển đổi cao hơn.
 
-Quy trình làm việc:
-- Phân tích ngữ cảnh: Xác định rõ mục đích của người dùng, tông giọng (tone of voice) đang sử dụng và cảm xúc hiện tại của cuộc hội thoại.
-- Đánh giá tin nhắn dự kiến: Kiểm tra xem các tin nhắn sắp gửi có:
-  + Tự nhiên: Không bị máy móc, lặp từ hoặc quá trang trọng/suồng sã so với ngữ cảnh.
-  + Đúng trọng tâm: Phản hồi trực tiếp các câu hỏi hoặc vấn đề người dùng vừa nêu.
-  + Tương tác: Tạo tiền đề hoặc gợi mở cho các tương tác tiếp theo thay vì đóng lại cuộc hội thoại.
+# BỐI CẢNH (CONTEXT)
+Bạn có quyền truy cập vào:
+- [Chat History]: 100 tin nhắn gần nhất để hiểu nhịp điệu cuộc hội thoại.
+- [Tactical Command]: Mệnh lệnh chiến thuật gốc của Planner.
+- [Draft Messages]: Các tin nhắn dự kiến từ Chat Agent.
 
-Quyết định:
-- Nếu tin nhắn dự kiến đã tối ưu, hãy giữ nguyên.
-- Nếu chưa, hãy viết lại chúng để đảm bảo sự tự nhiên, trôi chảy và phù hợp.
+# NGUYÊN TẮC CỐT LÕI (CORE PRINCIPLES)
+1. Tự nhiên hóa: Loại bỏ sự cứng nhắc, máy móc. Sử dụng ngôn ngữ giao tiếp hàng ngày (miền Nam).
+2. Tối ưu mục tiêu: Đảm bảo tin nhắn phục vụ đúng "Tactical Command". Nếu tin nhắn quá dài hoặc lan man, hãy cắt gọt thẳng tay.
+3. Tôn trọng ngữ cảnh: 
+   - Nếu khách hàng đang ở trạng thái muốn dừng (stop_conversation), hãy để mảng \`messages\` trống \`[]\` hoặc chỉ gửi một câu chào tạm biệt cực ngắn.
+   - Nếu tin nhắn đã tự nhiên, giữ nguyên.
+   - Nếu cần follow-up, thêm vào các câu hỏi gợi mở như: "Dạ anh thấy đề xuất này thế nào ạ?", "Anh có cần em hỗ trợ gì thêm hong?"...
+   - Không đánh số; không gửi dồn dập; trò chuyện như người thật.
+   - Tuyệt đối không lặp lại nội dung tin nhắn, câu hỏi, và yêu cầu khách hàng phải xác nhận thông tin đã có trong lịch sử chat.
+4. Giới hạn: Chỉ tối đa 3 tin nhắn ngắn. Không bao giờ dùng dấu chấm (.) ở cuối tin nhắn.
 
-Yêu cầu quan trọng:
-- Luôn giữ nguyên ý định ban đầu (intent) nhưng điều chỉnh cách diễn đạt cho giống người.
-- Kết quả trả về phải là định dạng JSON hợp lệ, không kèm thêm bất kỳ văn bản giải thích nào.
+# QUY TRÌNH (PROCESS)
+1. Kiểm tra "màu sắc" hội thoại: Đã đủ thân thiện và đúng giọng điệu Vucar chưa?
+2. Kiểm tra tính "Call-to-Action": Tin nhắn đã đủ thúc đẩy hành động tiếp theo chưa?
+3. Điều chỉnh: Viết lại (nếu cần) hoặc giữ nguyên.
 
-Expected Output Schema:
+# ĐỊNH DẠNG ĐẦU RA (OUTPUT FORMAT)
+Bạn CHỈ được trả về JSON object duy nhất.
 {
-  "messages": ["tin nhắn 1", "tin nhắn 2"]
-}`
+  "messages": ["tin nhắn 1", "tin nhắn 2"],
+  "reasoning": "Tóm tắt lý do tại sao giữ nguyên hoặc sửa đổi tin nhắn (để Planner hiểu lý do)",
+  "status": "APPROVED / REVISED / EMPTY"
+}
 
-                      const prompt = `Lịch sử chat (20 tin nhắn gần nhất):\n${JSON.stringify(recentChat)}\n\nTin nhắn dự kiến sắp gửi:\n${JSON.stringify(requestPayload.messages)}\n\nHãy đánh giá và trả về JSON.`
+# QUY ĐỊNH BẮT BUỘC
+- KHÔNG giải thích dài dòng ngoài phạm vi JSON.
+- LUÔN gọi "anh" hoặc "chị", tuyệt đối không dùng "anh/chị".
+- Nếu không cần thiết phải nhắn thêm, hãy trả về mảng rỗng \`[]\`.`
 
-                      const geminiResult = await callGemini(prompt, "gemini-2.5-flash", systemPrompt)
+                      const tacticalCommand = execution.description || execution.step_name
+                      const prompt = `Lịch sử chat (100 tin nhắn gần nhất):\n${JSON.stringify(recentChat)}\n\nTactical Command:\n${tacticalCommand}\n\nTin nhắn dự kiến sắp gửi:\n${JSON.stringify(requestPayload.messages)}\n\nHãy đánh giá và trả về JSON.`
+
+                      const geminiResult = await callGemini(prompt, "gemini-3.1-pro-preview", systemPrompt)
 
                       const jsonMatch = geminiResult.match(/\{[\s\S]*\}/)
                       if (jsonMatch) {

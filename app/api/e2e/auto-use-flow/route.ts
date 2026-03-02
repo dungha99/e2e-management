@@ -401,7 +401,7 @@ async function callGeminiForParameters(
   const vnTime = new Date(now.getTime() + 7 * 60 * 60 * 1000)
   const todayInfo = `Current date and time (Vietnam UTC+7): ${vnTime.toISOString().replace('T', ' ').slice(0, 19)}, ${['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][vnTime.getUTCDay()]}`
 
-  const url = `${geminiHost}/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`
+  const url = `${geminiHost}/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`
 
   const results: any[] = []
 

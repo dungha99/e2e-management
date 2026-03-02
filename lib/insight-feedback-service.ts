@@ -14,6 +14,7 @@ export interface SubmitFeedbackParams {
   sourceInstanceId: string
   phoneNumber: string
   feedback: string
+  chat_history?: any
 }
 
 export interface SubmitFeedbackResult {
@@ -28,7 +29,7 @@ export interface SubmitFeedbackResult {
  * and save the new analysis. Same logic as the feedback path in ai-insights/route.ts.
  */
 export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<SubmitFeedbackResult> {
-  const { carId, sourceInstanceId, phoneNumber, feedback } = params
+  const { carId, sourceInstanceId, phoneNumber, feedback, chat_history } = params
 
   try {
     // --- 1. Get existing insight ---
@@ -146,6 +147,7 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
       feedback,
       currentContext,
       similarLeadsContext,
+      chat_history,
     }
 
     const headers: Record<string, string> = {

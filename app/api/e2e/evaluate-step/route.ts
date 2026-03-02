@@ -222,7 +222,7 @@ async function callGeminiEvaluation(
   const geminiHost =
     process.env.GEMINI_HOST ||
     "https://generativelanguage.googleapis.com"
-  const model = "gemini-2.5-flash"
+  const model = "gemini-3-flash-preview"
   const url = `${geminiHost}/v1beta/models/${model}:generateContent?key=${apiKey}`
 
   const stepDescription = step.description || "Không có mô tả chi tiết cho bước này."

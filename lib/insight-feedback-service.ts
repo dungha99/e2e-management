@@ -100,6 +100,34 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
       insightIdToUpdate = placeholderResult.rows[0].id
     }
 
+    // --- 2.5 Fetch historical feedback ---
+    let feedbackHistoryText = ""
+    try {
+      const historyResult = await e2eQuery(
+        `SELECT oai.user_feedback, oai.created_at
+         FROM old_ai_insights oai
+         JOIN ai_insights ai ON ai.id = oai.ai_insight_id
+         WHERE ai.car_id = $1
+         ORDER BY oai.created_at ASC`,
+        [carId]
+      )
+
+      if (historyResult.rows.length > 0) {
+        // Construct the history text with order
+        feedbackHistoryText = historyResult.rows
+          .map((row, index) => {
+            const dateObj = new Date(row.created_at)
+            // Add 7 hours for VN time (similar to workflow-service logic)
+            const vnTime = new Date(dateObj.getTime() + 7 * 60 * 60 * 1000)
+            const dateStr = vnTime.toISOString().replace('T', ' ').slice(0, 16)
+            return `[Lần ${index + 1} - ${dateStr}] Feedback: ${row.user_feedback}`
+          })
+          .join('\n\n')
+      }
+    } catch (err) {
+      console.error("[InsightFeedback] Failed to fetch feedback history (non-blocking):", err)
+    }
+
     // --- 3. Vector search for similar leads context ---
     let similarLeadsContext = ""
     let currentContext = ""
@@ -145,6 +173,7 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
       phoneNumber,
       previousInsight: existingInsight?.ai_insight_summary,
       feedback,
+      feedbackHistory: feedbackHistoryText,
       currentContext,
       similarLeadsContext,
       chat_history,

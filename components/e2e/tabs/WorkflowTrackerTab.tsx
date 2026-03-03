@@ -416,6 +416,7 @@ export function WorkflowTrackerTab({
   // Fetch AI insights when accessing a completed workflow instance
   useEffect(() => {
     let isMounted = true
+    let pollInterval: NodeJS.Timeout | null = null
 
     // Clear previous insights when switching or if dependencies change
     setAiInsights(null)
@@ -444,33 +445,53 @@ export function WorkflowTrackerTab({
       return
     }
 
-    console.log(`[WorkflowTracker] Fetching AI insights for completed instance: ${sourceInstanceId}`)
-    setFetchingAiInsights(true)
-    fetchAiInsights(selectedLead.car_id, sourceInstanceId, phoneNumber)
-      .then((insights) => {
-        if (isMounted) {
+    const loadInsights = () => {
+      if (!isMounted) return
+
+      console.log(`[WorkflowTracker] Fetching AI insights for completed instance: ${sourceInstanceId}...`)
+      setFetchingAiInsights(true)
+
+      fetchAiInsights(selectedLead.car_id!, sourceInstanceId, phoneNumber)
+        .then((insights) => {
+          if (!isMounted) return
           setAiInsights(insights)
           console.log("[WorkflowTracker] AI Insights fetched:", insights)
-        }
-      })
-      .catch((error) => {
-        if (isMounted) {
-          // Check if it's a 202 "still processing" response
+
+          if (pollInterval) {
+            clearInterval(pollInterval)
+            pollInterval = null
+          }
+          setFetchingAiInsights(false)
+        })
+        .catch((error) => {
+          if (!isMounted) return
+
+          // Check if it's a 202 "still processing" response -> set up polling
           if (error.message.includes("still being processed")) {
-            console.log("[WorkflowTracker] AI insights still processing, will retry on next render")
+            console.log("[WorkflowTracker] AI insights still processing, will check again in 3s")
+            // Make sure we show loading state while polling
+            setFetchingAiInsights(true)
+
+            // Start polling if not started
+            if (!pollInterval) {
+              pollInterval = setInterval(loadInsights, 3000)
+            }
           } else {
             console.error("[WorkflowTracker] Failed to fetch AI insights:", error)
+            setFetchingAiInsights(false)
+            if (pollInterval) {
+              clearInterval(pollInterval)
+              pollInterval = null
+            }
           }
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setFetchingAiInsights(false)
-        }
-      })
+        })
+    }
+
+    loadInsights()
 
     return () => {
       isMounted = false
+      if (pollInterval) clearInterval(pollInterval)
     }
   }, [activeWorkflowView, workflowInstancesData, selectedLead.car_id, selectedLead.phone, selectedLead.additional_phone])
 

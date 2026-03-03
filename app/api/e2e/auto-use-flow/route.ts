@@ -567,7 +567,7 @@ export async function POST(request: Request) {
     storeAgentOutput({
       agentName: "Router (Plan)",
       carId,
-      inputPayload: { aiInsightSummary },
+      inputPayload: { prompt: typeof aiInsightSummary === 'string' ? aiInsightSummary : JSON.stringify(aiInsightSummary) },
       outputPayload: { extractedSteps },
     }).catch(err => console.error("[Auto Use Flow] Failed to store Router output:", err))
 
@@ -613,7 +613,7 @@ export async function POST(request: Request) {
     storeAgentOutput({
       agentName: "Worker (Parameter/Rule)",
       carId,
-      inputPayload: { extractedSteps, leadContext },
+      inputPayload: { prompt: geminiResults.map((r: any) => r._prompt).join("\n\n=== NEXT STEP ===\n\n") },
       outputPayload: geminiResults,
     }).catch(err => console.error("[Auto Use Flow] Failed to store Worker output:", err))
 

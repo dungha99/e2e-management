@@ -74,7 +74,7 @@ export async function POST(request: Request) {
       agentName: "Feedback",
       carId,
       sourceInstanceId,
-      inputPayload: { insightIdToUpdate },
+      inputPayload: insightIdToUpdate,
       outputPayload: storageSummary,
     }).catch(err => console.error("[AI Insights Callback] Failed to store agent output:", err))
 

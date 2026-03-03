@@ -229,7 +229,7 @@ export async function handleAutoUseFlow(params: {
     storeAgentOutput({
       agentName: "Router (Plan)",
       carId,
-      inputPayload: { aiInsightSummary },
+      inputPayload: typeof aiInsightSummary === 'string' ? aiInsightSummary : JSON.stringify(aiInsightSummary),
       outputPayload: { extractedSteps },
     }).catch(err => console.error("[handleAutoUseFlow] Failed to store Router output:", err))
     if (extractedSteps.length === 0) {
@@ -279,7 +279,7 @@ export async function handleAutoUseFlow(params: {
     storeAgentOutput({
       agentName: "Worker (Parameter/Rule)",
       carId,
-      inputPayload: { extractedSteps, leadContext },
+      inputPayload: geminiResults.map((r: any) => r._prompt).join("\n\n=== NEXT STEP ===\n\n"),
       outputPayload: geminiResults,
     }).catch(err => console.error("[handleAutoUseFlow] Failed to store Worker output:", err))
 
@@ -599,6 +599,7 @@ Return JSON object.`
     console.log(`[Workflow Service] Gemini response for step ${idx + 1}:`, rawText.slice(0, 300))
 
     const parsed = parseGeminiJsonObject(rawText)
+    parsed._prompt = userPrompt
     results.push(parsed)
   }
 

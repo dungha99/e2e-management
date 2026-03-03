@@ -311,7 +311,7 @@ Bạn CHỈ được trả về JSON object duy nhất.
                             agentName: "Review Messages Scheduled",
                             carId: instance.car_id,
                             sourceInstanceId: instance.id,
-                            inputPayload: { prompt, originalMessages: requestPayload.messages },
+                            inputPayload: prompt,
                             outputPayload: parsed,
                           }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
                         }

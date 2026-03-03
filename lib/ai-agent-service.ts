@@ -62,3 +62,24 @@ export async function storeAgentOutput(params: StoreAgentOutputParams): Promise<
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
+
+/**
+ * Fetches the currently active note content (markdown configuration) for a given agent.
+ * Returns null if no active note exists or if the agent is not found.
+ */
+export async function getActiveAgentNote(agentName: string): Promise<string | null> {
+  try {
+    const result = await e2eQuery(
+      `SELECT n.note_content 
+       FROM ai_agent_notes n
+       JOIN ai_agents a ON a.id = n.agent_id
+       WHERE a.name = $1 AND n.is_active = true 
+       LIMIT 1`,
+      [agentName]
+    );
+    return result.rows.length > 0 ? result.rows[0].note_content : null;
+  } catch (error) {
+    console.error(`[AI Agent Service] Error fetching active note for ${agentName}:`, error);
+    return null;
+  }
+}

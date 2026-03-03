@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
-import { storeAgentOutput } from "@/lib/ai-agent-service"
+import { storeAgentOutput, getActiveAgentNote } from "@/lib/ai-agent-service"
 
 /**
  * POST /api/e2e/auto-use-flow
@@ -390,6 +390,7 @@ async function callGeminiForParameters(
   picId: string,
   carId: string,
   phoneNumber: string,
+  workerAgentNote?: string | null
 ): Promise<any[]> {
   const geminiHost = process.env.GEMINI_HOST || "https://generativelanguage.googleapis.com"
   const geminiApiKey = process.env.GEMINI_API_KEY
@@ -425,7 +426,7 @@ Decided parameters: ${JSON.stringify(prevResult.parameters, null, 2)}
 `
     }
 
-    const systemPrompt = `Role: Bạn là một Trợ lý Bán hàng (Sales Agent) chuyên nghiệp tại Vucar. Nhiệm vụ của bạn là trích xuất dữ liệu từ kịch bản tư vấn để điều phối quy trình qua API.
+    const systemPrompt = `${workerAgentNote ? `### Cấu Hình Bổ Sung (System Preferences):\n${workerAgentNote}\n\n` : ''}Role: Bạn là một Trợ lý Bán hàng (Sales Agent) chuyên nghiệp tại Vucar. Nhiệm vụ của bạn là trích xuất dữ liệu từ kịch bản tư vấn để điều phối quy trình qua API.
 
 Objective: Xác định đúng hành động (Action) và điền tham số (parameters). Đặc biệt lưu ý tính toán thời gian scheduled_at dựa trên trình tự các bước.
 
@@ -598,13 +599,15 @@ export async function POST(request: Request) {
     )
 
     // --- 4. Call Gemini to decide parameters ---
+    const workerAgentNote = await getActiveAgentNote("Worker (Parameter/Rule)")
     const geminiResults = await callGeminiForParameters(
       extractedSteps,
       stepSchemas,
       leadContext,
-      picId || "",
+      picId,
       carId,
       phoneNumber,
+      workerAgentNote
     )
 
     console.log(`[Auto Use Flow] Gemini decided parameters for ${geminiResults.length} steps`)

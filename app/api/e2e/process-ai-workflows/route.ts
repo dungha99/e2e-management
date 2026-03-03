@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { submitAiFeedback } from "@/lib/insight-feedback-service"
 import { callGemini } from "@/lib/gemini"
-import { storeAgentOutput } from "@/lib/ai-agent-service"
+import { storeAgentOutput, getActiveAgentNote } from "@/lib/ai-agent-service"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -249,8 +249,9 @@ export async function GET() {
                     const historyData = await historyRes.json()
                     if (historyData.is_successful && historyData.chat_history) {
                       const recentChat = historyData.chat_history.slice(-100)
+                      const reviewAgentNote = await getActiveAgentNote("Review Messages Scheduled")
 
-                      const systemPrompt = `# VAI TRÒ (ROLE)
+                      const systemPrompt = `${reviewAgentNote ? `### Cấu Hình Bổ Sung (System Preferences):\n${reviewAgentNote}\n\n` : ''}# VAI TRÒ (ROLE)
 Bạn là "Chuyên gia Tư vấn Truyền thông Vucar" - người thẩm định cuối cùng cho mọi tin nhắn gửi đi trên Zalo. Nhiệm vụ của bạn là biến các bản thảo tin nhắn từ Chat Agent trở nên "người" hơn, gần gũi hơn và có tỷ lệ chuyển đổi cao hơn.
 
 # BỐI CẢNH (CONTEXT)

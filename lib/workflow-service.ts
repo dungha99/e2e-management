@@ -1,5 +1,5 @@
-import { e2eQuery, vucarV2Query } from "@/lib/db"
-import { storeAgentOutput } from "@/lib/ai-agent-service"
+import { vucarV2Query, e2eQuery } from "./db"
+import { storeAgentOutput, getActiveAgentNote } from "./ai-agent-service"
 
 /**
  * Shared service for AI workflows. 
@@ -263,7 +263,11 @@ export async function handleAutoUseFlow(params: {
     )
     console.log(`[handleAutoUseFlow] Schemas loaded in ${Date.now() - schemaStart}ms`)
 
-    // 4. Call Gemini for parameters
+    // 4. Load agent note for Worker
+    console.log(`[handleAutoUseFlow] Loading Worker agent note...`)
+    const workerAgentNote = await getActiveAgentNote("Worker (Parameter/Rule)")
+
+    // 5. Call Gemini for parameters
     console.log(`[handleAutoUseFlow] Calling Gemini for parameters for ${extractedSteps.length} steps...`)
     const geminiResults = await callGeminiForParameters(
       extractedSteps,
@@ -271,7 +275,8 @@ export async function handleAutoUseFlow(params: {
       leadContext,
       picId || "",
       carId,
-      phoneNumber
+      phoneNumber,
+      workerAgentNote
     )
     console.log(`[handleAutoUseFlow] Gemini returned ${geminiResults?.length} results`)
 
@@ -467,7 +472,8 @@ async function callGeminiForParameters(
   leadContext: string,
   picId: string,
   carId: string,
-  phoneNumber: string
+  phoneNumber: string,
+  workerAgentNote?: string | null
 ) {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error("GEMINI_API_KEY missing")
@@ -480,7 +486,7 @@ async function callGeminiForParameters(
   const dayNames = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
   const todayInfo = `Current date and time (Vietnam UTC+7): ${vnTime.toISOString().replace('T', ' ').slice(0, 19)}, ${dayNames[vnTime.getUTCDay()]}`
 
-  const baseSystemPrompt = `Role: Bạn là một Trợ lý Bán hàng (Sales Agent) chuyên nghiệp tại Vucar. Nhiệm vụ của bạn là trích xuất dữ liệu từ kịch bản tư vấn để điều phối quy trình qua API.
+  const baseSystemPrompt = `${workerAgentNote ? `### Cấu Hình Bổ Sung (System Preferences):\n${workerAgentNote}\n\n` : ''}Role: Bạn là một Trợ lý Bán hàng (Sales Agent) chuyên nghiệp tại Vucar. Nhiệm vụ của bạn là trích xuất dữ liệu từ kịch bản tư vấn để điều phối quy trình qua API.
 
 Objective: Xác định đúng hành động (Action) và điền tham số (parameters). Đặc biệt lưu ý tính toán thời gian scheduled_at dựa trên trình tự các bước.
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { submitAiFeedback } from "@/lib/insight-feedback-service"
-import { storeAgentOutput } from "@/lib/ai-agent-service"
+import { storeAgentOutput, getActiveAgentNote } from "@/lib/ai-agent-service"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -190,10 +190,12 @@ async function evaluateSingleItem(phone: string, autoChatOutput: any) {
   const existingInsight = insightResult.rows[0]?.ai_insight_summary
 
   // --- 3. Call Gemini to evaluate ---
+  const evalAgentNote = await getActiveAgentNote("Evaluate-step")
   const geminiResult = await callGeminiEvaluation(
     step,
     autoChatOutput,
-    existingInsight
+    existingInsight,
+    evalAgentNote
   )
 
   console.log(
@@ -253,7 +255,8 @@ async function callGeminiEvaluation(
     actions?: string[]
     message_suggestions?: string[]
   },
-  existingInsight?: any
+  existingInsight?: any,
+  agentNote?: string | null
 ): Promise<{ thinking: string; verdict: "on_track" | "deviated" }> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error("GEMINI_API_KEY missing")
@@ -266,7 +269,7 @@ async function callGeminiEvaluation(
 
   const stepDescription = step.description || "Không có mô tả chi tiết cho bước này."
 
-  const systemPrompt = `Bạn là 1 AI evaluator cho quy trình sales xe cũ VuCar.
+  const systemPrompt = `${agentNote ? `### Cấu Hình Bổ Sung (System Preferences):\n${agentNote}\n\n` : ''}Bạn là 1 AI evaluator cho quy trình sales xe cũ VuCar.
 
 ## NHIỆM VỤ
 Đánh giá output từ hệ thống auto-chat và xác định liệu cuộc hội thoại có đang đi đúng hướng so với mục tiêu của bước workflow hiện tại hay không.

@@ -1,5 +1,6 @@
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { findSimilarLeads } from "@/lib/vector-search"
+import { getActiveAgentNote } from "@/lib/ai-agent-service"
 
 /**
  * Shared service for submitting AI feedback and triggering re-analysis.
@@ -190,6 +191,9 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
       }
     }
 
+    const feedbackAgentNote = await getActiveAgentNote("Feedback")
+    const routerAgentNote = await getActiveAgentNote("Router (Plan)")
+
     const payload = {
       carId,
       sourceInstanceId,
@@ -200,6 +204,8 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
       currentContext,
       similarLeadsContext,
       chat_history,
+      feedbackAgentNote,
+      routerAgentNote,
     }
 
     const headers: Record<string, string> = {

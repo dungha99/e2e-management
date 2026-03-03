@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { e2eQuery, vucarV2Query } from "@/lib/db"
-import { handleAutoUseFlow } from "@/lib/workflow-service"
+import { e2eQuery } from "@/lib/db"
 import { storeAgentOutput } from "@/lib/ai-agent-service"
 
 export const dynamic = "force-dynamic"
@@ -78,7 +77,8 @@ export async function POST(request: Request) {
       outputPayload: storageSummary,
     }).catch(err => console.error("[AI Insights Callback] Failed to store agent output:", err))
 
-    // --- 4. Auto Use Flow for test Car IDs ---
+    // --- 4. Auto Use Flow for test Car IDs (COMMENTED OUT) ---
+    /*
     const testCarIds = [
       "4f4aba46-9e76-4100-87f9-26a37c141d04",
       "faaaac34-1fcb-4bb3-99d8-4f1597251bb7",
@@ -90,27 +90,28 @@ export async function POST(request: Request) {
     ]
     try {
       const leadCheck = await vucarV2Query(
-        `SELECT l.pic_id FROM cars c JOIN leads l ON l.id = c.lead_id WHERE c.id = $1 LIMIT 1`,
+        \`SELECT l.pic_id FROM cars c JOIN leads l ON l.id = c.lead_id WHERE c.id = $1 LIMIT 1\`,
         [carId]
       )
       const currentPicId = leadCheck.rows[0]?.pic_id
 
       if (testCarIds.includes(carId) || currentPicId === "2ffa8389-2641-4d8b-98a6-5dc2dd2d20a4") {
-        console.log(`[AI Insights Callback] Auto Use Flow triggered for test car ${carId} (or picId ${currentPicId})`)
+        console.log(\`[AI Insights Callback] Auto Use Flow triggered for test car \${carId} (or picId \${currentPicId})\`)
         try {
           await handleAutoUseFlow({
             carId,
             aiInsightSummary: storageSummary,
             picId: currentPicId,
           })
-          console.log(`[AI Insights Callback] handleAutoUseFlow finished for car ${carId}`)
+          console.log(\`[AI Insights Callback] handleAutoUseFlow finished for car \${carId}\`)
         } catch (err) {
-          console.error(`[AI Insights Callback] handleAutoUseFlow FAILED for car ${carId}:`, err)
+          console.error(\`[AI Insights Callback] handleAutoUseFlow FAILED for car \${carId}:\`, err)
         }
       }
     } catch (autoFlowErr) {
       console.error("[AI Insights Callback] Auto Use Flow check error:", autoFlowErr)
     }
+    */
 
     return NextResponse.json({ success: true, insightId: insightIdToUpdate })
   } catch (error) {

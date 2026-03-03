@@ -53,6 +53,9 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
   const [isBlacklisted, setIsBlacklisted] = useState(false)
   const [togglingBlacklist, setTogglingBlacklist] = useState(false)
 
+  // State for Re-trigger
+  const [retriggeringAi, setRetriggeringAi] = useState(false)
+
   // State for Configuration Form
   const [isConfigMode, setIsConfigMode] = useState(false)
   const [agents, setAgents] = useState<Agent[]>([])
@@ -111,6 +114,36 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
       toast({ title: "Lỗi", description: "Lỗi hệ thống", variant: "destructive" })
     } finally {
       setTogglingBlacklist(false)
+    }
+  }
+
+  async function retriggerAi() {
+    const phone = selectedLead?.phone || selectedLead?.additional_phone
+    if (!phone) {
+      toast({ title: "Lỗi", description: "Không tìm thấy số điện thoại của Lead", variant: "destructive" })
+      return
+    }
+    setRetriggeringAi(true)
+    try {
+      const res = await fetch("/api/e2e/analyze-lead-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, chat_history: [] }),
+      })
+      // The API streams, so just reading to completion is enough
+      if (res.body) {
+        const reader = res.body.getReader()
+        while (true) {
+          const { done } = await reader.read()
+          if (done) break
+        }
+      }
+      toast({ title: "Thành công", description: "Đã kích hoạt lại AI Flow cho Lead này" })
+    } catch (err) {
+      console.error("Failed to re-trigger AI:", err)
+      toast({ title: "Lỗi", description: "Không thể kích hoạt lại AI", variant: "destructive" })
+    } finally {
+      setRetriggeringAi(false)
     }
   }
 
@@ -400,7 +433,20 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
                 Inspector: {selectedOutput.agent_name}
               </h3>
 
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                {/* Re-trigger AI button (always visible) */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs px-3 border-orange-300 text-orange-600 hover:bg-orange-50"
+                  onClick={retriggerAi}
+                  disabled={retriggeringAi}
+                >
+                  {retriggeringAi ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                  RE-TRIGGER
+                </Button>
+
+                {/* Deactivate / Rerun AI */}
                 <div className="flex items-center rounded-lg">
                   {isBlacklisted ? (
                     <Button

@@ -8,14 +8,14 @@ export async function POST(request: Request) {
     const { carId, sourceInstanceId, phoneNumber, userFeedback } = body
 
     // Validation
-    if (!carId || !sourceInstanceId || !phoneNumber) {
+    if (!carId || !phoneNumber) {
       return NextResponse.json(
-        { error: "Missing required fields: carId, sourceInstanceId, phoneNumber" },
+        { error: "Missing required fields: carId, phoneNumber" },
         { status: 400 }
       )
     }
 
-    // --- Step 1: Check database for latest AI insight ---
+    // --- Step 1: Check database for latest AI insight (across ALL instances for this car) ---
     const latestInsightResult = await e2eQuery(
       `SELECT
         ai.id,
@@ -24,12 +24,13 @@ export async function POST(request: Request) {
         ai.target_workflow_id,
         ai.is_positive,
         ai.created_at,
+        ai.source_instance_id,
         EXTRACT(EPOCH FROM (NOW() - ai.created_at)) as age_seconds
        FROM ai_insights ai
-       WHERE ai.car_id = $1 AND ai.source_instance_id = $2
+       WHERE ai.car_id = $1
        ORDER BY ai.created_at DESC
        LIMIT 1`,
-      [carId, sourceInstanceId]
+      [carId]
     )
 
     const existingInsight = latestInsightResult.rows[0]

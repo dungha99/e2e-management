@@ -413,33 +413,21 @@ export function WorkflowTrackerTab({
   // Join data
   const currentInstance = workflowInstancesData?.data?.find(i => i.instance.workflow_id === activeWorkflowView)
 
-  // Fetch AI insights when accessing a completed workflow instance
+  // Fetch AI insights whenever a dynamic workflow is selected (not just when completed)
   useEffect(() => {
     let isMounted = true
     let pollInterval: NodeJS.Timeout | null = null
 
-    // Clear previous insights when switching or if dependencies change
+    // Clear previous insights when switching lead
     setAiInsights(null)
 
     // Only fetch for dynamic workflows (not "purchase" or "seeding")
     const isDynamicWorkflow = activeWorkflowView !== "purchase" && activeWorkflowView !== "seeding"
-    if (!isDynamicWorkflow || !workflowInstancesData || !selectedLead.car_id) {
+    if (!isDynamicWorkflow || !selectedLead.car_id) {
       return
     }
 
-    // Find the current workflow instance being viewed
-    const currentInstance = workflowInstancesData.data?.find(i => i.instance.workflow_id === activeWorkflowView)
-
-    // Only fetch AI insights if this specific workflow instance is completed
-    if (!currentInstance || currentInstance.instance.status !== "completed") {
-      console.log(`[WorkflowTracker] Current workflow not completed, skipping AI insights`)
-      return
-    }
-
-    // Use the current completed instance ID as source for AI insights
-    const sourceInstanceId = currentInstance.instance.id
-
-    // Fetch AI insights in background for this specific source instance
+    // Fetch AI insights in background — loads latest insight across ALL instances for this car
     const phoneNumber = selectedLead.phone || selectedLead.additional_phone
     if (!phoneNumber) {
       return
@@ -448,10 +436,10 @@ export function WorkflowTrackerTab({
     const loadInsights = () => {
       if (!isMounted) return
 
-      console.log(`[WorkflowTracker] Fetching AI insights for completed instance: ${sourceInstanceId}...`)
+      console.log(`[WorkflowTracker] Fetching AI insights for car ${selectedLead.car_id}...`)
       setFetchingAiInsights(true)
 
-      fetchAiInsights(selectedLead.car_id!, sourceInstanceId, phoneNumber)
+      fetchAiInsights(selectedLead.car_id!, phoneNumber)
         .then((insights) => {
           if (!isMounted) return
           setAiInsights(insights)
@@ -493,7 +481,8 @@ export function WorkflowTrackerTab({
       isMounted = false
       if (pollInterval) clearInterval(pollInterval)
     }
-  }, [activeWorkflowView, workflowInstancesData, selectedLead.car_id, selectedLead.phone, selectedLead.additional_phone])
+  }, [activeWorkflowView, selectedLead.car_id, selectedLead.phone, selectedLead.additional_phone])
+
 
   // Fetch win case history when car model is available
   useEffect(() => {
@@ -658,7 +647,6 @@ ${dealerBidsStr}`
           try {
             const newInsights = await fetchAiInsights(
               selectedLead.car_id,
-              currentInstance.instance.id,
               phoneNumber,
               feedback
             )

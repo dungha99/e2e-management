@@ -1,6 +1,5 @@
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { findSimilarLeads } from "@/lib/vector-search"
-import { handleAutoUseFlow } from "@/lib/workflow-service"
 
 /**
  * Shared service for submitting AI feedback and triggering re-analysis.
@@ -21,6 +20,7 @@ export interface SubmitFeedbackResult {
   success: boolean
   insightId?: string
   newAnalysis?: any
+  processing?: boolean
   error?: string
 }
 
@@ -167,12 +167,35 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
     const connector = connectorResult.rows[0]
     const { base_url, method, auth_config } = connector
 
+    // Resolve the real previousInsight:
+    // If existing insight is in "processing" state (from a previous call),
+    // fetch the last archived insight from old_ai_insights instead.
+    let realPreviousInsight = existingInsight?.ai_insight_summary
+    if (realPreviousInsight?.processing === true) {
+      try {
+        const archivedResult = await e2eQuery(
+          `SELECT ai_insight_summary FROM old_ai_insights
+           WHERE ai_insight_id = $1
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [existingInsight.id]
+        )
+        if (archivedResult.rows.length > 0) {
+          const archived = archivedResult.rows[0].ai_insight_summary
+          realPreviousInsight = typeof archived === 'string' ? JSON.parse(archived) : archived
+          console.log(`[InsightFeedback] previousInsight was processing, using archived insight instead`)
+        }
+      } catch (err) {
+        console.warn(`[InsightFeedback] Failed to fetch archived insight, using processing state:`, err)
+      }
+    }
+
     const payload = {
       carId,
       sourceInstanceId,
       phoneNumber,
-      previousInsight: existingInsight?.ai_insight_summary,
-      feedback,
+      previousInsight: realPreviousInsight,
+      feedback: feedback || "",
       feedbackHistory: feedbackHistoryText,
       currentContext,
       similarLeadsContext,
@@ -196,95 +219,35 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
     const webhookUrl = `${base_url}/${encodeURIComponent(phoneNumber)}`
     console.log(`[InsightFeedback] Calling webhook: ${method || "POST"} ${webhookUrl}`)
 
+    // --- 5. Async webhook call with callback ---
+    const appBaseUrl = process.env.APP_BASE_URL
+      || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+    const callbackUrl = `${appBaseUrl}/api/e2e/ai-insights/callback`
+
+    const asyncPayload = {
+      ...payload,
+      insightIdToUpdate,
+      callbackUrl,
+    }
+
     const response = await fetch(webhookUrl, {
       method: method || "POST",
       headers,
-      body: JSON.stringify(payload),
+      body: JSON.stringify(asyncPayload),
     })
 
+    // n8n should respond immediately via "Respond to Webhook" node
     if (!response.ok) {
       throw new Error(`AI Webhook failed: ${response.status}`)
     }
 
-    let aiResponse = await response.json()
-    if (Array.isArray(aiResponse)) aiResponse = aiResponse[0]
+    console.log(`[InsightFeedback] Webhook accepted for insight ${insightIdToUpdate}, awaiting callback`)
 
-    // --- 5. Extract and save result ---
-    const findNestedValue = (obj: any, targetKey: string): any => {
-      if (!obj || typeof obj !== "object") return undefined
-      if (targetKey in obj) return obj[targetKey]
-      for (const key in obj) {
-        const found = findNestedValue(obj[key], targetKey)
-        if (found !== undefined) return found
-      }
-      return undefined
-    }
-
-    // Guard: the AI may return "N/A" or other non-UUID strings for ID fields.
-    // PostgreSQL will reject those — convert to null.
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-    const toUuidOrNull = (v: any): string | null =>
-      typeof v === "string" && UUID_RE.test(v) ? v : null
-
-    const selectedTransitionId = toUuidOrNull(findNestedValue(aiResponse, "selected_transition_id"))
-    const targetWorkflowId = toUuidOrNull(findNestedValue(aiResponse, "target_workflow_id"))
-    const storageSummary = aiResponse.analysis || aiResponse
-
-    await e2eQuery(
-      `UPDATE ai_insights
-       SET ai_insight_summary = $1, selected_transition_id = $2, target_workflow_id = $3
-       WHERE id = $4`,
-      [
-        JSON.stringify(storageSummary),
-        selectedTransitionId,
-        targetWorkflowId,
-        insightIdToUpdate,
-      ]
-    )
-
-    console.log(`[InsightFeedback] Successfully updated insight ${insightIdToUpdate}`)
-
-    // --- 6. Auto Use Flow: fire-and-forget for test Car IDs ---
-    const testCarIds = [
-      "4f4aba46-9e76-4100-87f9-26a37c141d04",
-      "faaaac34-1fcb-4bb3-99d8-4f1597251bb7",
-      "6f38b1e4-4708-4547-bc04-46d5b9c6082b",
-      "41a305f9-1742-4712-940b-fd84e714384c",
-      "f360a4f8-5539-4a0e-9a9d-47e453058d58",
-      "eb268d8a-1763-460f-b773-4687d356879b",
-      "b51dafce-845f-4cae-a55f-c5a7b8e7b2bf"
-    ]
-    try {
-      // Get pic_id for background processing context
-      const leadCheck = await vucarV2Query(
-        `SELECT l.pic_id FROM cars c JOIN leads l ON l.id = c.lead_id WHERE c.id = $1 LIMIT 1`,
-        [carId]
-      )
-      const currentPicId = leadCheck.rows[0]?.pic_id
-
-      if (testCarIds.includes(carId)) {
-        console.log(`[InsightFeedback] Auto Use Flow triggered for test PIC/car`)
-        // Inline await for stability on Vercel
-        try {
-          console.log(`[InsightFeedback] Starting handleAutoUseFlow for car ${carId}...`)
-          await handleAutoUseFlow({
-            carId,
-            aiInsightSummary: storageSummary,
-            picId: currentPicId,
-          })
-          console.log(`[InsightFeedback] handleAutoUseFlow finished successfully for car ${carId}`)
-        } catch (err) {
-          console.error(`[InsightFeedback] handleAutoUseFlow FAILED for car ${carId}:`, err)
-        }
-      }
-    } catch (autoFlowErr) {
-      console.error("[InsightFeedback] Auto Use Flow check error (non-blocking):", autoFlowErr)
-    }
-
+    // Return immediately — the callback endpoint will handle DB update, Auto Use Flow, and agent tracking
     return {
       success: true,
       insightId: insightIdToUpdate,
-      newAnalysis: storageSummary,
+      processing: true,
     }
   } catch (error) {
     console.error("[InsightFeedback] Error:", error)

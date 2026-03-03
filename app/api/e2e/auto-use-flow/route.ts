@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
+import { storeAgentOutput } from "@/lib/ai-agent-service"
 
 /**
  * POST /api/e2e/auto-use-flow
@@ -562,6 +563,14 @@ export async function POST(request: Request) {
     const extractedSteps = extractStepsFromAnalysis(aiInsightSummary)
     console.log(`[Auto Use Flow] Extracted ${extractedSteps.length} steps from analysis`)
 
+    // Track Router (Plan) agent output
+    storeAgentOutput({
+      agentName: "Router (Plan)",
+      carId,
+      inputPayload: { aiInsightSummary },
+      outputPayload: { extractedSteps },
+    }).catch(err => console.error("[Auto Use Flow] Failed to store Router output:", err))
+
     if (extractedSteps.length === 0) {
       return NextResponse.json({
         success: true,
@@ -599,6 +608,14 @@ export async function POST(request: Request) {
     )
 
     console.log(`[Auto Use Flow] Gemini decided parameters for ${geminiResults.length} steps`)
+
+    // Track Worker (Parameter/Rule) agent output
+    storeAgentOutput({
+      agentName: "Worker (Parameter/Rule)",
+      carId,
+      inputPayload: { extractedSteps, leadContext },
+      outputPayload: geminiResults,
+    }).catch(err => console.error("[Auto Use Flow] Failed to store Worker output:", err))
 
     // --- 5. Build workflow creation payload ---
     const workflowName = `AI Auto Flow ${new Date().toLocaleDateString('vi-VN')}`

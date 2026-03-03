@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { submitAiFeedback } from "@/lib/insight-feedback-service"
+import { storeAgentOutput } from "@/lib/ai-agent-service"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -198,6 +199,15 @@ async function evaluateSingleItem(phone: string, autoChatOutput: any) {
   console.log(
     `[EvaluateStep] Phone=${phone}, Step="${step.step_name}", Verdict=${geminiResult.verdict}`
   )
+
+  // Track Evaluate-step agent output
+  storeAgentOutput({
+    agentName: "Evaluate-step",
+    carId: car.id,
+    sourceInstanceId: instance.id,
+    inputPayload: { step: step.step_name, autoChatOutput },
+    outputPayload: geminiResult,
+  }).catch(err => console.error("[EvaluateStep] Failed to store agent output:", err))
 
   // --- 4. If deviated, submit feedback to trigger re-analysis ---
   let strategyRevised = false

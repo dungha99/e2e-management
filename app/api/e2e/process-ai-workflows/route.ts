@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { submitAiFeedback } from "@/lib/insight-feedback-service"
 import { callGemini } from "@/lib/gemini"
+import { storeAgentOutput } from "@/lib/ai-agent-service"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -304,6 +305,15 @@ Bạn CHỈ được trả về JSON object duy nhất.
                             [JSON.stringify(requestPayload), execution.id]
                           )
                           console.log(`[Process AI Workflows] AI Script Evaluator successfully rewrote messages.`)
+
+                          // Track Review Messages Scheduled agent output
+                          storeAgentOutput({
+                            agentName: "Review Messages Scheduled",
+                            carId: instance.car_id,
+                            sourceInstanceId: instance.id,
+                            inputPayload: { prompt, originalMessages: requestPayload.messages },
+                            outputPayload: parsed,
+                          }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
                         }
                       }
                     }
@@ -529,7 +539,7 @@ async function executeConnector(
 // Helper: Check if customer has responded in the last 2 days via Zalo chat
 // =========================================================================
 async function checkCustomerResponded(phone: string, picId: string): Promise<boolean> {
-  const SIX_HOURS_MS = 6 * 60 * 60 * 1000
+  const CustomerResponded_MS = 2 * 24 * 60 * 60 * 1000
 
   // Step 1: Get shop_id from n8n webhook using pic_id
   const controller = new AbortController()
@@ -596,7 +606,7 @@ async function checkCustomerResponded(phone: string, picId: string): Promise<boo
   }
 
   // Step 3: Find any message from the CUSTOMER (senderName without "Vucar") within 6 hours
-  const cutoff = new Date(Date.now() - SIX_HOURS_MS)
+  const cutoff = new Date(Date.now() - CustomerResponded_MS)
   const customerReplied = chatHistory.some((msg) => {
     const name: string = msg.senderName || ""
     const isCustomer = !name.toLowerCase().includes("vucar")

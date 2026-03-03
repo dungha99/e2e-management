@@ -1,4 +1,5 @@
 import { e2eQuery, vucarV2Query } from "@/lib/db"
+import { storeAgentOutput } from "@/lib/ai-agent-service"
 
 /**
  * Shared service for AI workflows. 
@@ -223,6 +224,14 @@ export async function handleAutoUseFlow(params: {
     // 1. Extract steps
     const extractedSteps = extractStepsFromAnalysis(aiInsightSummary)
     console.log(`[handleAutoUseFlow] Extracted steps count: ${extractedSteps.length}`)
+
+    // Track Router (Plan) agent output
+    storeAgentOutput({
+      agentName: "Router (Plan)",
+      carId,
+      inputPayload: { aiInsightSummary },
+      outputPayload: { extractedSteps },
+    }).catch(err => console.error("[handleAutoUseFlow] Failed to store Router output:", err))
     if (extractedSteps.length === 0) {
       console.log(`[handleAutoUseFlow] No actionable steps found in summary. First 500 chars:`, JSON.stringify(aiInsightSummary).substring(0, 500))
       return { success: true, message: "No actionable steps" }
@@ -265,6 +274,14 @@ export async function handleAutoUseFlow(params: {
       phoneNumber
     )
     console.log(`[handleAutoUseFlow] Gemini returned ${geminiResults?.length} results`)
+
+    // Track Worker (Parameter/Rule) agent output
+    storeAgentOutput({
+      agentName: "Worker (Parameter/Rule)",
+      carId,
+      inputPayload: { extractedSteps, leadContext },
+      outputPayload: geminiResults,
+    }).catch(err => console.error("[handleAutoUseFlow] Failed to store Worker output:", err))
 
     // 5. Build payload
     const workflowName = `AI Auto Flow ${new Date().toLocaleDateString('vi-VN')}`

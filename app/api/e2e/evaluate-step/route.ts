@@ -16,62 +16,91 @@ export const revalidate = 0
  */
 export async function POST(request: Request) {
   const startTime = Date.now()
+  const encoder = new TextEncoder()
 
+  // Quick validation before streaming
+  let items: any[]
   try {
     const body = await request.json()
-    const items = Array.isArray(body) ? body : [body]
-
+    items = Array.isArray(body) ? body : [body]
     if (items.length === 0) {
       return NextResponse.json(
         { success: false, error: "Empty input array" },
         { status: 400 }
       )
     }
-
-    const results = []
-
-    for (const item of items) {
-      const { phone, output } = item
-
-      if (!phone || !output) {
-        results.push({
-          phone,
-          success: false,
-          error: "Missing phone or output",
-        })
-        continue
-      }
-
-      try {
-        const result = await evaluateSingleItem(phone, output)
-        results.push(result)
-      } catch (err) {
-        console.error(`[EvaluateStep] Error for phone ${phone}:`, err)
-        results.push({
-          phone,
-          success: false,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      results,
-      durationMs: Date.now() - startTime,
-    })
-  } catch (error) {
-    console.error("[EvaluateStep] Fatal error:", error)
+  } catch {
     return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to evaluate step",
-        details: error instanceof Error ? error.message : String(error),
-        durationMs: Date.now() - startTime,
-      },
-      { status: 500 }
+      { success: false, error: "Invalid JSON body" },
+      { status: 400 }
     )
   }
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const heartbeatInterval = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode("\n"))
+        } catch {
+          clearInterval(heartbeatInterval)
+        }
+      }, 10_000)
+
+      try {
+        const results = []
+
+        for (const item of items) {
+          const { phone, output } = item
+
+          if (!phone || !output) {
+            results.push({
+              phone,
+              success: false,
+              error: "Missing phone or output",
+            })
+            continue
+          }
+
+          try {
+            const result = await evaluateSingleItem(phone, output)
+            results.push(result)
+          } catch (err) {
+            console.error(`[EvaluateStep] Error for phone ${phone}:`, err)
+            results.push({
+              phone,
+              success: false,
+              error: err instanceof Error ? err.message : String(err),
+            })
+          }
+        }
+
+        controller.enqueue(encoder.encode(JSON.stringify({
+          success: true,
+          results,
+          durationMs: Date.now() - startTime,
+        })))
+      } catch (error) {
+        console.error("[EvaluateStep] Fatal error:", error)
+        controller.enqueue(encoder.encode(JSON.stringify({
+          success: false,
+          error: "Failed to evaluate step",
+          details: error instanceof Error ? error.message : String(error),
+          durationMs: Date.now() - startTime,
+        })))
+      } finally {
+        clearInterval(heartbeatInterval)
+        controller.close()
+      }
+    }
+  })
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "no-cache",
+    },
+  })
 }
 
 // ==========================================================================

@@ -237,96 +237,149 @@ export async function POST(request: Request) {
     const webhookUrl = `${base_url}/${encodeURIComponent(phoneNumber)}`
     console.log(`[AI Insights] Calling connector "${connectorName}": ${method || "POST"} ${webhookUrl}`)
 
-    try {
-      const response = await fetch(webhookUrl, {
-        method: method || "POST",
-        headers,
-        body: JSON.stringify(payload)
-      })
+    // --- Step 5: Streaming response with heartbeat to avoid Cloudflare 524 ---
+    const encoder = new TextEncoder()
 
-      if (!response.ok) throw new Error(`AI Webhook failed: ${response.status}`)
-
-      let aiResponse = await response.json()
-      if (Array.isArray(aiResponse)) aiResponse = aiResponse[0]
-
-      // Helper to find specific keys recursively in a nested object
-      const findNestedValue = (obj: any, targetKey: string): any => {
-        if (!obj || typeof obj !== "object") return undefined
-        if (targetKey in obj) return obj[targetKey]
-        for (const key in obj) {
-          const found = findNestedValue(obj[key], targetKey)
-          if (found !== undefined) return found
-        }
-        return undefined
-      }
-
-      // Guard: AI may return "N/A" or other non-UUID strings — PostgreSQL will reject those
-      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-      const toUuidOrNull = (v: any): string | null =>
-        typeof v === "string" && UUID_RE.test(v) ? v : null
-
-      // Dynamic Extraction
-      const selectedTransitionId = toUuidOrNull(findNestedValue(aiResponse, "selected_transition_id"))
-      const targetWorkflowId = toUuidOrNull(findNestedValue(aiResponse, "target_workflow_id"))
-
-      // Use the 'analysis' field if it exists (backwards compatibility), 
-      // otherwise use the entire response as the summary
-      const storageSummary = aiResponse.analysis || aiResponse
-
-      // Update record with results
-      await e2eQuery(
-        `UPDATE ai_insights
-         SET ai_insight_summary = $1, selected_transition_id = $2, target_workflow_id = $3
-         WHERE id = $4`,
-        [JSON.stringify(storageSummary), selectedTransitionId, targetWorkflowId, insightIdToUpdate]
-      )
-
-      // --- Auto Use Flow: fire-and-forget for test Car IDs ---
-      const testCarIds = [
-        "4f4aba46-9e76-4100-87f9-26a37c141d04",
-        "faaaac34-1fcb-4bb3-99d8-4f1597251bb7",
-        "6f38b1e4-4708-4547-bc04-46d5b9c6082b",
-        "41a305f9-1742-4712-940b-fd84e714384c",
-        "f360a4f8-5539-4a0e-9a9d-47e453058d58",
-        "eb268d8a-1763-460f-b773-4687d356879b",
-        "b51dafce-845f-4cae-a55f-c5a7b8e7b2bf"
-      ]
-      try {
-        // Get pic_id for background processing context
-        const leadCheck = await vucarV2Query(
-          `SELECT l.pic_id FROM cars c JOIN leads l ON l.id = c.lead_id WHERE c.id = $1 LIMIT 1`,
-          [carId]
-        )
-        const currentPicId = leadCheck.rows[0]?.pic_id
-
-        if (testCarIds.includes(carId)) {
-          console.log(`[AI Insights] Auto Use Flow triggered for test PIC/car`)
-          // Await inline — after() requires experimental.after config which is not enabled.
-          // This adds ~5-10s to the response but guarantees completion on Vercel.
+    const stream = new ReadableStream({
+      async start(controller) {
+        // Send heartbeat every 10 seconds to keep connection alive
+        const heartbeatInterval = setInterval(() => {
           try {
-            console.log(`[AI Insights] Starting handleAutoUseFlow for car ${carId}...`)
-            await handleAutoUseFlow({
-              carId,
-              aiInsightSummary: storageSummary,
-              picId: currentPicId,
-            })
-            console.log(`[AI Insights] handleAutoUseFlow finished successfully for car ${carId}`)
-          } catch (err) {
-            console.error(`[AI Insights] handleAutoUseFlow FAILED for car ${carId}:`, err)
+            controller.enqueue(encoder.encode("\n"))
+          } catch {
+            clearInterval(heartbeatInterval)
           }
+        }, 10_000)
+
+        try {
+          // --- Webhook call ---
+          const response = await fetch(webhookUrl, {
+            method: method || "POST",
+            headers,
+            body: JSON.stringify(payload)
+          })
+
+          if (!response.ok) throw new Error(`AI Webhook failed: ${response.status}`)
+
+          let aiResponse = await response.json()
+          if (Array.isArray(aiResponse)) aiResponse = aiResponse[0]
+
+          // Helper to find specific keys recursively in a nested object
+          const findNestedValue = (obj: any, targetKey: string): any => {
+            if (!obj || typeof obj !== "object") return undefined
+            if (targetKey in obj) return obj[targetKey]
+            for (const key in obj) {
+              const found = findNestedValue(obj[key], targetKey)
+              if (found !== undefined) return found
+            }
+            return undefined
+          }
+
+          // Guard: AI may return "N/A" or other non-UUID strings
+          const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+          const toUuidOrNull = (v: any): string | null =>
+            typeof v === "string" && UUID_RE.test(v) ? v : null
+
+          const selectedTransitionId = toUuidOrNull(findNestedValue(aiResponse, "selected_transition_id"))
+          const targetWorkflowId = toUuidOrNull(findNestedValue(aiResponse, "target_workflow_id"))
+          const storageSummary = aiResponse.analysis || aiResponse
+
+          // Update record with results
+          await e2eQuery(
+            `UPDATE ai_insights
+             SET ai_insight_summary = $1, selected_transition_id = $2, target_workflow_id = $3
+             WHERE id = $4`,
+            [JSON.stringify(storageSummary), selectedTransitionId, targetWorkflowId, insightIdToUpdate]
+          )
+
+          // --- Auto Use Flow: fire-and-forget for test Car IDs ---
+          const testCarIds = [
+            "4f4aba46-9e76-4100-87f9-26a37c141d04",
+            "faaaac34-1fcb-4bb3-99d8-4f1597251bb7",
+            "6f38b1e4-4708-4547-bc04-46d5b9c6082b",
+            "41a305f9-1742-4712-940b-fd84e714384c",
+            "f360a4f8-5539-4a0e-9a9d-47e453058d58",
+            "eb268d8a-1763-460f-b773-4687d356879b",
+            "b51dafce-845f-4cae-a55f-c5a7b8e7b2bf"
+          ]
+          try {
+            const leadCheck = await vucarV2Query(
+              `SELECT l.pic_id FROM cars c JOIN leads l ON l.id = c.lead_id WHERE c.id = $1 LIMIT 1`,
+              [carId]
+            )
+            const currentPicId = leadCheck.rows[0]?.pic_id
+
+            if (testCarIds.includes(carId)) {
+              console.log(`[AI Insights] Auto Use Flow triggered for test PIC/car`)
+              try {
+                console.log(`[AI Insights] Starting handleAutoUseFlow for car ${carId}...`)
+                await handleAutoUseFlow({
+                  carId,
+                  aiInsightSummary: storageSummary,
+                  picId: currentPicId,
+                })
+                console.log(`[AI Insights] handleAutoUseFlow finished successfully for car ${carId}`)
+              } catch (err) {
+                console.error(`[AI Insights] handleAutoUseFlow FAILED for car ${carId}:`, err)
+              }
+            }
+          } catch (autoFlowErr) {
+            console.error("[AI Insights] Auto Use Flow check error (non-blocking):", autoFlowErr)
+          }
+
+          // Build the final JSON response
+          const updatedInsight = (await e2eQuery(`SELECT * FROM ai_insights WHERE id = $1`, [insightIdToUpdate])).rows[0]
+
+          const insightHistoryResult = await e2eQuery(
+            `SELECT id, ai_insight_summary, user_feedback, is_positive, created_at
+             FROM old_ai_insights
+             WHERE ai_insight_id = $1
+             ORDER BY created_at ASC`,
+            [updatedInsight.id]
+          )
+
+          const { getLatestAiNote } = await import("@/lib/ai-notes-service")
+          const currentDiary = await getLatestAiNote("insight-generator")
+
+          const workflowResult = await e2eQuery(
+            `SELECT name FROM workflows WHERE id = $1`,
+            [updatedInsight.target_workflow_id]
+          )
+
+          const finalResult = {
+            success: true,
+            aiInsightId: updatedInsight.id,
+            analysis: updatedInsight.ai_insight_summary,
+            selectedTransitionId: updatedInsight.selected_transition_id,
+            targetWorkflowId: updatedInsight.target_workflow_id,
+            targetWorkflowName: workflowResult.rows[0]?.name || "Unknown Workflow",
+            is_positive: updatedInsight.is_positive,
+            history: insightHistoryResult.rows,
+            isNew: true,
+            currentDiary,
+          }
+
+          // Send the final JSON result
+          controller.enqueue(encoder.encode(JSON.stringify(finalResult)))
+        } catch (error) {
+          console.error("[AI Insights] Webhook/Streaming Error:", error)
+          if (!existingInsight) await e2eQuery(`DELETE FROM ai_insights WHERE id = $1`, [insightIdToUpdate])
+          const errorResult = { success: false, error: "Failed to call AI webhook", details: String(error) }
+          controller.enqueue(encoder.encode(JSON.stringify(errorResult)))
+        } finally {
+          clearInterval(heartbeatInterval)
+          controller.close()
         }
-      } catch (autoFlowErr) {
-        console.error("[AI Insights] Auto Use Flow check error (non-blocking):", autoFlowErr)
       }
+    })
 
-      const updatedInsight = (await e2eQuery(`SELECT * FROM ai_insights WHERE id = $1`, [insightIdToUpdate])).rows[0]
-      return await returnWithHistory(updatedInsight, true)
-
-    } catch (error) {
-      console.error("[AI Insights] Webhook Error:", error)
-      if (!existingInsight) await e2eQuery(`DELETE FROM ai_insights WHERE id = $1`, [insightIdToUpdate])
-      return NextResponse.json({ error: "Failed to call AI webhook", details: String(error) }, { status: 500 })
-    }
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-cache",
+      },
+    })
 
   } catch (error) {
     console.error("[AI Insights API] Error:", error)
@@ -362,6 +415,6 @@ async function returnWithHistory(insight: any, isNew: boolean = false) {
     is_positive: insight.is_positive,
     history: historyResult.rows,
     isNew: isNew,
-    currentDiary: currentDiary, // Include the Knowledge Diary for the UI
+    currentDiary: currentDiary,
   })
 }

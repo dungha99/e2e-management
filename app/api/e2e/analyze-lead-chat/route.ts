@@ -6,9 +6,15 @@ export const dynamic = "force-dynamic"
 
 export async function POST(request: Request) {
   const startTime = Date.now()
+  const encoder = new TextEncoder()
+
+  // Quick validation before streaming
+  let phone: string
+  let chat_history: any[]
   try {
     const body = await request.json()
-    const { phone, chat_history } = body
+    phone = body.phone
+    chat_history = body.chat_history
 
     if (!phone || !chat_history || !Array.isArray(chat_history)) {
       return NextResponse.json(
@@ -16,224 +22,244 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
-
-    // 1. Get lead and car info
-    const leadResult = await vucarV2Query(
-      `SELECT id, phone, additional_phone, pic_id
-       FROM leads
-       WHERE phone = $1 OR additional_phone = $1
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [phone]
-    )
-
-    if (leadResult.rows.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "Lead not found for this phone" },
-        { status: 404 }
-      )
-    }
-    const lead = leadResult.rows[0]
-    const picId = lead.pic_id
-
-    const carResult = await vucarV2Query(
-      `SELECT id FROM cars
-       WHERE lead_id = $1 AND (is_deleted IS NULL OR is_deleted != true)
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [lead.id]
-    )
-
-    if (carResult.rows.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "No car found for this lead" },
-        { status: 404 }
-      )
-    }
-    const carId = carResult.rows[0].id
-
-    // 2. Bypass Gemini: cap to 100 messages and use a generic summary
-    const historyToAnalyze = chat_history.slice(-100)
-    // const geminiResult = await callGeminiAnalysis(chat_history) // Temporarily disabled
-    const geminiResult = {
-      context_summary: "Yêu cầu tự động tạo flow từ lịch sử chat",
-      action: "new_flow" as const,
-    }
-    console.log(`[Analyze Lead Chat] phone=${phone}, action=${geminiResult.action} (bypass mode)`)
-
-    // 3. Take action based on Gemini's evaluation
-    if (geminiResult.action === "new_flow") {
-      // Find the latest workflow instance to use as source
-      const instanceResult = await e2eQuery(
-        `SELECT id FROM workflow_instances
-         WHERE car_id = $1
-         ORDER BY started_at DESC
-         LIMIT 1`,
-        [carId]
-      )
-
-      let sourceInstanceId = instanceResult.rows.length > 0 ? instanceResult.rows[0].id : null
-
-      if (!sourceInstanceId) {
-        // Create a dummy instance if none exists to satisfy submitAiFeedback constraint
-        const dummyWorkflow = await e2eQuery(
-          `INSERT INTO workflows (name, stage_id, type) VALUES ($1, $2, 'AI') RETURNING id`,
-          ['Auto-Generated Context Workflow', '456e0d0b-bd97-4ef6-893e-8674447ed882']
-        )
-        const dummyInstance = await e2eQuery(
-          `INSERT INTO workflow_instances (workflow_id, car_id, status) VALUES ($1, $2, 'completed') RETURNING id`,
-          [dummyWorkflow.rows[0].id, carId]
-        )
-        sourceInstanceId = dummyInstance.rows[0].id
-      }
-
-      await submitAiFeedback({
-        carId,
-        sourceInstanceId,
-        phoneNumber: phone,
-        feedback: `[Phân tích Chat] ${geminiResult.context_summary}`,
-        chat_history: historyToAnalyze,
-      })
-
-      return NextResponse.json({
-        success: true,
-        action_taken: "new_flow",
-        context_summary: geminiResult.context_summary,
-        durationMs: Date.now() - startTime,
-      })
-    } else if (geminiResult.action === "contact_sale") {
-      // Fetch PIC phone via n8n webhook
-      let salePhone = ""
-      if (picId) {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000)
-
-        try {
-          const n8nRes = await fetch(
-            "https://n8n.vucar.vn/webhook/f23b1b03-b198-4dc3-a196-d97a5cae8aff",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ pic_id: picId }),
-              signal: controller.signal,
-            }
-          )
-          clearTimeout(timeoutId)
-          if (n8nRes.ok) {
-            let n8nData: any = await n8nRes.json()
-            if (Array.isArray(n8nData)) n8nData = n8nData[0]
-            if (n8nData?.phone) {
-              const rawPhone = String(n8nData.phone)
-              // Format phone from 0... to 84...
-              salePhone = rawPhone.startsWith("0") ? "84" + rawPhone.substring(1) : rawPhone
-            }
-          }
-        } catch (err) {
-          clearTimeout(timeoutId)
-          console.error(`[Analyze Lead Chat] n8n fetch error:`, err)
-        }
-      }
-
-      if (!salePhone) {
-        return NextResponse.json(
-          { success: false, error: "Could not resolve sale phone from pic_id" },
-          { status: 500 }
-        )
-      }
-
-      // Execute 'Send message to Sale' connector
-      const connectorId = "6ee112d8-3d9b-406f-8b16-a2c4847efdb0"
-      // Ensure newlines from Gemini are correctly preserved as literal \n characters 
-      // when converted for the connector payload to prevent JSON breaking.
-      const safeContextSummary = geminiResult.context_summary.replace(/\r?\n/g, '\\n')
-      const messageBody = `Lead Phone: ${phone}\n\nContext Summary: ${safeContextSummary}`
-
-      const payload = {
-        send_from_number: "84963041272",
-        send_to_number: salePhone,
-        message: messageBody,
-        action: ""
-      }
-
-      const connectorResult = await e2eQuery(
-        `SELECT * FROM api_connectors WHERE id = $1 LIMIT 1`,
-        [connectorId]
-      )
-
-      if (connectorResult.rows.length === 0) {
-        return NextResponse.json(
-          { success: false, error: "Connector not found" },
-          { status: 500 }
-        )
-      }
-
-      const connector = connectorResult.rows[0]
-      const { base_url, method, auth_config } = connector
-      let parsedAuth = auth_config
-      if (typeof parsedAuth === 'string') {
-        try { parsedAuth = JSON.parse(parsedAuth) } catch (e) { }
-      }
-
-      const headers: Record<string, string> = { "Content-Type": "application/json" }
-      if (parsedAuth && typeof parsedAuth === 'object') {
-        Object.entries(parsedAuth).forEach(([k, v]) => {
-          if (typeof v === 'string') headers[k] = v
-        })
-        if (parsedAuth.type === "bearer" && parsedAuth.token) {
-          headers["Authorization"] = `Bearer ${parsedAuth.token}`
-        }
-      }
-
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000)
-
-      try {
-        const fetchOptions: RequestInit = {
-          method: method || "POST",
-          headers,
-          signal: controller.signal,
-          body: JSON.stringify(payload)
-        }
-
-        const res = await fetch(base_url, fetchOptions)
-        clearTimeout(timeoutId)
-
-        const responseText = await res.text()
-        console.log(`[Analyze Lead Chat] Connector response status: ${res.status}`)
-        console.log(`[Analyze Lead Chat] Connector response data:`, responseText)
-
-        if (!res.ok) {
-          console.error(`[Analyze Lead Chat] Connector failed:`, responseText)
-        } else {
-          console.log(`[Analyze Lead Chat] Connector executed successfully for phone ${phone}`)
-        }
-      } catch (err) {
-        clearTimeout(timeoutId)
-        console.error(`[Analyze Lead Chat] Connector fetch error:`, err)
-      }
-
-      return NextResponse.json({
-        success: true,
-        action_taken: "contact_sale",
-        context_summary: geminiResult.context_summary,
-        durationMs: Date.now() - startTime,
-      })
-    }
-
-    return NextResponse.json({ success: true, action: "none" })
-
-  } catch (error) {
-    console.error("[Analyze Lead Chat] Fatal error:", error)
+  } catch {
     return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to analyze chat",
-        details: error instanceof Error ? error.message : String(error),
-        durationMs: Date.now() - startTime,
-      },
-      { status: 500 }
+      { success: false, error: "Invalid JSON body" },
+      { status: 400 }
     )
   }
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const heartbeatInterval = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode("\n"))
+        } catch {
+          clearInterval(heartbeatInterval)
+        }
+      }, 10_000)
+
+      try {
+        // 1. Get lead and car info
+        const leadResult = await vucarV2Query(
+          `SELECT id, phone, additional_phone, pic_id
+           FROM leads
+           WHERE phone = $1 OR additional_phone = $1
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [phone]
+        )
+
+        if (leadResult.rows.length === 0) {
+          controller.enqueue(encoder.encode(JSON.stringify(
+            { success: false, error: "Lead not found for this phone" }
+          )))
+          return
+        }
+        const lead = leadResult.rows[0]
+        const picId = lead.pic_id
+
+        const carResult = await vucarV2Query(
+          `SELECT id FROM cars
+           WHERE lead_id = $1 AND (is_deleted IS NULL OR is_deleted != true)
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [lead.id]
+        )
+
+        if (carResult.rows.length === 0) {
+          controller.enqueue(encoder.encode(JSON.stringify(
+            { success: false, error: "No car found for this lead" }
+          )))
+          return
+        }
+        const carId = carResult.rows[0].id
+
+        // 2. Bypass Gemini: cap to 100 messages and use a generic summary
+        const historyToAnalyze = chat_history.slice(-100)
+        const geminiResult = {
+          context_summary: "Yêu cầu tự động tạo flow từ lịch sử chat",
+          action: "new_flow" as const,
+        }
+        console.log(`[Analyze Lead Chat] phone=${phone}, action=${geminiResult.action} (bypass mode)`)
+
+        // 3. Take action based on Gemini's evaluation
+        if (geminiResult.action === "new_flow") {
+          const instanceResult = await e2eQuery(
+            `SELECT id FROM workflow_instances
+             WHERE car_id = $1
+             ORDER BY started_at DESC
+             LIMIT 1`,
+            [carId]
+          )
+
+          let sourceInstanceId = instanceResult.rows.length > 0 ? instanceResult.rows[0].id : null
+
+          if (!sourceInstanceId) {
+            const dummyWorkflow = await e2eQuery(
+              `INSERT INTO workflows (name, stage_id, type) VALUES ($1, $2, 'AI') RETURNING id`,
+              ['Auto-Generated Context Workflow', '456e0d0b-bd97-4ef6-893e-8674447ed882']
+            )
+            const dummyInstance = await e2eQuery(
+              `INSERT INTO workflow_instances (workflow_id, car_id, status) VALUES ($1, $2, 'completed') RETURNING id`,
+              [dummyWorkflow.rows[0].id, carId]
+            )
+            sourceInstanceId = dummyInstance.rows[0].id
+          }
+
+          await submitAiFeedback({
+            carId,
+            sourceInstanceId,
+            phoneNumber: phone,
+            feedback: `[Phân tích Chat] ${geminiResult.context_summary}`,
+            chat_history: historyToAnalyze,
+          })
+
+          controller.enqueue(encoder.encode(JSON.stringify({
+            success: true,
+            action_taken: "new_flow",
+            context_summary: geminiResult.context_summary,
+            durationMs: Date.now() - startTime,
+          })))
+        } else if (geminiResult.action === "contact_sale") {
+          // Fetch PIC phone via n8n webhook
+          let salePhone = ""
+          if (picId) {
+            const abortController = new AbortController()
+            const timeoutId = setTimeout(() => abortController.abort(), 5 * 60 * 1000)
+
+            try {
+              const n8nRes = await fetch(
+                "https://n8n.vucar.vn/webhook/f23b1b03-b198-4dc3-a196-d97a5cae8aff",
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ pic_id: picId }),
+                  signal: abortController.signal,
+                }
+              )
+              clearTimeout(timeoutId)
+              if (n8nRes.ok) {
+                let n8nData: any = await n8nRes.json()
+                if (Array.isArray(n8nData)) n8nData = n8nData[0]
+                if (n8nData?.phone) {
+                  const rawPhone = String(n8nData.phone)
+                  salePhone = rawPhone.startsWith("0") ? "84" + rawPhone.substring(1) : rawPhone
+                }
+              }
+            } catch (err) {
+              clearTimeout(timeoutId)
+              console.error(`[Analyze Lead Chat] n8n fetch error:`, err)
+            }
+          }
+
+          if (!salePhone) {
+            controller.enqueue(encoder.encode(JSON.stringify(
+              { success: false, error: "Could not resolve sale phone from pic_id" }
+            )))
+            return
+          }
+
+          const connectorId = "6ee112d8-3d9b-406f-8b16-a2c4847efdb0"
+          const safeContextSummary = geminiResult.context_summary.replace(/\r?\n/g, '\\n')
+          const messageBody = `Lead Phone: ${phone}\n\nContext Summary: ${safeContextSummary}`
+
+          const msgPayload = {
+            send_from_number: "84963041272",
+            send_to_number: salePhone,
+            message: messageBody,
+            action: ""
+          }
+
+          const connectorResult = await e2eQuery(
+            `SELECT * FROM api_connectors WHERE id = $1 LIMIT 1`,
+            [connectorId]
+          )
+
+          if (connectorResult.rows.length === 0) {
+            controller.enqueue(encoder.encode(JSON.stringify(
+              { success: false, error: "Connector not found" }
+            )))
+            return
+          }
+
+          const connector = connectorResult.rows[0]
+          const { base_url, method, auth_config } = connector
+          let parsedAuth = auth_config
+          if (typeof parsedAuth === 'string') {
+            try { parsedAuth = JSON.parse(parsedAuth) } catch (e) { }
+          }
+
+          const reqHeaders: Record<string, string> = { "Content-Type": "application/json" }
+          if (parsedAuth && typeof parsedAuth === 'object') {
+            Object.entries(parsedAuth).forEach(([k, v]) => {
+              if (typeof v === 'string') reqHeaders[k] = v
+            })
+            if (parsedAuth.type === "bearer" && parsedAuth.token) {
+              reqHeaders["Authorization"] = `Bearer ${parsedAuth.token}`
+            }
+          }
+
+          const abortController2 = new AbortController()
+          const timeoutId2 = setTimeout(() => abortController2.abort(), 5 * 60 * 1000)
+
+          try {
+            const fetchOptions: RequestInit = {
+              method: method || "POST",
+              headers: reqHeaders,
+              signal: abortController2.signal,
+              body: JSON.stringify(msgPayload)
+            }
+
+            const res = await fetch(base_url, fetchOptions)
+            clearTimeout(timeoutId2)
+
+            const responseText = await res.text()
+            console.log(`[Analyze Lead Chat] Connector response status: ${res.status}`)
+            console.log(`[Analyze Lead Chat] Connector response data:`, responseText)
+
+            if (!res.ok) {
+              console.error(`[Analyze Lead Chat] Connector failed:`, responseText)
+            } else {
+              console.log(`[Analyze Lead Chat] Connector executed successfully for phone ${phone}`)
+            }
+          } catch (err) {
+            clearTimeout(timeoutId2)
+            console.error(`[Analyze Lead Chat] Connector fetch error:`, err)
+          }
+
+          controller.enqueue(encoder.encode(JSON.stringify({
+            success: true,
+            action_taken: "contact_sale",
+            context_summary: geminiResult.context_summary,
+            durationMs: Date.now() - startTime,
+          })))
+        } else {
+          controller.enqueue(encoder.encode(JSON.stringify({ success: true, action: "none" })))
+        }
+
+      } catch (error) {
+        console.error("[Analyze Lead Chat] Fatal error:", error)
+        controller.enqueue(encoder.encode(JSON.stringify({
+          success: false,
+          error: "Failed to analyze chat",
+          details: error instanceof Error ? error.message : String(error),
+          durationMs: Date.now() - startTime,
+        })))
+      } finally {
+        clearInterval(heartbeatInterval)
+        controller.close()
+      }
+    }
+  })
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "no-cache",
+    },
+  })
 }
 
 // ==========================================================================

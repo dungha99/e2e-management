@@ -86,7 +86,8 @@ export async function POST(request: Request) {
     } else if (existingInsight) {
       // --- Step 3: Standard Retrieval Check ---
       const ageSeconds = parseFloat(existingInsight.age_seconds)
-      const isComplete = !!(existingInsight.selected_transition_id && existingInsight.target_workflow_id)
+      // An insight is complete if it has a summary and is NOT marked as processing
+      const isComplete = !isProcessing && existingInsight.ai_insight_summary != null
 
       // Prevent duplicate calls if recent
       if (ageSeconds < 30) {

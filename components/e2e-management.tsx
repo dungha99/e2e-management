@@ -310,7 +310,7 @@ export function E2EManagement({
   const setViewMode = onViewModeChange || setInternalViewMode
 
   // Detail view tab state
-  const [activeDetailView, setActiveDetailView] = useState<"workflow" | "decoy-web" | "recent-activity" | "decoy-history">("workflow")
+  const [activeDetailView, setActiveDetailView] = useState<"workflow" | "agent-tracing" | "decoy-web" | "recent-activity" | "decoy-history">("workflow")
 
   // Workflow 2 activation state
   const [workflow2Open, setWorkflow2Open] = useState(false)

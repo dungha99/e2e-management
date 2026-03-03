@@ -118,8 +118,8 @@ export async function GET() {
 
           const execution = execResult.rows[0]
 
-          // Skip if already completed or failed
-          if (execution.status === 'success' || execution.status === 'failed') {
+          // Skip if already completed, failed, or currently running (prevents duplicate sends when cron fires again)
+          if (execution.status === 'success' || execution.status === 'failed' || execution.status === 'running') {
             // Move to next step
             currentStepId = await getNextStepId(instance.workflow_id, execution.step_order)
             if (currentStepId) {

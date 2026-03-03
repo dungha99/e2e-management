@@ -119,26 +119,58 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
 
   async function retriggerAi() {
     const phone = selectedLead?.phone || selectedLead?.additional_phone
-    if (!phone) {
-      toast({ title: "Lỗi", description: "Không tìm thấy số điện thoại của Lead", variant: "destructive" })
+    const carId = selectedLead?.car_id
+    if (!phone || !carId) {
+      toast({ title: "Lỗi", description: "Không tìm thấy thông tin Lead", variant: "destructive" })
       return
     }
     setRetriggeringAi(true)
     try {
-      const res = await fetch("/api/e2e/analyze-lead-chat", {
+      // Step 1: Trigger analyze-lead-chat (Router + Feedback agents via n8n)
+      toast({ title: "Đang xử lý...", description: "Bước 1/2: Đang kích hoạt Router AI..." })
+      const chatRes = await fetch("/api/e2e/analyze-lead-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone, chat_history: [] }),
       })
-      // The API streams, so just reading to completion is enough
-      if (res.body) {
-        const reader = res.body.getReader()
+      // Read the stream to completion (SSE heartbeat)
+      if (chatRes.body) {
+        const reader = chatRes.body.getReader()
         while (true) {
           const { done } = await reader.read()
           if (done) break
         }
       }
-      toast({ title: "Thành công", description: "Đã kích hoạt lại AI Flow cho Lead này" })
+
+      // Step 2: Fetch the latest AI insight for this car, then call auto-use-flow (Worker agent)
+      toast({ title: "Đang xử lý...", description: "Bước 2/2: Đang kích hoạt Worker AI..." })
+      const insightRes = await fetch("/api/e2e/ai-insights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ carId, phoneNumber: phone }),
+      })
+      const insightData = await insightRes.json()
+
+      if (insightData?.analysis) {
+        const autoFlowRes = await fetch("/api/e2e/auto-use-flow", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            carId,
+            aiInsightSummary: insightData.analysis,
+            picId: null, // Worker will look it up internally from DB
+          }),
+        })
+        const autoFlowData = await autoFlowRes.json()
+        if (autoFlowData.success) {
+          toast({ title: "Thành công", description: `Đã tạo workflow ${autoFlowData.stepsCreated} bước cho Lead này` })
+        } else {
+          toast({ title: "Cảnh báo", description: "Router đã kích hoạt, nhưng Worker không tạo được workflow: " + (autoFlowData.error || ""), variant: "destructive" })
+        }
+      } else {
+        // No insight yet (still processing or not available) - just report Router success
+        toast({ title: "Thành công", description: "Đã kích hoạt Router AI. Worker sẽ chạy sau khi có kết quả từ n8n." })
+      }
     } catch (err) {
       console.error("Failed to re-trigger AI:", err)
       toast({ title: "Lỗi", description: "Không thể kích hoạt lại AI", variant: "destructive" })

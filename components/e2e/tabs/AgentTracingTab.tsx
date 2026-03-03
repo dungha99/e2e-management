@@ -124,16 +124,17 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
       toast({ title: "Lỗi", description: "Không tìm thấy thông tin Lead", variant: "destructive" })
       return
     }
+
     setRetriggeringAi(true)
     try {
-      // Step 1: Trigger analyze-lead-chat (Router + Feedback agents via n8n)
-      toast({ title: "Đang xử lý...", description: "Bước 1/2: Đang kích hoạt Router AI..." })
+      // Call analyze-lead-chat with retrigger flag
+      // The callback will automatically run handleAutoUseFlow (Worker) server-side
       const chatRes = await fetch("/api/e2e/analyze-lead-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, chat_history: [] }),
+        body: JSON.stringify({ phone, chat_history: [], retrigger: true }),
       })
-      // Read the stream to completion (SSE heartbeat)
+      // Read stream to completion (heartbeat-based SSE)
       if (chatRes.body) {
         const reader = chatRes.body.getReader()
         while (true) {
@@ -141,36 +142,7 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
           if (done) break
         }
       }
-
-      // Step 2: Fetch the latest AI insight for this car, then call auto-use-flow (Worker agent)
-      toast({ title: "Đang xử lý...", description: "Bước 2/2: Đang kích hoạt Worker AI..." })
-      const insightRes = await fetch("/api/e2e/ai-insights", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ carId, phoneNumber: phone }),
-      })
-      const insightData = await insightRes.json()
-
-      if (insightData?.analysis) {
-        const autoFlowRes = await fetch("/api/e2e/auto-use-flow", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            carId,
-            aiInsightSummary: insightData.analysis,
-            picId: null, // Worker will look it up internally from DB
-          }),
-        })
-        const autoFlowData = await autoFlowRes.json()
-        if (autoFlowData.success) {
-          toast({ title: "Thành công", description: `Đã tạo workflow ${autoFlowData.stepsCreated} bước cho Lead này` })
-        } else {
-          toast({ title: "Cảnh báo", description: "Router đã kích hoạt, nhưng Worker không tạo được workflow: " + (autoFlowData.error || ""), variant: "destructive" })
-        }
-      } else {
-        // No insight yet (still processing or not available) - just report Router success
-        toast({ title: "Thành công", description: "Đã kích hoạt Router AI. Worker sẽ chạy sau khi có kết quả từ n8n." })
-      }
+      toast({ title: "Thành công", description: "Đã gửi yêu cầu re-trigger. Router + Worker sẽ tự động chạy qua n8n callback." })
     } catch (err) {
       console.error("Failed to re-trigger AI:", err)
       toast({ title: "Lỗi", description: "Không thể kích hoạt lại AI", variant: "destructive" })
@@ -466,16 +438,18 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
               </h3>
 
               <div className="flex items-center gap-2">
-                {/* Re-trigger AI button (always visible) */}
+                {/* Re-trigger AI button — shows current stage */}
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 text-xs px-3 border-orange-300 text-orange-600 hover:bg-orange-50"
+                  className="h-8 text-xs px-3 border-orange-300 text-orange-600 hover:bg-orange-50 min-w-[120px]"
                   onClick={retriggerAi}
                   disabled={retriggeringAi}
                 >
-                  {retriggeringAi ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
-                  RE-TRIGGER
+                  {retriggeringAi
+                    ? <><Loader2 className="h-3 w-3 animate-spin mr-1" />Đang xử lý...</>
+                    : <><RefreshCw className="h-3 w-3 mr-1" />RE-TRIGGER</>
+                  }
                 </Button>
 
                 {/* Deactivate / Rerun AI */}

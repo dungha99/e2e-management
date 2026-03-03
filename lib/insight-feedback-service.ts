@@ -15,6 +15,7 @@ export interface SubmitFeedbackParams {
   phoneNumber: string
   feedback: string
   chat_history?: any
+  retrigger?: boolean
 }
 
 export interface SubmitFeedbackResult {
@@ -30,7 +31,7 @@ export interface SubmitFeedbackResult {
  * and save the new analysis. Same logic as the feedback path in ai-insights/route.ts.
  */
 export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<SubmitFeedbackResult> {
-  const { carId, sourceInstanceId, phoneNumber, feedback, chat_history } = params
+  const { carId, sourceInstanceId, phoneNumber, feedback, chat_history, retrigger } = params
 
   try {
     // --- 1. Get existing insight ---
@@ -206,6 +207,7 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
       chat_history,
       feedbackAgentNote,
       routerAgentNote,
+      retrigger: retrigger || false,
     }
 
     const headers: Record<string, string> = {

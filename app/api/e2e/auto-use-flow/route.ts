@@ -551,13 +551,27 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const { carId, aiInsightSummary, picId } = body
+    let { carId, aiInsightSummary, picId } = body
 
     if (!carId || !aiInsightSummary) {
       return NextResponse.json(
         { success: false, error: "Missing required fields: carId, aiInsightSummary" },
         { status: 400 }
       )
+    }
+
+    // Auto-fetch picId from DB if not provided (same pattern as ai-insights/callback)
+    if (!picId) {
+      try {
+        const leadCheck = await vucarV2Query(
+          `SELECT l.pic_id FROM cars c JOIN leads l ON l.id = c.lead_id WHERE c.id = $1 LIMIT 1`,
+          [carId]
+        )
+        picId = leadCheck.rows[0]?.pic_id || null
+        console.log(`[Auto Use Flow] picId auto-resolved from DB: ${picId}`)
+      } catch (err) {
+        console.warn("[Auto Use Flow] Failed to auto-resolve picId:", err)
+      }
     }
 
     // --- 1. Extract steps from analysis ---

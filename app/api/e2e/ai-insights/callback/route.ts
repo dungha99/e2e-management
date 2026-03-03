@@ -77,41 +77,29 @@ export async function POST(request: Request) {
       outputPayload: storageSummary,
     }).catch(err => console.error("[AI Insights Callback] Failed to store agent output:", err))
 
-    // --- 4. Auto Use Flow for test Car IDs (COMMENTED OUT) ---
-    /*
-    const testCarIds = [
-      "4f4aba46-9e76-4100-87f9-26a37c141d04",
-      "faaaac34-1fcb-4bb3-99d8-4f1597251bb7",
-      "6f38b1e4-4708-4547-bc04-46d5b9c6082b",
-      "41a305f9-1742-4712-940b-fd84e714384c",
-      "f360a4f8-5539-4a0e-9a9d-47e453058d58",
-      "eb268d8a-1763-460f-b773-4687d356879b",
-      "b51dafce-845f-4cae-a55f-c5a7b8e7b2bf"
-    ]
-    try {
-      const leadCheck = await vucarV2Query(
-        \`SELECT l.pic_id FROM cars c JOIN leads l ON l.id = c.lead_id WHERE c.id = $1 LIMIT 1\`,
-        [carId]
-      )
-      const currentPicId = leadCheck.rows[0]?.pic_id
+    // --- 4. Auto Use Flow — only when retrigger flag is set ---
+    const retrigger = data.retrigger === true || data.retrigger === "true"
+    if (retrigger) {
+      console.log(`[AI Insights Callback] Retrigger flag detected, running Auto Use Flow for car ${carId}`)
+      try {
+        const { vucarV2Query } = await import("@/lib/db")
+        const leadCheck = await vucarV2Query(
+          `SELECT l.pic_id FROM cars c JOIN leads l ON l.id = c.lead_id WHERE c.id = $1 LIMIT 1`,
+          [carId]
+        )
+        const currentPicId = leadCheck.rows[0]?.pic_id
 
-      if (testCarIds.includes(carId) || currentPicId === "2ffa8389-2641-4d8b-98a6-5dc2dd2d20a4") {
-        console.log(\`[AI Insights Callback] Auto Use Flow triggered for test car \${carId} (or picId \${currentPicId})\`)
-        try {
-          await handleAutoUseFlow({
-            carId,
-            aiInsightSummary: storageSummary,
-            picId: currentPicId,
-          })
-          console.log(\`[AI Insights Callback] handleAutoUseFlow finished for car \${carId}\`)
-        } catch (err) {
-          console.error(\`[AI Insights Callback] handleAutoUseFlow FAILED for car \${carId}:\`, err)
-        }
+        const { handleAutoUseFlow } = await import("@/lib/workflow-service")
+        await handleAutoUseFlow({
+          carId,
+          aiInsightSummary: storageSummary,
+          picId: currentPicId,
+        })
+        console.log(`[AI Insights Callback] handleAutoUseFlow finished for car ${carId}`)
+      } catch (err) {
+        console.error(`[AI Insights Callback] handleAutoUseFlow FAILED for car ${carId}:`, err)
       }
-    } catch (autoFlowErr) {
-      console.error("[AI Insights Callback] Auto Use Flow check error:", autoFlowErr)
     }
-    */
 
     return NextResponse.json({ success: true, insightId: insightIdToUpdate })
   } catch (error) {

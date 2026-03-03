@@ -15,6 +15,7 @@ export async function POST(request: Request) {
     const body = await request.json()
     phone = body.phone
     chat_history = body.chat_history
+    var retrigger = body.retrigger === true
 
     if (!phone || !chat_history || !Array.isArray(chat_history)) {
       return NextResponse.json(
@@ -113,6 +114,7 @@ export async function POST(request: Request) {
             phoneNumber: phone,
             feedback: `[Phân tích Chat] ${geminiResult.context_summary}`,
             chat_history: historyToAnalyze,
+            retrigger,
           })
 
           controller.enqueue(encoder.encode(JSON.stringify({

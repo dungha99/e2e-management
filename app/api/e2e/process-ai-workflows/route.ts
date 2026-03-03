@@ -39,7 +39,8 @@ export async function GET() {
       `SELECT wi.*, w.name AS workflow_name
        FROM workflow_instances wi
        JOIN workflows w ON w.id = wi.workflow_id
-       WHERE w.type = 'AI' AND wi.status = 'running'
+       LEFT JOIN ai_process_blacklist pb ON pb.car_id = wi.car_id
+       WHERE w.type = 'AI' AND wi.status = 'running' AND pb.car_id IS NULL
        ORDER BY wi.started_at ASC`
     )
 

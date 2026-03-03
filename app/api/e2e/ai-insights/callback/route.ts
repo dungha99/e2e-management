@@ -95,8 +95,8 @@ export async function POST(request: Request) {
       )
       const currentPicId = leadCheck.rows[0]?.pic_id
 
-      if (testCarIds.includes(carId)) {
-        console.log(`[AI Insights Callback] Auto Use Flow triggered for test car ${carId}`)
+      if (testCarIds.includes(carId) || currentPicId === "2ffa8389-2641-4d8b-98a6-5dc2dd2d20a4") {
+        console.log(`[AI Insights Callback] Auto Use Flow triggered for test car ${carId} (or picId ${currentPicId})`)
         try {
           await handleAutoUseFlow({
             carId,

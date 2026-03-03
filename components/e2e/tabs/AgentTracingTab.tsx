@@ -279,10 +279,6 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
                         {new Date(output.created_at).toLocaleTimeString('vi-VN')}
                       </div>
                     </div>
-                    {/* Snippet of the stringified output if possible */}
-                    <div className="text-xs text-gray-500 italic line-clamp-2 mt-2">
-                      {String(output.output_payload).substring(0, 100)}...
-                    </div>
                   </div>
                 </div>
               ))}

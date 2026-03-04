@@ -225,6 +225,15 @@ export async function POST(request: Request) {
       }
     }
 
+    // Step 4d: Fetch real-time Zalo chat history via AkaBiz CRM API
+    let chatHistory: any[] = []
+    try {
+      const { fetchZaloChatHistory } = await import("@/lib/chat-history-service")
+      chatHistory = await fetchZaloChatHistory({ carId, phone: phoneNumber })
+    } catch (err) {
+      console.warn("[AI Insights] Failed to fetch chat history (non-blocking):", err)
+    }
+
     // Build payload
     const payload = {
       carId,
@@ -235,6 +244,7 @@ export async function POST(request: Request) {
       feedbackHistory: feedbackHistoryText, // Historical user feedback
       currentContext,        // template sentence used as the vector search query
       similarLeadsContext,  // formatted text string of win/failed cases
+      chat_history: chatHistory,
     }
 
     // Optional: Validate payload against input_schema if provided

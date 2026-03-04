@@ -195,6 +195,17 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
     const feedbackAgentNote = await getActiveAgentNote("Feedback")
     const routerAgentNote = await getActiveAgentNote("Router (Plan)")
 
+    // If chat_history is empty/undefined, fetch real-time Zalo chat from AkaBiz CRM API
+    let resolvedChatHistory = chat_history
+    if (!resolvedChatHistory || (Array.isArray(resolvedChatHistory) && resolvedChatHistory.length === 0)) {
+      try {
+        const { fetchZaloChatHistory } = await import("@/lib/chat-history-service")
+        resolvedChatHistory = await fetchZaloChatHistory({ carId, phone: phoneNumber })
+      } catch (err) {
+        console.warn("[InsightFeedback] Failed to fetch chat history (non-blocking):", err)
+      }
+    }
+
     const payload = {
       carId,
       sourceInstanceId,
@@ -204,7 +215,7 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
       feedbackHistory: feedbackHistoryText,
       currentContext,
       similarLeadsContext,
-      chat_history,
+      chat_history: resolvedChatHistory,
       feedbackAgentNote,
       routerAgentNote,
       retrigger: retrigger || false,

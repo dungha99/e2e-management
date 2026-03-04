@@ -226,6 +226,7 @@ async function evaluateSingleItem(phone: string, autoChatOutput: any) {
       sourceInstanceId: instance.id,
       phoneNumber,
       feedback: `[Auto-Evaluation] ${geminiResult.thinking}\n\nAuto-chat output: ${JSON.stringify(autoChatOutput)}`,
+      retrigger: true,
     })
 
     strategyRevised = feedbackResult.success

@@ -191,6 +191,7 @@ export async function GET() {
                     sourceInstanceId: instance.id,
                     phoneNumber: customerPhone,
                     feedback: noResponseFeedback,
+                    retrigger: true,
                   })
                   console.log(`[Process AI Workflows] Re-analysis and new workflow triggered successfully.`)
                 } catch (err) {

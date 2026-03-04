@@ -207,7 +207,7 @@ async function evaluateSingleItem(phone: string, autoChatOutput: any) {
     agentName: "Evaluate-step",
     carId: car.id,
     sourceInstanceId: instance.id,
-    inputPayload: prompt,
+    inputPayload: { step: step.step_name, autoChatOutput },
     outputPayload: geminiResult,
   }).catch(err => console.error("[EvaluateStep] Failed to store agent output:", err))
 

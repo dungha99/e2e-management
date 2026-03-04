@@ -4,6 +4,58 @@ import { e2eQuery } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 /**
+ * GET /api/e2e/ai-agents/notes?agentId=xxx
+ *
+ * Returns the current active note content for a specific AI Agent.
+ */
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const agentId = searchParams.get("agentId");
+
+    if (!agentId) {
+      return NextResponse.json(
+        { success: false, error: "Missing agentId" },
+        { status: 400 }
+      );
+    }
+
+    const result = await e2eQuery(
+      `SELECT id, version, note_content, created_at
+       FROM ai_agent_notes
+       WHERE agent_id = $1 AND is_active = true
+       ORDER BY version DESC
+       LIMIT 1`,
+      [agentId]
+    );
+
+    if (result.rows.length === 0) {
+      return NextResponse.json({
+        success: true,
+        note: null,
+      });
+    }
+
+    const row = result.rows[0];
+    return NextResponse.json({
+      success: true,
+      note: {
+        id: row.id,
+        version: row.version,
+        content: row.note_content,
+        createdAt: row.created_at,
+      },
+    });
+  } catch (error) {
+    console.error(`[AI Agent Notes API] Error fetching note:`, error);
+    return NextResponse.json(
+      { success: false, error: String(error) },
+      { status: 500 }
+    );
+  }
+}
+
+/**
  * POST /api/e2e/ai-agents/notes
  * 
  * Submits a new configuration note for a specific AI Agent.

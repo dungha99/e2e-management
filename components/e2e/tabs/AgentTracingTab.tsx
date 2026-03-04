@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Loader2, Settings2, FileText, Send, RefreshCw, Power, Play } from "lucide-react"
+import { useState, useEffect, useCallback } from "react"
+import { Loader2, Settings2, FileText, Send, RefreshCw, Power, Play, BookOpen, ChevronDown, ChevronUp } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { fetchAiInsights } from "@/hooks/use-leads"
 import { Button } from "@/components/ui/button"
@@ -62,6 +62,12 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
   const [agents, setAgents] = useState<Agent[]>([])
   const [selectedAgentId, setSelectedAgentId] = useState<string>("")
   const [savingNote, setSavingNote] = useState(false)
+
+  // State for current agent note display
+  const [currentNoteContent, setCurrentNoteContent] = useState<string | null>(null)
+  const [currentNoteVersion, setCurrentNoteVersion] = useState<number | null>(null)
+  const [loadingNote, setLoadingNote] = useState(false)
+  const [isNoteExpanded, setIsNoteExpanded] = useState(false)
 
   // Markdown builder inputs
   const [configCategory, setConfigCategory] = useState<"Sửa lỗi" | "Tối ưu hóa" | "Thay đổi phong cách" | "Bổ sung tri thức">("Sửa lỗi")
@@ -171,6 +177,41 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
     }
   }, [isConfigMode, agents.length])
 
+  // Fetch active note when agent is selected in config mode
+  const fetchActiveNote = useCallback(async (agentId: string) => {
+    if (!agentId) {
+      setCurrentNoteContent(null)
+      setCurrentNoteVersion(null)
+      return
+    }
+    setLoadingNote(true)
+    try {
+      const res = await fetch(`/api/e2e/ai-agents/notes?agentId=${agentId}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.note) {
+          setCurrentNoteContent(data.note.content)
+          setCurrentNoteVersion(data.note.version)
+        } else {
+          setCurrentNoteContent(null)
+          setCurrentNoteVersion(null)
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch active note:", err)
+      setCurrentNoteContent(null)
+      setCurrentNoteVersion(null)
+    } finally {
+      setLoadingNote(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isConfigMode && selectedAgentId) {
+      fetchActiveNote(selectedAgentId)
+    }
+  }, [isConfigMode, selectedAgentId, fetchActiveNote])
+
   async function fetchOutputs() {
     if (!selectedLead?.car_id) return
     setLoadingOutputs(true)
@@ -265,6 +306,20 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
     } finally {
       setSavingNote(false)
     }
+  }
+
+  // Simple markdown-to-HTML renderer for agent notes
+  const simpleMarkdownToHtml = (md: string): string => {
+    return md
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') // escape HTML
+      .replace(/^### (.+)$/gm, '<h3 class="text-sm font-bold text-gray-800 mt-3 mb-1">$1</h3>')
+      .replace(/^## (.+)$/gm, '<h2 class="text-base font-bold text-gray-800 mt-4 mb-1">$1</h2>')
+      .replace(/^# (.+)$/gm, '<h1 class="text-lg font-bold text-gray-900 mt-4 mb-2">$1</h1>')
+      .replace(/\*\*\*(.+?)\*\*\*/g, '<strong class="italic">$1</strong>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/^---$/gm, '<hr class="my-3 border-amber-200" />')
+      .replace(/\n/g, '<br />')
   }
 
   // Formatting helpers for Inspector Output display
@@ -367,6 +422,49 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* Current Active Note Display */}
+                {selectedAgentId && (
+                  <div className="space-y-2 border rounded-lg bg-amber-50/50 border-amber-200">
+                    <button
+                      type="button"
+                      className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium text-amber-800 hover:bg-amber-100/50 rounded-lg transition-colors"
+                      onClick={() => setIsNoteExpanded(!isNoteExpanded)}
+                    >
+                      <span className="flex items-center gap-2">
+                        <BookOpen className="h-4 w-4 text-amber-600" />
+                        Cấu hình hiện tại
+                        {currentNoteVersion && (
+                          <span className="text-xs bg-amber-200/80 text-amber-700 px-1.5 py-0.5 rounded-full font-mono">
+                            v{currentNoteVersion}
+                          </span>
+                        )}
+                      </span>
+                      {isNoteExpanded
+                        ? <ChevronUp className="h-4 w-4 text-amber-500" />
+                        : <ChevronDown className="h-4 w-4 text-amber-500" />
+                      }
+                    </button>
+                    {isNoteExpanded && (
+                      <div className="px-3 pb-3">
+                        {loadingNote ? (
+                          <div className="flex justify-center py-4">
+                            <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
+                          </div>
+                        ) : currentNoteContent ? (
+                          <div
+                            className="bg-white border border-amber-200 rounded-lg p-3 max-h-60 overflow-y-auto prose-sm text-xs text-gray-700 leading-relaxed"
+                            dangerouslySetInnerHTML={{ __html: simpleMarkdownToHtml(currentNoteContent) }}
+                          />
+                        ) : (
+                          <p className="text-xs text-amber-600 italic py-2">
+                            Chưa có cấu hình nào cho Agent này.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <Label>Category</Label>

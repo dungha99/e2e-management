@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -413,10 +413,58 @@ export function WorkflowTrackerTab({
   // Join data
   const currentInstance = workflowInstancesData?.data?.find(i => i.instance.workflow_id === activeWorkflowView)
 
-  // Fetch AI insights whenever a dynamic workflow is selected (not just when completed)
+  // Shared polling ref for AI insights — accessible from both useEffect and feedback handler
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const isMountedRef = useRef(true)
+
+  // Reusable function to load insights + poll on 202
+  const loadAndPollInsights = useCallback((carId: string, phoneNumber: string, userFeedback?: string) => {
+    if (!isMountedRef.current) return
+
+    console.log(`[WorkflowTracker] Fetching AI insights for car ${carId}...${userFeedback ? ' (with feedback)' : ''}`)
+    setFetchingAiInsights(true)
+
+    fetchAiInsights(carId, phoneNumber, userFeedback)
+      .then((result) => {
+        if (!isMountedRef.current) return
+
+        // Check if still processing — start polling
+        if (result?.processing) {
+          console.log("[WorkflowTracker] AI insights still processing, will check again in 3s")
+          setFetchingAiInsights(true) // Keep loading state active
+
+          if (!pollIntervalRef.current) {
+            pollIntervalRef.current = setInterval(() => {
+              loadAndPollInsights(carId, phoneNumber) // No feedback on subsequent polls
+            }, 3000)
+          }
+          return
+        }
+
+        // Real result received — show it and stop polling
+        setAiInsights(result)
+        console.log("[WorkflowTracker] AI Insights fetched:", result)
+
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current)
+          pollIntervalRef.current = null
+        }
+        setFetchingAiInsights(false)
+      })
+      .catch((error) => {
+        if (!isMountedRef.current) return
+        console.error("[WorkflowTracker] Failed to fetch AI insights:", error)
+        setFetchingAiInsights(false)
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current)
+          pollIntervalRef.current = null
+        }
+      })
+  }, [])
+
+  // Fetch AI insights whenever a dynamic workflow is selected
   useEffect(() => {
-    let isMounted = true
-    let pollInterval: NodeJS.Timeout | null = null
+    isMountedRef.current = true
 
     // Clear previous insights when switching lead
     setAiInsights(null)
@@ -427,61 +475,21 @@ export function WorkflowTrackerTab({
       return
     }
 
-    // Fetch AI insights in background — loads latest insight across ALL instances for this car
     const phoneNumber = selectedLead.phone || selectedLead.additional_phone
     if (!phoneNumber) {
       return
     }
 
-    const loadInsights = () => {
-      if (!isMounted) return
-
-      console.log(`[WorkflowTracker] Fetching AI insights for car ${selectedLead.car_id}...`)
-      setFetchingAiInsights(true)
-
-      fetchAiInsights(selectedLead.car_id!, phoneNumber)
-        .then((insights) => {
-          if (!isMounted) return
-          setAiInsights(insights)
-          console.log("[WorkflowTracker] AI Insights fetched:", insights)
-
-          if (pollInterval) {
-            clearInterval(pollInterval)
-            pollInterval = null
-          }
-          setFetchingAiInsights(false)
-        })
-        .catch((error) => {
-          if (!isMounted) return
-
-          // Check if it's a 202 "still processing" response -> set up polling
-          if (error.message.includes("still being processed")) {
-            console.log("[WorkflowTracker] AI insights still processing, will check again in 3s")
-            // Make sure we show loading state while polling
-            setFetchingAiInsights(true)
-
-            // Start polling if not started
-            if (!pollInterval) {
-              pollInterval = setInterval(loadInsights, 3000)
-            }
-          } else {
-            console.error("[WorkflowTracker] Failed to fetch AI insights:", error)
-            setFetchingAiInsights(false)
-            if (pollInterval) {
-              clearInterval(pollInterval)
-              pollInterval = null
-            }
-          }
-        })
-    }
-
-    loadInsights()
+    loadAndPollInsights(selectedLead.car_id, phoneNumber)
 
     return () => {
-      isMounted = false
-      if (pollInterval) clearInterval(pollInterval)
+      isMountedRef.current = false
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
     }
-  }, [activeWorkflowView, selectedLead.car_id, selectedLead.phone, selectedLead.additional_phone])
+  }, [activeWorkflowView, selectedLead.car_id, selectedLead.phone, selectedLead.additional_phone, loadAndPollInsights])
 
 
   // Fetch win case history when car model is available
@@ -639,23 +647,18 @@ ${dealerBidsStr}`
         currentUserId={currentUserId}
         leadPhone={selectedLead.phone || selectedLead.additional_phone || undefined}
         onSubmitFeedback={async (feedback) => {
-          if (!selectedLead.car_id || !currentInstance?.instance.id) return
+          if (!selectedLead.car_id) return
           const phoneNumber = selectedLead.phone || selectedLead.additional_phone
           if (!phoneNumber) return
 
-          setFetchingAiInsights(true)
-          try {
-            const newInsights = await fetchAiInsights(
-              selectedLead.car_id,
-              phoneNumber,
-              feedback
-            )
-            setAiInsights(newInsights)
-          } catch (error) {
-            console.error("[WorkflowTracker] Failed to submit AI feedback:", error)
-          } finally {
-            setFetchingAiInsights(false)
+          // Stop any existing polling before starting feedback-triggered load
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current)
+            pollIntervalRef.current = null
           }
+
+          // Submit feedback and start polling — loading stays active until real result arrives
+          loadAndPollInsights(selectedLead.car_id, phoneNumber, feedback)
         }}
         onRate={async (id, isHistory, isPositive) => {
           if (!aiInsights) return

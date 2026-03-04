@@ -150,13 +150,20 @@ export async function fetchAiInsights(carId: string, phoneNumber: string, userFe
 
   const data = await response.json()
 
-  // Handle 202 "still processing" status
+  // Handle 202 "still processing" — return a marker instead of throwing
+  // (throwing causes Next.js dev error overlay to appear)
   if (response.status === 202) {
-    throw new Error(data.message || "AI insights are still being processed")
+    return { processing: true, message: data.message }
   }
 
   if (!response.ok) {
     throw new Error(data.error || "Failed to fetch AI insights")
+  }
+
+  // Also detect 200 responses that are actually still processing
+  // (e.g., after feedback submission, API returns 200 with processing placeholder)
+  if (data?.analysis?.processing === true || data?.processing === true) {
+    return { processing: true }
   }
 
   return data

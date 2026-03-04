@@ -616,10 +616,11 @@ export function AiThinkingChat({
             <Textarea
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
-              placeholder="Nhập thêm thông tin thực tế để AI tối ưu kịch bản... (Ví dụ: Khách đang rất cứng giá, không thích nhắn tin nhiều, thích nói chuyện ngoài lề, gap giá 20tr, giá dealer căng nhất rồi, tiếp theo gọi điện chốt lịch tối nay"
+              disabled={isLoading || isSubmitting}
+              placeholder={isLoading ? "AI đang xử lý, vui lòng chờ..." : "Nhập thêm thông tin thực tế để AI tối ưu kịch bản... (Ví dụ: Khách đang rất cứng giá, không thích nhắn tin nhiều, thích nói chuyện ngoài lề, gap giá 20tr, giá dealer căng nhất rồi, tiếp theo gọi điện chốt lịch tối nay"}
               className="pr-12 min-h-[90px] text-sm focus-visible:ring-indigo-500 border-indigo-100 shadow-sm resize-none rounded-xl"
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !isLoading && !isSubmitting) {
                   handleSendFeedback()
                 }
               }}

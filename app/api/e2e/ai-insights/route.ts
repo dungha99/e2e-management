@@ -87,26 +87,27 @@ export async function POST(request: Request) {
     } else if (existingInsight) {
       // --- Step 3: Standard Retrieval Check ---
       const ageSeconds = parseFloat(existingInsight.age_seconds)
-      // An insight is complete if it has a summary and is NOT marked as processing
       const isComplete = !isProcessing && existingInsight.ai_insight_summary != null
 
-      // Prevent duplicate calls if recent
-      if (ageSeconds < 30) {
-        if (isComplete) {
-          return await returnWithHistory(existingInsight)
-        } else if (isProcessing) {
-          return NextResponse.json({
-            success: false,
-            processing: true,
-            message: "AI insights are still being processed.",
-            ageSeconds: ageSeconds,
-          }, { status: 202 })
-        }
-      }
-
-      // Return complete insight if found
+      // Always return complete insights immediately
       if (isComplete) {
         return await returnWithHistory(existingInsight)
+      }
+
+      // Block ALL duplicate webhook calls while processing (up to 3 minutes)
+      // This prevents re-triggering on: page refresh, polling, feedback, etc.
+      if (isProcessing && ageSeconds < 180) {
+        return NextResponse.json({
+          success: false,
+          processing: true,
+          message: "AI insights are still being processed.",
+          ageSeconds: ageSeconds,
+        }, { status: 202 })
+      }
+
+      // After 3 min: insight is stuck (n8n failed/timed out) — fall through to re-trigger
+      if (isProcessing) {
+        console.warn(`[AI Insights] Processing stuck for ${Math.round(ageSeconds)}s, allowing re-trigger`)
       }
     }
 

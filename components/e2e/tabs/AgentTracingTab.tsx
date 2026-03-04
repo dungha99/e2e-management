@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { Loader2, Settings2, FileText, Send, RefreshCw, Power, Play } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { fetchAiInsights } from "@/hooks/use-leads"
 import { Button } from "@/components/ui/button"
 import { Lead } from "@/components/e2e/types"
 import { Textarea } from "@/components/ui/textarea"
@@ -127,8 +128,7 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
 
     setRetriggeringAi(true)
     try {
-      // Call analyze-lead-chat with retrigger flag
-      // The callback will automatically run handleAutoUseFlow (Worker) server-side
+      // Stage 1: Call analyze-lead-chat with retrigger flag
       const chatRes = await fetch("/api/e2e/analyze-lead-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -142,7 +142,20 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
           if (done) break
         }
       }
-      toast({ title: "Thành công", description: "Đã gửi yêu cầu re-trigger. Router + Worker sẽ tự động chạy qua n8n callback." })
+
+      // Stage 2: Poll for the AI insight result until n8n callback completes
+      const POLL_INTERVAL = 3000
+      const MAX_POLLS = 60 // ~3 min
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise(r => setTimeout(r, POLL_INTERVAL))
+        const result = await fetchAiInsights(carId, phone)
+        if (!result?.processing) {
+          toast({ title: "Thành công ✅", description: "AI đã tạo xong kế hoạch mới." })
+          fetchOutputs() // refresh the timeline
+          return
+        }
+      }
+      toast({ title: "Timeout", description: "Chờ quá lâu kết quả từ n8n.", variant: "destructive" })
     } catch (err) {
       console.error("Failed to re-trigger AI:", err)
       toast({ title: "Lỗi", description: "Không thể kích hoạt lại AI", variant: "destructive" })
@@ -429,16 +442,17 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
               </div>
             </div>
           </div>
-        ) : selectedOutput ? (
+        ) : (
           <div className="flex flex-col h-full">
+            {/* Action buttons — always visible */}
             <div className="p-4 border-b flex items-center justify-between">
               <h3 className="font-semibold text-gray-800 flex items-center gap-2">
                 <FileText className="h-4 w-4 text-gray-500" />
-                Inspector: {selectedOutput.agent_name}
+                {selectedOutput ? `Inspector: ${selectedOutput.agent_name}` : 'Agent Actions'}
               </h3>
 
               <div className="flex items-center gap-2">
-                {/* Re-trigger AI button — shows current stage */}
+                {/* Re-trigger AI button */}
                 <Button
                   variant="outline"
                   size="sm"
@@ -481,56 +495,60 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {selectedOutput ? (
+              <>
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
-              {/* Note Version Indicator */}
-              {selectedOutput.note_version && (
-                <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full w-fit">
-                  <Settings2 className="h-3.5 w-3.5" />
-                  Sử dụng Cấu hình Agent (Version {selectedOutput.note_version})
+                  {/* Note Version Indicator */}
+                  {selectedOutput.note_version && (
+                    <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full w-fit">
+                      <Settings2 className="h-3.5 w-3.5" />
+                      Sử dụng Cấu hình Agent (Version {selectedOutput.note_version})
+                    </div>
+                  )}
+
+                  {/* INPUT CONTEXT */}
+                  <div>
+                    <Label className="text-xs uppercase text-gray-500 mb-2 block font-semibold tracking-wider">INPUT CONTEXT</Label>
+                    <div className="bg-gray-50 border rounded-xl p-4 overflow-x-auto">
+                      <pre className="text-xs text-gray-700 font-mono whitespace-pre-wrap word-break">
+                        {formatPayload(selectedOutput.input_payload)}
+                      </pre>
+                    </div>
+                  </div>
+
+                  {/* AGENT RESULT */}
+                  <div>
+                    <Label className="text-xs uppercase text-gray-500 mb-2 block font-semibold tracking-wider">AGENT RESULT</Label>
+                    <div className="bg-[#1e1e2d] border-[#2d2d44] rounded-xl p-4 overflow-x-auto pr-8">
+                      <pre className="text-xs text-[#a0a0c0] font-mono whitespace-pre-wrap word-break">
+                        {formatPayload(selectedOutput.output_payload)}
+                      </pre>
+                    </div>
+                  </div>
+
                 </div>
-              )}
 
-              {/* INPUT CONTEXT */}
-              <div>
-                <Label className="text-xs uppercase text-gray-500 mb-2 block font-semibold tracking-wider">INPUT CONTEXT</Label>
-                <div className="bg-gray-50 border rounded-xl p-4 overflow-x-auto">
-                  <pre className="text-xs text-gray-700 font-mono whitespace-pre-wrap word-break">
-                    {formatPayload(selectedOutput.input_payload)}
-                  </pre>
+                {/* Feedback Footer */}
+                <div className="p-4 border-t bg-gray-50/50 mt-auto">
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-orange-600 border-orange-200 hover:bg-orange-50 bg-white"
+                    onClick={handleOpenConfig}
+                  >
+                    <Settings2 className="h-4 w-4 mr-2" />
+                    Cấu hình Agent (Feedback Loop)
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-gray-400">
+                <div className="text-center">
+                  <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>Chọn một Execution để xem chi tiết</p>
                 </div>
               </div>
-
-              {/* AGENT RESULT */}
-              <div>
-                <Label className="text-xs uppercase text-gray-500 mb-2 block font-semibold tracking-wider">AGENT RESULT</Label>
-                <div className="bg-[#1e1e2d] border-[#2d2d44] rounded-xl p-4 overflow-x-auto pr-8">
-                  <pre className="text-xs text-[#a0a0c0] font-mono whitespace-pre-wrap word-break">
-                    {formatPayload(selectedOutput.output_payload)}
-                  </pre>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Feedback Footer */}
-            <div className="p-4 border-t bg-gray-50/50 mt-auto">
-              <Button
-                variant="outline"
-                className="w-full justify-start text-orange-600 border-orange-200 hover:bg-orange-50 bg-white"
-                onClick={handleOpenConfig}
-              >
-                <Settings2 className="h-4 w-4 mr-2" />
-                Cấu hình Agent (Feedback Loop)
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-400">
-            <div className="text-center">
-              <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
-              <p>Chọn một Execution để xem chi tiết</p>
-            </div>
+            )}
           </div>
         )}
       </div>

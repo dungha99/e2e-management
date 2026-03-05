@@ -288,12 +288,17 @@ Bạn CHỈ được trả về JSON object duy nhất.
 # QUY ĐỊNH BẮT BUỘC
 - KHÔNG giải thích dài dòng ngoài phạm vi JSON.
 - LUÔN gọi "anh" hoặc "chị", tuyệt đối không dùng "anh/chị".
-- Nếu không cần thiết phải nhắn thêm, hãy trả về mảng rỗng \`[]\`.`
+- Nếu không cần thiết phải nhắn thêm, hãy trả về mảng rỗng \`[]\`.
+
+# SỬ DỤNG GOOGLE SEARCH
+- Nếu tin nhắn đề cập đến giá xe, giá thị trường, ưu điểm/nhược điểm của mẫu xe → hãy dùng Google Search để xác minh thông tin.
+- - Khi tin nhắn liên quan đến giá, hãy luôn dựa vào 3 thông tin price customer, price highest bid, và giá tìm kiếm từ google search (giá trung bình), để có chiến lược tư vấn giá và đàm phán tốt nhất dựa trên hoàn cảnh.
+- KHÔNG tìm kiếm các thông tin đã có sẵn trong context (tên khách, phone, picId).`
 
                       const tacticalCommand = execution.description || execution.step_name
                       const prompt = `Lịch sử chat (100 tin nhắn gần nhất):\n${JSON.stringify(recentChat)}\n\nTactical Command:\n${tacticalCommand}\n\nTin nhắn dự kiến sắp gửi:\n${JSON.stringify(requestPayload.messages)}\n\nHãy đánh giá và trả về JSON.`
 
-                      const geminiResult = await callGemini(prompt, "gemini-3.1-pro-preview", systemPrompt)
+                      const geminiResult = await callGemini(prompt, "gemini-3.1-pro-preview", systemPrompt, [{ google_search: {} }])
 
                       const jsonMatch = geminiResult.match(/\{[\s\S]*\}/)
                       if (jsonMatch) {

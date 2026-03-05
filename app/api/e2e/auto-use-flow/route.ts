@@ -468,6 +468,7 @@ Sử dụng khi bắt đầu đưa một chiếc xe lên sàn đấu giá.
 - Tuyệt đối KHÔNG tự giới thiệu lại thông tin như "Chào anh, em là Huy Hồ từ Vucar"
 - Tránh giữ nguyên các biến số như: "[Dải giá thị trường hợp lý, ví dụ: từ 700-800 triệu VND nếu xe đẹp, hoặc thấp hơn nếu xe có vấn đề theo kiểm định và anh đã xác minh là do lỗi xe]"
 - Chỉ đổi giọng văn, phải tuân theo các giá trị từ thông tin của lead, không được đưa thông tin ảo, đặc biệt là về giá xe.
+- Khi tin nhắn liên quan đến giá, hãy luôn dựa vào 3 thông tin price customer, price highest bid, và giá tìm kiếm từ google search (giá trung bình), để có chiến lược tư vấn giá và đàm phán tốt nhất dựa trên hoàn cảnh.
 - Nên tách các tin nhắn thành nhiều tin nhắn nhỏ, nếu tin nhắn gốc dài.
 
 4. Định dạng đầu ra (Output Format)
@@ -476,6 +477,11 @@ CHỈ trả về MỘT object JSON duy nhất:
   "scheduled_at": "ISO string hoặc null",
   "parameters": { ... }
 }
+
+5. Sử dụng Google Search
+- Khi tin nhắn cần đề cập đến giá xe, giá thị trường, thông tin mẫu xe, và trong khi đó chúng ta chưa có giá mong muốn (price customer) của khách hoặc giá cao nhất đang có (price highest bid) - hoặc khi cần đàm phán giá xe với khách, tức là cần biết mức giá cao nhất đang có hiện tại với mức giá trung bình trên thị trường như nào → hãy tìm kiếm Google để có thông tin chính xác để tư vấn giá quốc tế (giá trung bình) cho khách.
+- Ưu tiên tìm: giá xe cũ của [hãng] [mẫu] [năm] thị trường Việt Nam, đánh giá xe, xu hướng giá.
+- KHÔNG tìm kiếm các thông tin đã có sẵn trong context (picId, carId, phone, scheduled_at).
 
 CHỈ TRẢ VỀ JSON, KHÔNG GIẢI THÍCH.`
 
@@ -515,6 +521,7 @@ Return JSON object.`
           temperature: 0.2,
           maxOutputTokens: 16384,
         },
+        tools: [{ google_search: {} }],
       }),
     })
 

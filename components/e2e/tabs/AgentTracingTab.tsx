@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { Loader2, Settings2, FileText, Send, RefreshCw, Power, Play, BookOpen, ChevronDown, ChevronUp } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { fetchAiInsights } from "@/hooks/use-leads"
 import { Button } from "@/components/ui/button"
 import { Lead } from "@/components/e2e/types"
 import { Textarea } from "@/components/ui/textarea"
@@ -134,37 +133,47 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
 
     setRetriggeringAi(true)
     try {
-      // Stage 1: Call analyze-lead-chat with retrigger flag
-      const chatRes = await fetch("/api/e2e/analyze-lead-chat", {
+      const res = await fetch("/api/e2e/retrigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, chat_history: [], retrigger: true }),
+        body: JSON.stringify({ phone, carId }),
       })
-      // Read stream to completion (heartbeat-based SSE)
-      if (chatRes.body) {
-        const reader = chatRes.body.getReader()
+
+      // Read stream to completion (heartbeat-based streaming)
+      let resultText = ""
+      if (res.body) {
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
         while (true) {
-          const { done } = await reader.read()
+          const { done, value } = await reader.read()
           if (done) break
+          resultText += decoder.decode(value, { stream: true })
         }
+      } else {
+        resultText = await res.text()
       }
 
-      // Stage 2: Poll for the AI insight result until n8n callback completes
-      const POLL_INTERVAL = 3000
-      const MAX_POLLS = 60 // ~3 min
-      for (let i = 0; i < MAX_POLLS; i++) {
-        await new Promise(r => setTimeout(r, POLL_INTERVAL))
-        const result = await fetchAiInsights(carId, phone)
-        if (!result?.processing) {
-          toast({ title: "Thành công ✅", description: "AI đã tạo xong kế hoạch mới." })
-          fetchOutputs() // refresh the timeline
-          return
-        }
+      // Parse the final JSON from the stream (skip heartbeat newlines)
+      const jsonStr = resultText.trim()
+      const lastJsonStart = jsonStr.lastIndexOf("{")
+      const data = lastJsonStart >= 0 ? JSON.parse(jsonStr.substring(lastJsonStart)) : { success: false, error: "No response" }
+
+      if (data.success) {
+        toast({
+          title: "Thành công ✅",
+          description: `Đã gửi ${data.totalMessagesSent} tin nhắn tự động cho khách hàng.`,
+        })
+        fetchOutputs() // refresh the timeline
+      } else {
+        toast({
+          title: "Lỗi",
+          description: data.error || "Không thể gửi tin nhắn tự động",
+          variant: "destructive",
+        })
       }
-      toast({ title: "Timeout", description: "Chờ quá lâu kết quả từ n8n.", variant: "destructive" })
     } catch (err) {
-      console.error("Failed to re-trigger AI:", err)
-      toast({ title: "Lỗi", description: "Không thể kích hoạt lại AI", variant: "destructive" })
+      console.error("Failed to retrigger:", err)
+      toast({ title: "Lỗi", description: "Không thể kích hoạt gửi tin nhắn tự động", variant: "destructive" })
     } finally {
       setRetriggeringAi(false)
     }

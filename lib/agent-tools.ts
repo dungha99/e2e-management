@@ -35,7 +35,7 @@ export const BOOKING_TOOL_DECLARATION = {
 const getVapApiUrl = () => process.env.VUCAR_VAP_API_URL || ""
 
 // Cache all_car_info for 6 hours (it's a large list that rarely changes)
-let carInfoCache: { data: any[]; fetchedAt: number } | null = null
+let carInfoCache: { data: any; fetchedAt: number } | null = null
 const CAR_INFO_CACHE_TTL = 6 * 60 * 60 * 1000
 
 export const CAR_PRICE_TOOL_DECLARATION = {
@@ -73,9 +73,9 @@ export const CAR_PRICE_TOOL_DECLARATION = {
  * Step 1: Fetch all car info to check if brand/model/year exists in our system.
  * Caches the result for 6 hours.
  */
-async function fetchAllCarInfo(): Promise<any[]> {
+async function fetchAllCarInfo(): Promise<any> {
   if (carInfoCache && Date.now() - carInfoCache.fetchedAt < CAR_INFO_CACHE_TTL) {
-    console.log(`[Agent Tools] Car info: returning cached list (${carInfoCache.data.length} entries)`)
+    console.log(`[Agent Tools] Car info: returning cached data`)
     return carInfoCache.data
   }
 
@@ -93,10 +93,10 @@ async function fetchAllCarInfo(): Promise<any[]> {
   }
 
   const data = await res.json()
-  const carList = Array.isArray(data) ? data : (data.data || data.results || [])
-  carInfoCache = { data: carList, fetchedAt: Date.now() }
-  console.log(`[Agent Tools] Car info fetched: ${carList.length} entries`)
-  return carList
+  // The API returns a nested object: {"Toyota": {"Zace": {"2002": ["GL"]}}}
+  carInfoCache = { data, fetchedAt: Date.now() }
+  console.log(`[Agent Tools] Car info fetched: ${Object.keys(data).length} brands`)
+  return data
 }
 
 /**
@@ -111,7 +111,7 @@ function normalize(str: string): string {
  * Returns the canonical brand/model names for the API call.
  */
 function findCarInList(
-  carList: any[],
+  carData: any,
   brand: string,
   model: string,
   year: string
@@ -119,13 +119,19 @@ function findCarInList(
   const normBrand = normalize(brand)
   const normModel = normalize(model)
 
-  for (const car of carList) {
-    const carBrand = car.brand || car.make || ""
-    const carModel = car.model || ""
+  if (!carData || typeof carData !== "object") return null
 
-    if (normalize(carBrand) === normBrand && normalize(carModel) === normModel) {
-      // Return the canonical names from the system (correct casing/spelling)
-      return { brand: carBrand, model: carModel }
+  for (const carBrand of Object.keys(carData)) {
+    if (normalize(carBrand) === normBrand) {
+      const modelsObj = carData[carBrand]
+      if (!modelsObj || typeof modelsObj !== "object") continue
+
+      for (const carModel of Object.keys(modelsObj)) {
+        if (normalize(carModel) === normModel) {
+          // Found matching brand and model, return exact keys from API
+          return { brand: carBrand, model: carModel }
+        }
+      }
     }
   }
 
@@ -316,7 +322,7 @@ export async function executeToolCall(
           const listArray = Array.isArray(listings) ? listings : (listings.data || listings.results || [])
 
           hasVariantMatch = listArray.some((item: any) => {
-            const v = normalize(item.variant || item.version || item.name || "")
+            const v = normalize(item.variant || "")
             return v !== "" && (v.includes(normVariant) || normVariant.includes(v))
           })
 

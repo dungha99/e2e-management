@@ -172,7 +172,6 @@ export async function executeToolCall(
  */
 export function getAgentTools() {
   return [
-    { google_search: {} },
     {
       function_declarations: [
         BOOKING_TOOL_DECLARATION,

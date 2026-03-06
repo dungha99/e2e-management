@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { storeAgentOutput, getActiveAgentNote } from "@/lib/ai-agent-service"
+import { getAgentTools, executeToolCall } from "@/lib/agent-tools"
 
 /**
  * POST /api/e2e/auto-use-flow
@@ -468,7 +469,7 @@ Sử dụng khi bắt đầu đưa một chiếc xe lên sàn đấu giá.
 - Tuyệt đối KHÔNG tự giới thiệu lại thông tin như "Chào anh, em là Huy Hồ từ Vucar"
 - Tránh giữ nguyên các biến số như: "[Dải giá thị trường hợp lý, ví dụ: từ 700-800 triệu VND nếu xe đẹp, hoặc thấp hơn nếu xe có vấn đề theo kiểm định và anh đã xác minh là do lỗi xe]"
 - Chỉ đổi giọng văn, phải tuân theo các giá trị từ thông tin của lead, không được đưa thông tin ảo, đặc biệt là về giá xe.
-- Khi tin nhắn liên quan đến giá, hãy luôn dựa vào 3 thông tin price customer, price highest bid, và giá tìm kiếm từ google search (giá trung bình), để có chiến lược tư vấn giá và đàm phán tốt nhất dựa trên hoàn cảnh.
+- Khi tin nhắn liên quan đến giá, hãy luôn dựa vào 3 thông tin price customer, price highest bid, và giá tìm kiếm từ google search (giá bán ra), để có chiến lược tư vấn giá và đàm phán tốt nhất dựa trên hoàn cảnh.
 - Nên tách các tin nhắn thành nhiều tin nhắn nhỏ, nếu tin nhắn gốc dài.
 
 4. Định dạng đầu ra (Output Format)
@@ -479,9 +480,14 @@ CHỈ trả về MỘT object JSON duy nhất:
 }
 
 5. Sử dụng Google Search
-- Khi tin nhắn cần đề cập đến giá xe, giá thị trường, thông tin mẫu xe, và trong khi đó chúng ta chưa có giá mong muốn (price customer) của khách hoặc giá cao nhất đang có (price highest bid) - hoặc khi cần đàm phán giá xe với khách, tức là cần biết mức giá cao nhất đang có hiện tại với mức giá trung bình trên thị trường như nào → hãy tìm kiếm Google để có thông tin chính xác để tư vấn giá quốc tế (giá trung bình) cho khách.
+- Khi tin nhắn cần đề cập đến giá xe, giá thị trường, thông tin mẫu xe, và trong khi đó chúng ta chưa có giá mong muốn (price customer) của khách hoặc giá cao nhất đang có (price highest bid) - hoặc khi cần đàm phán giá xe với khách, tức là cần biết mức giá cao nhất đang có hiện tại với mức giá trung bình và giá bán ra trên thị trường như nào → hãy tìm kiếm Google để có thông tin chính xác để tư vấn giá bán ra cho khách.
 - Ưu tiên tìm: giá xe cũ của [hãng] [mẫu] [năm] thị trường Việt Nam, đánh giá xe, xu hướng giá.
 - KHÔNG tìm kiếm các thông tin đã có sẵn trong context (picId, carId, phone, scheduled_at).
+
+6. Kiểm tra lịch kiểm định (Booking Tool)
+- Khi bước yêu cầu hẹn lịch kiểm định xe → LUÔN gọi tool get_bookings_and_leave với ngày dự kiến để kiểm tra slot trống.
+- Dựa vào kết quả trả về, chọn thời gian inspector còn trống và đề xuất cho khách.
+- Nếu ngày đó đã kín lịch, thử ngày tiếp theo.
 
 CHỈ TRẢ VỀ JSON, KHÔNG GIẢI THÍCH.`
 
@@ -507,31 +513,44 @@ Return JSON object.`
 
     console.log(`[Auto Use Flow] Calling Gemini for step ${idx + 1}/${steps.length}: "${step.stepName}"...`)
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: {
-          parts: [{ text: systemPrompt }]
-        },
-        contents: [{
-          parts: [{ text: userPrompt }]
-        }],
-        generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 16384,
-        },
-        tools: [{ google_search: {} }],
-      }),
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`Gemini API failed for step ${idx + 1} (${response.status}): ${errorText}`)
+    // Function calling loop: Gemini may call tools (booking, google search) before generating JSON
+    const contents: any[] = [{ role: "user", parts: [{ text: userPrompt }] }]
+    const baseBody = {
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      generationConfig: { temperature: 0.2, maxOutputTokens: 16384 },
+      tools: getAgentTools(),
     }
 
-    const data = await response.json()
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || ""
+    let rawText = ""
+    for (let iteration = 0; iteration <= 3; iteration++) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...baseBody, contents }),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Gemini API failed for step ${idx + 1} (${response.status}): ${errorText}`)
+      }
+
+      const data = await response.json()
+      const parts = data?.candidates?.[0]?.content?.parts || []
+      const functionCall = parts.find((p: any) => p.functionCall)
+
+      if (functionCall && iteration < 3) {
+        const { name, args } = functionCall.functionCall
+        console.log(`[Auto Use Flow] Step ${idx + 1} tool call: ${name}(${JSON.stringify(args)})`)
+        const toolResult = await executeToolCall(name, args || {})
+        contents.push({ role: "model", parts })
+        contents.push({ role: "user", parts: [{ functionResponse: { name, response: { result: toolResult } } }] })
+        continue
+      }
+
+      rawText = parts.find((p: any) => p.text)?.text || ""
+      break
+    }
+
     console.log(`[Auto Use Flow] Gemini response for step ${idx + 1}:`, rawText.slice(0, 300))
 
     const parsed = parseGeminiJson(rawText)

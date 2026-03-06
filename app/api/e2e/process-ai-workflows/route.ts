@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { submitAiFeedback } from "@/lib/insight-feedback-service"
 import { callGemini } from "@/lib/gemini"
+import { getAgentTools } from "@/lib/agent-tools"
 import { storeAgentOutput, getActiveAgentNote } from "@/lib/ai-agent-service"
 
 export const dynamic = 'force-dynamic'
@@ -292,13 +293,13 @@ Bạn CHỈ được trả về JSON object duy nhất.
 
 # SỬ DỤNG GOOGLE SEARCH
 - Nếu tin nhắn đề cập đến giá xe, giá thị trường, ưu điểm/nhược điểm của mẫu xe → hãy dùng Google Search để xác minh thông tin.
-- - Khi tin nhắn liên quan đến giá, hãy luôn dựa vào 3 thông tin price customer, price highest bid, và giá tìm kiếm từ google search (giá trung bình), để có chiến lược tư vấn giá và đàm phán tốt nhất dựa trên hoàn cảnh.
+- - Khi tin nhắn liên quan đến giá, hãy luôn dựa vào 3 thông tin price customer, price highest bid, và giá tìm kiếm từ google search (giá bán ra), để có chiến lược tư vấn giá và đàm phán tốt nhất dựa trên hoàn cảnh.
 - KHÔNG tìm kiếm các thông tin đã có sẵn trong context (tên khách, phone, picId).`
 
                       const tacticalCommand = execution.description || execution.step_name
                       const prompt = `Lịch sử chat (100 tin nhắn gần nhất):\n${JSON.stringify(recentChat)}\n\nTactical Command:\n${tacticalCommand}\n\nTin nhắn dự kiến sắp gửi:\n${JSON.stringify(requestPayload.messages)}\n\nHãy đánh giá và trả về JSON.`
 
-                      const geminiResult = await callGemini(prompt, "gemini-3.1-pro-preview", systemPrompt, [{ google_search: {} }])
+                      const geminiResult = await callGemini(prompt, "gemini-3.1-pro-preview", systemPrompt, getAgentTools())
 
                       const jsonMatch = geminiResult.match(/\{[\s\S]*\}/)
                       if (jsonMatch) {

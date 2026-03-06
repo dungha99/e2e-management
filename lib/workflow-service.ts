@@ -598,48 +598,64 @@ Return JSON object.`
 
     console.log(`[Workflow Service] Calling Gemini for step ${idx + 1}/${steps.length}: "${step.stepName}"...`)
 
-    // Function calling loop: Gemini may call tools (booking, google search) before generating JSON
-    const contents: any[] = [{ role: "user", parts: [{ text: userPrompt }] }]
-    const baseBody = {
-      system_instruction: { parts: [{ text: systemPrompt }] },
-      generationConfig: { temperature: 0.2, maxOutputTokens: 16384 },
-      tools: getAgentTools(),
-    }
+    // Retry loop for JSON parsing
+    let parsed: any = null
+    let currentPrompt = userPrompt
 
-    let rawText = ""
-    for (let iteration = 0; iteration <= 3; iteration++) {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...baseBody, contents }),
-      })
-
-      if (!res.ok) {
-        const errorText = await res.text()
-        throw new Error(`Gemini API failed for step ${idx + 1} (${res.status}): ${errorText}`)
+    for (let parseAttempt = 0; parseAttempt < 3; parseAttempt++) {
+      // Function calling loop: Gemini may call tools (booking, google search) before generating JSON
+      const contents: any[] = [{ role: "user", parts: [{ text: currentPrompt }] }]
+      const baseBody = {
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: { temperature: 0.2, maxOutputTokens: 16384 },
+        tools: getAgentTools(),
       }
 
-      const data = await res.json()
-      const parts = data?.candidates?.[0]?.content?.parts || []
-      const functionCall = parts.find((p: any) => p.functionCall)
+      let rawText = ""
+      for (let iteration = 0; iteration <= 3; iteration++) {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...baseBody, contents }),
+        })
 
-      if (functionCall && iteration < 3) {
-        const { name, args } = functionCall.functionCall
-        console.log(`[Workflow Service] Step ${idx + 1} tool call: ${name}(${JSON.stringify(args)})`)
-        const toolResult = await executeToolCall(name, args || {})
-        contents.push({ role: "model", parts })
-        contents.push({ role: "user", parts: [{ functionResponse: { name, response: { result: toolResult } } }] })
-        continue
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(`Gemini API failed for step ${idx + 1} (${res.status}): ${errorText}`)
+        }
+
+        const data = await res.json()
+        const parts = data?.candidates?.[0]?.content?.parts || []
+        const functionCall = parts.find((p: any) => p.functionCall)
+
+        if (functionCall && iteration < 3) {
+          const { name, args } = functionCall.functionCall
+          console.log(`[Workflow Service] Step ${idx + 1} tool call: ${name}(${JSON.stringify(args)})`)
+          const toolResult = await executeToolCall(name, args || {})
+          contents.push({ role: "model", parts })
+          contents.push({ role: "user", parts: [{ functionResponse: { name, response: { result: toolResult } } }] })
+          continue
+        }
+
+        rawText = parts.find((p: any) => p.text)?.text || ""
+        break
       }
 
-      rawText = parts.find((p: any) => p.text)?.text || ""
-      break
+      console.log(`[Workflow Service] Gemini response for step ${idx + 1} (attempt ${parseAttempt + 1}):`, rawText.slice(0, 300))
+
+      try {
+        parsed = parseGeminiJsonObject(rawText)
+        parsed._prompt = userPrompt // Keep the original prompt for DB storage
+        break // Success
+      } catch (err: any) {
+        console.warn(`[Workflow Service] JSON parse failed on attempt ${parseAttempt + 1} for step ${idx + 1}`)
+        if (parseAttempt === 2) {
+          throw err // Fail after 3 attempts
+        }
+        currentPrompt += `\n\nERROR on previous attempt: You did not return a valid JSON object. Please ensure your ENTIRE response is a single valid JSON object without markdown formatting or extra text. Previous invalid response: ${rawText}`
+      }
     }
 
-    console.log(`[Workflow Service] Gemini response for step ${idx + 1}:`, rawText.slice(0, 300))
-
-    const parsed = parseGeminiJsonObject(rawText)
-    parsed._prompt = userPrompt
     results.push(parsed)
   }
 

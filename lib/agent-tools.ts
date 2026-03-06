@@ -30,6 +30,129 @@ export const BOOKING_TOOL_DECLARATION = {
 }
 
 // ==========================================
+// Tool: Car Price Lookup (Vucar VAP)
+// ==========================================
+const getVapApiUrl = () => process.env.VUCAR_VAP_API_URL || ""
+
+// Cache all_car_info for 6 hours (it's a large list that rarely changes)
+let carInfoCache: { data: any[]; fetchedAt: number } | null = null
+const CAR_INFO_CACHE_TTL = 6 * 60 * 60 * 1000
+
+export const CAR_PRICE_TOOL_DECLARATION = {
+  name: "lookup_car_market_price",
+  description:
+    "Tra cứu giá xe trên hệ thống Vucar. " +
+    "Sử dụng khi cần biết giá thị trường của xe để tư vấn giá, đàm phán, hoặc so sánh với giá khách mong muốn. " +
+    "Tool sẽ kiểm tra xe có trong hệ thống không, nếu có sẽ trả về danh sách giá các xe tương tự đang rao bán. " +
+    "LUÔN gọi tool này khi tin nhắn liên quan đến giá xe, đàm phán giá, hoặc cần dữ liệu giá thị trường thực tế.",
+  parameters: {
+    type: "object",
+    properties: {
+      brand: {
+        type: "string",
+        description: "Hãng xe (VD: 'Toyota', 'Honda', 'Mazda'). Viết đúng chính tả, viết hoa chữ cái đầu.",
+      },
+      model: {
+        type: "string",
+        description: "Mẫu xe (VD: 'Camry', 'City', 'CX-5'). Viết đúng chính tả.",
+      },
+      year: {
+        type: "string",
+        description: "Năm sản xuất (VD: '2022'). Phải là 4 chữ số.",
+      },
+      variant: {
+        type: "string",
+        description: "Phiên bản xe (VD: '1.5 AT', 'Premium', 'Luxury', 'E'). Tùy chọn, dùng để tăng độ chính xác của giá.",
+      },
+    },
+    required: ["brand", "model", "year"],
+  },
+}
+
+/**
+ * Step 1: Fetch all car info to check if brand/model/year exists in our system.
+ * Caches the result for 6 hours.
+ */
+async function fetchAllCarInfo(): Promise<any[]> {
+  if (carInfoCache && Date.now() - carInfoCache.fetchedAt < CAR_INFO_CACHE_TTL) {
+    console.log(`[Agent Tools] Car info: returning cached list (${carInfoCache.data.length} entries)`)
+    return carInfoCache.data
+  }
+
+  const vapUrl = getVapApiUrl()
+  const url = `${vapUrl}/values/all_car_info?original=true&unsupported=false&include_colors=false`
+  console.log(`[Agent Tools] Fetching all_car_info from VAP...`)
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "application/json" },
+  })
+
+  if (!res.ok) {
+    throw new Error(`VAP all_car_info failed (${res.status})`)
+  }
+
+  const data = await res.json()
+  const carList = Array.isArray(data) ? data : (data.data || data.results || [])
+  carInfoCache = { data: carList, fetchedAt: Date.now() }
+  console.log(`[Agent Tools] Car info fetched: ${carList.length} entries`)
+  return carList
+}
+
+/**
+ * Normalize strings for fuzzy matching (lowercase, trim, remove diacritics).
+ */
+function normalize(str: string): string {
+  return str.toLowerCase().trim().replace(/[-_]/g, " ")
+}
+
+/**
+ * Step 2: Check if the car exists in all_car_info.
+ * Returns the canonical brand/model names for the API call.
+ */
+function findCarInList(
+  carList: any[],
+  brand: string,
+  model: string,
+  year: string
+): { brand: string; model: string } | null {
+  const normBrand = normalize(brand)
+  const normModel = normalize(model)
+
+  for (const car of carList) {
+    const carBrand = car.brand || car.make || ""
+    const carModel = car.model || ""
+
+    if (normalize(carBrand) === normBrand && normalize(carModel) === normModel) {
+      // Return the canonical names from the system (correct casing/spelling)
+      return { brand: carBrand, model: carModel }
+    }
+  }
+
+  return null
+}
+
+/**
+ * Step 3: Fetch car listings/prices from VAP.
+ */
+async function fetchCarListings(brand: string, model: string, year: string): Promise<any> {
+  const vapUrl = getVapApiUrl()
+  const url = `${vapUrl}/listings/car?brand=${encodeURIComponent(brand)}&model=${encodeURIComponent(model)}&manufacture_date=${encodeURIComponent(year)}`
+  console.log(`[Agent Tools] Fetching car listings: ${url}`)
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "application/json" },
+  })
+
+  if (!res.ok) {
+    throw new Error(`VAP listings/car failed (${res.status})`)
+  }
+
+  return await res.json()
+}
+
+// ==========================================
 // Knowledge Document Tools
 // ==========================================
 interface KnowledgeDoc {
@@ -161,6 +284,63 @@ export async function executeToolCall(
       }
     }
 
+    case "lookup_car_market_price": {
+      const { brand, model, year, variant } = args
+      if (!brand || !model || !year) {
+        return JSON.stringify({ error: "Missing required parameters: brand, model, year" })
+      }
+
+      try {
+        // Step 1: Get all car info and check if this car exists
+        const carList = await fetchAllCarInfo()
+        const match = findCarInList(carList, brand, model, year)
+
+        if (!match) {
+          console.log(`[Agent Tools] Car not found in system: ${brand} ${model} ${year}`)
+          return JSON.stringify({
+            found: false,
+            message: `Xe ${brand} ${model} ${year} không có trong hệ thống giá của Vucar. Không có dữ liệu giá thị trường cho xe này.`,
+          })
+        }
+
+        console.log(`[Agent Tools] Car found: ${match.brand} ${match.model} ${year} — fetching prices...`)
+
+        // Step 2: Fetch actual price listings using canonical names
+        const listings = await fetchCarListings(match.brand, match.model, year)
+
+        // Step 3: Check variant match for confidence
+        let variantMatchStatus = "Not requested"
+        let hasVariantMatch = false
+        if (variant) {
+          const normVariant = normalize(variant)
+          const listArray = Array.isArray(listings) ? listings : (listings.data || listings.results || [])
+
+          hasVariantMatch = listArray.some((item: any) => {
+            const v = normalize(item.variant || item.version || item.name || "")
+            return v !== "" && (v.includes(normVariant) || normVariant.includes(v))
+          })
+
+          variantMatchStatus = hasVariantMatch
+            ? "Exact variant match found in listings (high confidence)"
+            : "No exact variant match found in listings (lower confidence for negotiation)"
+        }
+
+        return JSON.stringify({
+          found: true,
+          brand: match.brand,
+          model: match.model,
+          year,
+          requested_variant: variant || null,
+          has_variant_match: hasVariantMatch,
+          variant_match_status: variantMatchStatus,
+          listings,
+        })
+      } catch (err) {
+        console.error(`[Agent Tools] Car price lookup error:`, err)
+        return JSON.stringify({ error: String(err) })
+      }
+    }
+
     default:
       return JSON.stringify({ error: `Unknown tool: ${functionName}` })
   }
@@ -168,13 +348,13 @@ export async function executeToolCall(
 
 /**
  * All custom function declarations for agents.
- * Combined with google_search for the tools array.
  */
 export function getAgentTools() {
   return [
     {
       function_declarations: [
         BOOKING_TOOL_DECLARATION,
+        CAR_PRICE_TOOL_DECLARATION,
         ...KNOWLEDGE_TOOL_DECLARATIONS,
       ],
     },

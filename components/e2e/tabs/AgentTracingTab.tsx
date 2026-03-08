@@ -164,16 +164,9 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
           description: `Đã gửi ${data.totalMessagesSent} tin nhắn tự động cho khách hàng.`,
         })
         fetchOutputs() // refresh the timeline
-      } else {
-        toast({
-          title: "Lỗi",
-          description: data.error || "Không thể gửi tin nhắn tự động",
-          variant: "destructive",
-        })
       }
     } catch (err) {
       console.error("Failed to retrigger:", err)
-      toast({ title: "Lỗi", description: "Không thể kích hoạt gửi tin nhắn tự động", variant: "destructive" })
     } finally {
       setRetriggeringAi(false)
     }

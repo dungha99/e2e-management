@@ -62,26 +62,37 @@ export async function fetchZaloChatHistory({
       return []
     }
 
-    // Step 3: Fetch chat history from AkaBiz
-    const historyRes = await fetch(AKABIZ_CHAT_HISTORY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "accept": "application/json" },
-      body: JSON.stringify({ phone, shop_id: shopId }),
-    })
+    // Step 3: Fetch chat history from AkaBiz (with retries)
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const historyRes = await fetch(AKABIZ_CHAT_HISTORY_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ phone, shop_id: shopId }),
+        })
 
-    if (!historyRes.ok) {
-      console.warn(`[ChatHistoryService] AkaBiz API failed: ${historyRes.status}`)
-      return []
+        if (!historyRes.ok) {
+          console.warn(`[ChatHistoryService] AkaBiz API failed on attempt ${attempt}: ${historyRes.status}`)
+          if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
+          continue
+        }
+
+        const historyData = await historyRes.json()
+        if (historyData.is_successful && historyData.chat_history) {
+          const messages = historyData.chat_history.slice(-limit)
+          console.log(`[ChatHistoryService] Loaded ${messages.length} messages for phone=${phone}, car=${carId}`)
+          return messages
+        }
+
+        console.warn(`[ChatHistoryService] AkaBiz returned is_successful=false for phone=${phone} (attempt ${attempt})`)
+        if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
+        continue // Retry on data-level failure
+      } catch (err) {
+        console.warn(`[ChatHistoryService] Error during AkaBiz fetch (attempt ${attempt}):`, err)
+        if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
+      }
     }
 
-    const historyData = await historyRes.json()
-    if (historyData.is_successful && historyData.chat_history) {
-      const messages = historyData.chat_history.slice(-limit)
-      console.log(`[ChatHistoryService] Loaded ${messages.length} messages for phone=${phone}, car=${carId}`)
-      return messages
-    }
-
-    console.log(`[ChatHistoryService] No chat history returned from AkaBiz for phone=${phone}`)
     return []
   } catch (err) {
     console.error(`[ChatHistoryService] Error fetching chat history:`, err)

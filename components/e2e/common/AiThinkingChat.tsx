@@ -193,6 +193,7 @@ export function AiThinkingChat({
 }: AiThinkingChatProps) {
   const [feedback, setFeedback] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isRewriting, setIsRewriting] = useState(false)
   const [expandedIndices, setExpandedIndices] = useState<number[]>([])
   const [hasAnimated, setHasAnimated] = useState<string | null>(null) // Tracks last animated unique state
   const [showHistory, setShowHistory] = useState(false) // Toggle for chat history visibility
@@ -208,6 +209,33 @@ export function AiThinkingChat({
       setFeedback("")
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const handleRewritePrompt = async () => {
+    setIsRewriting(true)
+    try {
+      const res = await fetch("/api/e2e/rewrite-prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: feedback,
+          carId,
+          phone: leadPhone
+        })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.rewrittenPrompt) {
+          setFeedback(data.rewrittenPrompt)
+        }
+      } else {
+        console.error("Failed to rewrite prompt")
+      }
+    } catch (err) {
+      console.error("Error rewriting prompt:", err)
+    } finally {
+      setIsRewriting(false)
     }
   }
 
@@ -616,18 +644,28 @@ export function AiThinkingChat({
             <Textarea
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
-              disabled={isLoading || isSubmitting}
+              disabled={isLoading || isSubmitting || isRewriting}
               placeholder={isLoading ? "AI đang xử lý, vui lòng chờ..." : "Nhập thêm thông tin thực tế để AI tối ưu kịch bản... (Ví dụ: Khách đang rất cứng giá, không thích nhắn tin nhiều, thích nói chuyện ngoài lề, gap giá 20tr, giá dealer căng nhất rồi, tiếp theo gọi điện chốt lịch tối nay"}
-              className="pr-12 min-h-[90px] text-sm focus-visible:ring-indigo-500 border-indigo-100 shadow-sm resize-none rounded-xl"
+              className="pr-[90px] min-h-[90px] max-h-[400px] text-sm focus-visible:ring-indigo-500 border-indigo-100 shadow-sm resize-y rounded-xl"
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !isLoading && !isSubmitting) {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !isLoading && !isSubmitting && !isRewriting) {
                   handleSendFeedback()
                 }
               }}
             />
             <Button
               size="icon"
-              disabled={!feedback.trim() || isSubmitting || isLoading}
+              variant="outline"
+              disabled={isRewriting || isLoading || isSubmitting}
+              onClick={handleRewritePrompt}
+              title="Nhờ AI viết lại hoặc gợi ý yêu cầu"
+              className="absolute bottom-[3.25rem] right-3 bg-white/80 hover:bg-white text-indigo-600 border-indigo-200 h-9 w-9 rounded-xl shadow-sm transition-transform active:scale-95 z-10"
+            >
+              {isRewriting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            </Button>
+            <Button
+              size="icon"
+              disabled={!feedback.trim() || isSubmitting || isLoading || isRewriting}
               onClick={handleSendFeedback}
               className="absolute bottom-3 right-3 bg-indigo-600 hover:bg-indigo-700 h-9 w-9 text-white rounded-xl shadow-lg transition-transform active:scale-95"
             >

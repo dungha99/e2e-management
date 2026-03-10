@@ -241,19 +241,34 @@ export async function GET() {
 
                 if (shopId) {
                   // Fetch last 20 messages from CRM
-                  const historyRes = await fetch("https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "accept": "application/json" },
-                    body: JSON.stringify({ phone: customerPhone, shop_id: shopId }),
-                  })
+                  let recentChat: any[] | null = null
+                  for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                      const historyRes = await fetch("https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", "accept": "application/json" },
+                        body: JSON.stringify({ phone: customerPhone, shop_id: shopId }),
+                      })
 
-                  if (historyRes.ok) {
-                    const historyData = await historyRes.json()
-                    if (historyData.is_successful && historyData.chat_history) {
-                      const recentChat = historyData.chat_history.slice(-100)
-                      const reviewAgentNote = await getActiveAgentNote("Review Messages Scheduled")
+                      if (historyRes.ok) {
+                        const historyData = await historyRes.json()
+                        if (historyData.is_successful && historyData.chat_history) {
+                          recentChat = historyData.chat_history.slice(-100)
+                          break
+                        }
+                      }
+                      console.warn(`[Process AI Workflows] AkaBiz returned is_successful=false for phone=${customerPhone} (attempt ${attempt})`)
+                      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
+                    } catch (e) {
+                      console.warn(`[Process AI Workflows] Fetch error on attempt ${attempt}:`, e)
+                      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
+                    }
+                  }
 
-                      const systemPrompt = `${reviewAgentNote ? `### Cấu Hình Bổ Sung (System Preferences):\n${reviewAgentNote}\n\n` : ''}# VAI TRÒ (ROLE)
+                  if (recentChat) {
+                    const reviewAgentNote = await getActiveAgentNote("Review Messages Scheduled")
+
+                    const systemPrompt = `${reviewAgentNote ? `### Cấu Hình Bổ Sung (System Preferences):\n${reviewAgentNote}\n\n` : ''}# VAI TRÒ (ROLE)
 Bạn là "Chuyên gia Tư vấn Truyền thông Vucar" - người thẩm định cuối cùng cho mọi tin nhắn gửi đi trên Zalo. Nhiệm vụ của bạn là biến các bản thảo tin nhắn từ Chat Agent trở nên "người" hơn, gần gũi hơn và có tỷ lệ chuyển đổi cao hơn.
 
 # BỐI CẢNH (CONTEXT)
@@ -296,38 +311,35 @@ Bạn CHỈ được trả về JSON object duy nhất.
 - - Khi tin nhắn liên quan đến giá, hãy luôn dựa vào 3 thông tin price customer, price highest bid, và giá tìm kiếm từ google search (giá bán ra), để có chiến lược tư vấn giá và đàm phán tốt nhất dựa trên hoàn cảnh.
 - KHÔNG tìm kiếm các thông tin đã có sẵn trong context (tên khách, phone, picId).`
 
-                      const tacticalCommand = execution.description || execution.step_name
-                      const prompt = `Lịch sử chat (100 tin nhắn gần nhất):\n${JSON.stringify(recentChat)}\n\nTactical Command:\n${tacticalCommand}\n\nTin nhắn dự kiến sắp gửi:\n${JSON.stringify(requestPayload.messages)}\n\nHãy đánh giá và trả về JSON.`
+                    const tacticalCommand = execution.description || execution.step_name
+                    const prompt = `Lịch sử chat (100 tin nhắn gần nhất):\n${JSON.stringify(recentChat)}\n\nTactical Command:\n${tacticalCommand}\n\nTin nhắn dự kiến sắp gửi:\n${JSON.stringify(requestPayload.messages)}\n\nHãy đánh giá và trả về JSON.`
 
-                      const geminiResult = await callGemini(prompt, "gemini-3.1-pro-preview", systemPrompt, getAgentTools())
+                    const geminiResult = await callGemini(prompt, "gemini-3.1-pro-preview", systemPrompt, getAgentTools())
 
-                      const jsonMatch = geminiResult.match(/\{[\s\S]*\}/)
-                      if (jsonMatch) {
-                        const parsed = JSON.parse(jsonMatch[0])
-                        if (parsed && Array.isArray(parsed.messages)) {
-                          requestPayload.messages = parsed.messages
-                          execution.request_payload = requestPayload // update in memory
+                    const jsonMatch = geminiResult.match(/\{[\s\S]*\}/)
+                    if (jsonMatch) {
+                      const parsed = JSON.parse(jsonMatch[0])
+                      if (parsed && Array.isArray(parsed.messages)) {
+                        requestPayload.messages = parsed.messages
+                        execution.request_payload = requestPayload // update in memory
 
-                          // Update in DB so we have a record of the rewritten payload
-                          await e2eQuery(
-                            `UPDATE step_executions SET request_payload = $1 WHERE id = $2`,
-                            [JSON.stringify(requestPayload), execution.id]
-                          )
-                          console.log(`[Process AI Workflows] AI Script Evaluator successfully rewrote messages.`)
+                        // Update in DB so we have a record of the rewritten payload
+                        await e2eQuery(
+                          `UPDATE step_executions SET request_payload = $1 WHERE id = $2`,
+                          [JSON.stringify(requestPayload), execution.id]
+                        )
+                        console.log(`[Process AI Workflows] AI Script Evaluator successfully rewrote messages.`)
 
-                          // Track Review Messages Scheduled agent output
-                          storeAgentOutput({
-                            agentName: "Review Messages Scheduled",
-                            carId: instance.car_id,
-                            sourceInstanceId: instance.id,
-                            inputPayload: prompt,
-                            outputPayload: parsed,
-                          }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
-                        }
+                        // Track Review Messages Scheduled agent output
+                        storeAgentOutput({
+                          agentName: "Review Messages Scheduled",
+                          carId: instance.car_id,
+                          sourceInstanceId: instance.id,
+                          inputPayload: prompt,
+                          outputPayload: parsed,
+                        }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
                       }
                     }
-                  } else {
-                    console.warn(`[Process AI Workflows] CRM history fetch failed with status ${historyRes.status}`)
                   }
                 }
               }
@@ -586,27 +598,46 @@ async function checkCustomerResponded(phone: string, picId: string): Promise<boo
     return true
   }
 
-  // Step 2: Fetch chat history from AkaBiz
-  const chatRes = await fetch(
-    "https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contacts_limit: 10,
-        contacts_max_pages: 10,
-        messages_limit: 20,
-        phone,
-        shop_id: shopId,
-      }),
-    }
-  )
+  // Step 2: Fetch chat history from AkaBiz (with retries)
+  let chatData: any = null
+  let chatResOk = false
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const chatRes = await fetch(
+        "https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contacts_limit: 10,
+            contacts_max_pages: 10,
+            messages_limit: 20,
+            phone,
+            shop_id: shopId,
+          }),
+        }
+      )
 
-  if (!chatRes.ok) {
-    throw new Error(`AkaBiz chat history API failed: ${chatRes.status}`)
+      if (chatRes.ok) {
+        const data = await chatRes.json()
+        if (data.is_successful !== false) {
+          chatData = data
+          chatResOk = true
+          break
+        }
+      }
+      console.warn(`[checkCustomerResponded] AkaBiz API failed or is_successful=false (attempt ${attempt})`)
+      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
+    } catch (e) {
+      console.warn(`[checkCustomerResponded] Fetch error on attempt ${attempt}:`, e)
+      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
+    }
   }
 
-  const chatData: any = await chatRes.json()
+  if (!chatResOk || !chatData) {
+    throw new Error(`AkaBiz chat history API failed after retries`)
+  }
+
   const chatHistory: any[] = chatData?.chat_history || []
 
   if (chatHistory.length === 0) {

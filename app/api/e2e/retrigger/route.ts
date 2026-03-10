@@ -102,22 +102,41 @@ export async function POST(request: Request) {
           return
         }
 
-        // --- 3. Fetch chat history from AkaBiz ---
+        // --- 3. Fetch chat history from AkaBiz (with retries) ---
         console.log(`[Retrigger] Fetching chat history for phone=${phone}, shopId=${shopId}...`)
-        const chatHistoryRes = await fetch(AKABIZ_CHAT_HISTORY_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "accept": "application/json" },
-          body: JSON.stringify({ phone, shop_id: shopId }),
-        })
+        let chatHistoryData: any = null
+        let chatResOk = false
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const chatHistoryRes = await fetch(AKABIZ_CHAT_HISTORY_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "accept": "application/json" },
+              body: JSON.stringify({ phone, shop_id: shopId }),
+            })
 
-        if (!chatHistoryRes.ok) {
+            if (chatHistoryRes.ok) {
+              const data = await chatHistoryRes.json()
+              if (data.is_successful !== false) {
+                chatHistoryData = data
+                chatResOk = true
+                break
+              }
+            }
+            console.warn(`[Retrigger] AkaBiz API failed or is_successful=false (attempt ${attempt})`)
+            if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
+          } catch (e) {
+            console.warn(`[Retrigger] Fetch error on attempt ${attempt}:`, e)
+            if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
+          }
+        }
+
+        if (!chatResOk || !chatHistoryData) {
           controller.enqueue(encoder.encode(JSON.stringify(
-            { success: false, error: `AkaBiz chat history API failed: ${chatHistoryRes.status}` }
+            { success: false, error: `AkaBiz chat history API failed after retries` }
           )))
           return
         }
 
-        const chatHistoryData = await chatHistoryRes.json()
         console.log(`[Retrigger] Chat history fetched successfully`)
 
         // --- 4. Send raw chat history body to n8n auto-chat webhook ---

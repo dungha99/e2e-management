@@ -59,29 +59,47 @@ export async function POST(request: Request) {
       shop_id,
     });
 
-    const response = await fetch(
-      "https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          accept: "application/json",
-        },
-        body: JSON.stringify({ phone, shop_id }),
-      }
-    );
+    let data: any = null;
+    let fallbackError: any = null;
+    let resOk = false;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(
-        "[Get Chat History API] CRM API error:",
-        response.status,
-        errorText
-      );
-      throw new Error(`CRM API returned ${response.status}: ${errorText}`);
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const response = await fetch(
+          "https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              accept: "application/json",
+            },
+            body: JSON.stringify({ phone, shop_id }),
+          }
+        );
+
+        if (response.ok) {
+          const respData = await response.json();
+          if (respData.is_successful !== false) {
+            data = respData;
+            resOk = true;
+            break;
+          }
+        }
+
+        console.warn(`[Get Chat History API] CRM API failed or is_successful=false (attempt ${attempt})`);
+        if (attempt < 3) await new Promise((res) => setTimeout(res, 2000));
+      } catch (err: any) {
+        fallbackError = err;
+        console.error(`[Get Chat History API] Fetch error on attempt ${attempt}:`, err);
+        if (attempt < 3) await new Promise((res) => setTimeout(res, 2000));
+      }
     }
 
-    const data = await response.json();
+    if (!resOk || !data) {
+      console.error("[Get Chat History API] CRM API failed after 3 retries");
+      throw new Error(fallbackError?.message || `CRM API failed after 3 retries`);
+    }
+
     console.log("[Get Chat History API] Success:", {
       is_successful: data.is_successful,
       phone: data.phone,

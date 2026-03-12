@@ -39,6 +39,7 @@ export async function POST(request: Request) {
 Từ đoạn tóm tắt được cung cấp, hãy trích xuất các thông tin sau và trả về MỘT JSON object duy nhất:
 
 {
+  "thinking_process": "Giải thích chi tiết lý do tại sao bạn điền từng giá trị vào các trường bên dưới. Ví dụ: 'location=TP.HCM vì tóm tắt đề cập khách ở HCM; stage=negotiation vì khách hỏi giá 700 triệu; qualified=weak_qualified vì không thấy đề cập ảnh xe'",
   "location": "Tỉnh/thành phố của xe (chỉ tên tỉnh/thành, không cần quận/huyện). null nếu không có.",
   "brand": "Thương hiệu xe (VD: Toyota, Honda, ...). null nếu không có.",
   "model": "Dòng xe (VD: Camry, Civic, ...). null nếu không có.",
@@ -88,7 +89,8 @@ CHỈ trả về JSON object. KHÔNG giải thích, KHÔNG markdown, KHÔNG text
 
     return NextResponse.json({
       lead_id,
-      properties,
+      thinking_process: properties.thinking_process || null,
+      properties: (({ thinking_process, ...rest }) => rest)(properties),
     })
   } catch (error: any) {
     console.error("[Extract Lead Properties API] Error:", error)

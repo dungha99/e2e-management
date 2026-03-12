@@ -51,7 +51,11 @@ function formatMessageForSummary(msg: ChatMessage): string | null {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
+    let body = await request.json()
+    // Handle double-encoded JSON (body sent as a string instead of object)
+    if (typeof body === "string") {
+      try { body = JSON.parse(body) } catch { }
+    }
     const { lead_id, chat_history, previous_summary } = body
 
     if (!lead_id) {
@@ -109,7 +113,7 @@ Giữ tóm tắt dưới 500 từ. Viết bằng tiếng Việt. Chỉ trả v�
       userPrompt = `LỊCH SỬ CHAT:\n${formattedMessages}\n\nHãy tóm tắt lịch sử chat này.`
     }
 
-    const summaryText = await callGemini(userPrompt, "gemini-2.0-flash", systemPrompt)
+    const summaryText = await callGemini(userPrompt, "gemini-3-flash-preview", systemPrompt)
 
     return NextResponse.json({
       lead_id,

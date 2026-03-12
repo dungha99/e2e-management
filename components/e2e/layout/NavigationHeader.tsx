@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 import { TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 interface NavigationHeaderProps {
-    currentPage: "dashboard" | "campaigns" | "e2e" | "workflow"
+    currentPage: "dashboard" | "campaigns" | "e2e" | "workflow" | "lead-management"
     selectedAccount?: string
     accountSelector?: React.ReactNode
     viewMode?: "list" | "kanban"
@@ -22,6 +22,7 @@ const NAV_ITEMS = [
     { value: "campaigns", label: "Quản lý Decoy", href: "/decoy-management" },
     { value: "e2e", label: "Quản lý E2E", href: (accountId: string) => `/e2e/${accountId}?tab=priority&page=1` },
     { value: "workflow", label: "Quản lý Workflow", href: "/workflow-management" },
+    { value: "lead-management", label: "Lead Management", href: "/lead-management" },
 ]
 
 export function NavigationHeader({
@@ -130,6 +131,7 @@ export function NavigationHeader({
                         <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>
                         <TabsTrigger value="e2e">Quản lý E2E</TabsTrigger>
                         <TabsTrigger value="workflow">Quản lý Workflow</TabsTrigger>
+                        <TabsTrigger value="lead-management">Lead Management</TabsTrigger>
                     </TabsList>
                 </div>
 

@@ -206,6 +206,7 @@ export function E2EManagement({
   const currentPage = parseInt(searchParams.get("page") || "1")
   const appliedSearchPhone = searchParams.get("search") || ""
   const sourceFilter = searchParams.get("sources")?.split(",").filter(Boolean) || []
+  const initialLeadId = searchParams.get("leadId") || null
 
   // Date range from URL params (format: YYYY-MM-DD)
   const dateFromParam = searchParams.get("dateFrom") || null
@@ -407,6 +408,30 @@ export function E2EManagement({
       setBiddingHistory([])
     }
   }, [selectedLead?.car_id])
+
+  // Handle deep-linking to a specific lead via URL parameter
+  const initialLeadPhone = searchParams.get("leadPhone") || null
+  useEffect(() => {
+    if (initialLeadId && !selectedLead) {
+      // Find lead in current list if possible
+      const existingLead = leads.find((l: Lead) => l.id === initialLeadId) || leads.find((l: Lead) => l.phone === initialLeadId)
+      
+      if (existingLead) {
+        handleLeadClick(existingLead)
+      } else {
+        // If not in current page/list, construct a minimal lead and fetch details 
+        // using phone=initialLeadPhone (or initialLeadId as fallback)
+        const dummyLead = {
+          id: initialLeadId,
+          phone: initialLeadPhone || initialLeadId,
+          car_id: '',
+          name: 'Đang tải...',
+          stage: '',
+        } as unknown as Lead
+        handleLeadClick(dummyLead)
+      }
+    }
+  }, [initialLeadId, initialLeadPhone, leads])
 
   // Memoize processed images to avoid re-processing on every render
   const processedImages = useMemo(() => {

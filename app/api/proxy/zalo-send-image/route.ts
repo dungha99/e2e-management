@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const abitstoreUrl = "https://new.abitstore.vn/zalo/sendImageToGroupZalo/6/CaNhanTest/JumNkKmJQtMfB6s"
+    const abitstoreUrl = "https://new.abitstore.vn/zalo/sendImageToGroupZalo/2/YenNhi/r4w2uwALscvaQ8d"
 
     const payload = {
       send_from_number,

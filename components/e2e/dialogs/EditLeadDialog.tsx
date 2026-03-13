@@ -9,9 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Loader2, ExternalLink, Copy, ChevronLeft, ChevronRight } from "lucide-react"
 import { Lead } from "../types"
-import { formatPrice, formatCarInfo, formatPriceForEdit } from "../utils"
+import { formatPrice, formatPriceForEdit } from "../utils"
 import { maskPhone } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
+import { BiddingSection } from "./BiddingSection"
 
 interface EditLeadDialogProps {
   open: boolean
@@ -526,6 +527,10 @@ Giá mong muốn: ${lead.price_customer ? formatPrice(lead.price_customer) : "N/
                 </div>
               </div>
             </div>
+
+            {/* Section 4: Bidding Information */}
+            <BiddingSection carId={lead.car_id} />
+
           </div>
         )}
 

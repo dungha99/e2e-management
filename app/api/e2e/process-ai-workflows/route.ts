@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server"
-import { e2eQuery } from "@/lib/db"
+import { e2eQuery, vucarV2Query } from "@/lib/db"
+import { submitAiFeedback } from "@/lib/insight-feedback-service"
+import { callGemini } from "@/lib/gemini"
+import { getAgentTools } from "@/lib/agent-tools"
+import { storeAgentOutput, getActiveAgentNote } from "@/lib/ai-agent-service"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -22,7 +26,7 @@ interface ProcessingResult {
   instanceId: string
   workflowName: string
   stepsProcessed: number
-  stoppedReason: "all_done" | "scheduled_future" | "step_failed" | "error"
+  stoppedReason: "all_done" | "scheduled_future" | "step_failed" | "error" | "customer_no_response"
   error?: string
 }
 
@@ -36,7 +40,8 @@ export async function GET() {
       `SELECT wi.*, w.name AS workflow_name
        FROM workflow_instances wi
        JOIN workflows w ON w.id = wi.workflow_id
-       WHERE w.type = 'AI' AND wi.status = 'running'
+       LEFT JOIN ai_process_blacklist pb ON pb.car_id = wi.car_id
+       WHERE w.type = 'AI' AND wi.status = 'running' AND pb.car_id IS NULL
        ORDER BY wi.started_at ASC`
     )
 
@@ -62,6 +67,24 @@ export async function GET() {
         stoppedReason: "all_done",
       }
 
+      // Resolve customer phone (additional_phone first) and pic_id for this instance
+      let customerPhone = ""
+      let picId = ""
+      try {
+        const contactResult = await vucarV2Query(
+          `SELECT l.phone, l.additional_phone, l.pic_id
+           FROM cars c
+           JOIN leads l ON l.id = c.lead_id
+           WHERE c.id = $1 LIMIT 1`,
+          [instance.car_id]
+        )
+        const contact = contactResult.rows[0]
+        customerPhone = contact?.additional_phone || contact?.phone || ""
+        picId = contact?.pic_id || ""
+      } catch (err) {
+        console.warn(`[Process AI Workflows] Could not resolve phone/picId for car ${instance.car_id}:`, err)
+      }
+
       try {
         let currentStepId = instance.current_step_id
         let continueLoop = true
@@ -79,7 +102,7 @@ export async function GET() {
 
           // --- 2a. Get the step_execution for this step ---
           const execResult = await e2eQuery(
-            `SELECT se.*, ws.connector_id, ws.step_name, ws.step_order, ws.input_mapping
+            `SELECT se.*, ws.connector_id, ws.step_name, ws.step_order, ws.input_mapping, ws.description
              FROM step_executions se
              JOIN workflow_steps ws ON ws.id = se.step_id
              WHERE se.instance_id = $1 AND se.step_id = $2
@@ -97,8 +120,8 @@ export async function GET() {
 
           const execution = execResult.rows[0]
 
-          // Skip if already completed or failed
-          if (execution.status === 'success' || execution.status === 'failed') {
+          // Skip if already completed, failed, or currently running (prevents duplicate sends when cron fires again)
+          if (execution.status === 'success' || execution.status === 'failed' || execution.status === 'running') {
             // Move to next step
             currentStepId = await getNextStepId(instance.workflow_id, execution.step_order)
             if (currentStepId) {
@@ -111,7 +134,12 @@ export async function GET() {
           }
 
           // --- 2b. Check scheduled_at ---
-          const scheduledAt = execution.scheduled_at ? new Date(execution.scheduled_at) : null
+          // scheduled_at is stored as Vietnam local time (UTC+7) without timezone info.
+          // Vercel runs in UTC, so new Date() on a bare datetime string treats it as UTC
+          // → 7 hours ahead of real time. Subtract 7h to get the true UTC equivalent.
+          const scheduledAt = execution.scheduled_at
+            ? new Date(new Date(execution.scheduled_at).getTime() - 7 * 60 * 60 * 1000)
+            : null
           const now = new Date()
 
           if (scheduledAt && scheduledAt > now) {
@@ -122,13 +150,205 @@ export async function GET() {
             break
           }
 
+          // --- 2b-ii. Customer engagement check (only for scheduled steps) ---
+          // If the step had a scheduled_at, the customer had time to respond.
+          // If they haven't replied in 2 days, skip and trigger re-analysis.
+          if (execution.scheduled_at && customerPhone && picId) {
+            console.log(`[Process AI Workflows] Checking customer response for "${execution.step_name}" (phone: ${customerPhone})...`)
+            let responded = false
+            try {
+              responded = await checkCustomerResponded(customerPhone, picId)
+            } catch (err) {
+              console.warn(`[Process AI Workflows] Engagement check failed (non-blocking):`, err)
+              responded = true // Default to proceeding if the check itself fails
+            }
+
+            if (!responded) {
+              console.log(`[Process AI Workflows] Customer has NOT responded in 2 days. Triggering re-analysis...`)
+
+              await e2eQuery(
+                `UPDATE step_executions SET status = 'skipped', error_message = $1 WHERE id = $2`,
+                ['Customer did not respond within 2 days — strategy re-analysis triggered', execution.id]
+              )
+
+              if (instance.car_id) {
+                const noResponseFeedback = `[Auto-Check] Khách hàng chưa phản hồi trong 2 ngày kể từ bước "${execution.step_name}". Cần điều chỉnh chiến lược tiếp cận.`
+
+                // 1. Update the AI Knowledge Diary so the model learns from this pattern
+                import("@/lib/ai-notes-service").then(({ updateAiNoteFromFeedback }) => {
+                  updateAiNoteFromFeedback({
+                    block: "insight-generator",
+                    aiResponse: `Workflow step "${execution.step_name}" was scheduled and executed, but the customer did not reply within 2 days.`,
+                    userFeedback: noResponseFeedback,
+                    feedbackType: "text",
+                  }).catch((err) => console.error(`[Process AI Workflows] AI Notes update failed:`, err))
+                }).catch(() => { })
+
+                // 2. Submit insight feedback → triggers AI re-analysis + new workflow creation
+                try {
+                  console.log(`[Process AI Workflows] Submitting feedback for car ${instance.car_id}...`)
+                  await submitAiFeedback({
+                    carId: instance.car_id,
+                    sourceInstanceId: instance.id,
+                    phoneNumber: customerPhone,
+                    feedback: noResponseFeedback,
+                    retrigger: true,
+                  })
+                  console.log(`[Process AI Workflows] Re-analysis and new workflow triggered successfully.`)
+                } catch (err) {
+                  console.error(`[Process AI Workflows] submitAiFeedback failed:`, err)
+                }
+              }
+
+              result.stoppedReason = "customer_no_response"
+              continueLoop = false
+              break
+            }
+
+            console.log(`[Process AI Workflows] Customer HAS responded recently. Proceeding with step.`)
+          }
+
           // --- 2c. Mark step as running ---
           await e2eQuery(
             `UPDATE step_executions SET status = 'running', executed_at = NOW() WHERE id = $1`,
             [execution.id]
           )
 
-          // --- 2d. Execute the connector ---
+          // --- 2d. Pre-execution AI Script Evaluator (for "Gửi Script" only) ---
+          if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee") { // Gửi Script
+            console.log(`[Process AI Workflows] Triggering AI Script Evaluator for Gửi Script...`)
+            try {
+              let requestPayload = execution.request_payload
+              if (typeof requestPayload === "string") {
+                requestPayload = JSON.parse(requestPayload)
+              }
+
+              if (requestPayload && Array.isArray(requestPayload.messages) && customerPhone && picId) {
+                // Fetch shopId via n8n
+                let shopId: string | undefined
+                try {
+                  const n8nRes = await fetch("https://n8n.vucar.vn/webhook/f23b1b03-b198-4dc3-a196-d97a5cae8aff", {
+                    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pic_id: picId })
+                  })
+                  if (n8nRes.ok) {
+                    let n8nData: any = await n8nRes.json()
+                    if (Array.isArray(n8nData)) n8nData = n8nData[0]
+                    shopId = n8nData?.shop_id
+                  }
+                } catch (e) {
+                  console.warn(`[Process AI Workflows] AI Evaluator failed to get shopId for picId=${picId}`, e)
+                }
+
+                if (shopId) {
+                  // Fetch last 20 messages from CRM
+                  let recentChat: any[] | null = null
+                  for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                      const historyRes = await fetch("https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", "accept": "application/json" },
+                        body: JSON.stringify({ phone: customerPhone, shop_id: shopId }),
+                      })
+
+                      if (historyRes.ok) {
+                        const historyData = await historyRes.json()
+                        if (historyData.is_successful && historyData.chat_history) {
+                          recentChat = historyData.chat_history.slice(-100)
+                          break
+                        }
+                      }
+                      console.warn(`[Process AI Workflows] AkaBiz returned is_successful=false for phone=${customerPhone} (attempt ${attempt})`)
+                      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
+                    } catch (e) {
+                      console.warn(`[Process AI Workflows] Fetch error on attempt ${attempt}:`, e)
+                      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
+                    }
+                  }
+
+                  if (recentChat) {
+                    const reviewAgentNote = await getActiveAgentNote("Review Messages Scheduled")
+
+                    const systemPrompt = `${reviewAgentNote ? `### Cấu Hình Bổ Sung (System Preferences):\n${reviewAgentNote}\n\n` : ''}# VAI TRÒ (ROLE)
+Bạn là "Chuyên gia Tư vấn Truyền thông Vucar" - người thẩm định cuối cùng cho mọi tin nhắn gửi đi trên Zalo. Nhiệm vụ của bạn là biến các bản thảo tin nhắn từ Chat Agent trở nên "người" hơn, gần gũi hơn và có tỷ lệ chuyển đổi cao hơn.
+
+# BỐI CẢNH (CONTEXT)
+Bạn có quyền truy cập vào:
+- [Chat History]: 100 tin nhắn gần nhất để hiểu nhịp điệu cuộc hội thoại.
+- [Tactical Command]: Mệnh lệnh chiến thuật gốc của Planner.
+- [Draft Messages]: Các tin nhắn dự kiến từ Chat Agent.
+
+# NGUYÊN TẮC CỐT LÕI (CORE PRINCIPLES)
+1. Tự nhiên hóa: Loại bỏ sự cứng nhắc, máy móc. Sử dụng ngôn ngữ giao tiếp hàng ngày (miền Nam).
+2. Tối ưu mục tiêu: Đảm bảo tin nhắn phục vụ đúng "Tactical Command". Nếu tin nhắn quá dài hoặc lan man, hãy cắt gọt thẳng tay.
+3. Tôn trọng ngữ cảnh: 
+   - Nếu khách hàng đang ở trạng thái muốn dừng (stop_conversation), hãy để mảng \`messages\` trống \`[]\` hoặc chỉ gửi một câu chào tạm biệt cực ngắn.
+   - Nếu tin nhắn đã tự nhiên, giữ nguyên.
+   - Nếu cần follow-up, thêm vào các câu hỏi gợi mở như: "Dạ anh thấy đề xuất này thế nào ạ?", "Anh có cần em hỗ trợ gì thêm hong?"...
+   - Không đánh số; không gửi dồn dập; trò chuyện như người thật.
+   - Tuyệt đối không lặp lại nội dung tin nhắn, câu hỏi, và yêu cầu khách hàng phải xác nhận thông tin đã có trong lịch sử chat.
+4. Giới hạn: Chỉ tối đa 3 tin nhắn ngắn. Không bao giờ dùng dấu chấm (.) ở cuối tin nhắn.
+
+# QUY TRÌNH (PROCESS)
+1. Kiểm tra "màu sắc" hội thoại: Đã đủ thân thiện và đúng giọng điệu Vucar chưa?
+2. Kiểm tra tính "Call-to-Action": Tin nhắn đã đủ thúc đẩy hành động tiếp theo chưa?
+3. Điều chỉnh: Viết lại (nếu cần) hoặc giữ nguyên.
+
+# ĐỊNH DẠNG ĐẦU RA (OUTPUT FORMAT)
+Bạn CHỈ được trả về JSON object duy nhất.
+{
+  "messages": ["tin nhắn 1", "tin nhắn 2"],
+  "reasoning": "Tóm tắt lý do tại sao giữ nguyên hoặc sửa đổi tin nhắn (để Planner hiểu lý do)",
+  "status": "APPROVED / REVISED / EMPTY"
+}
+
+# QUY ĐỊNH BẮT BUỘC
+- KHÔNG giải thích dài dòng ngoài phạm vi JSON.
+- LUÔN gọi "anh" hoặc "chị", tuyệt đối không dùng "anh/chị".
+- Nếu không cần thiết phải nhắn thêm, hãy trả về mảng rỗng \`[]\`.
+
+# SỬ DỤNG GOOGLE SEARCH
+- Nếu tin nhắn đề cập đến giá xe, giá thị trường, ưu điểm/nhược điểm của mẫu xe → hãy dùng Google Search để xác minh thông tin.
+- - Khi tin nhắn liên quan đến giá, hãy luôn dựa vào 3 thông tin price customer, price highest bid, và giá tìm kiếm từ google search (giá bán ra), để có chiến lược tư vấn giá và đàm phán tốt nhất dựa trên hoàn cảnh.
+- KHÔNG tìm kiếm các thông tin đã có sẵn trong context (tên khách, phone, picId).`
+
+                    const tacticalCommand = execution.description || execution.step_name
+                    const prompt = `Lịch sử chat (100 tin nhắn gần nhất):\n${JSON.stringify(recentChat)}\n\nTactical Command:\n${tacticalCommand}\n\nTin nhắn dự kiến sắp gửi:\n${JSON.stringify(requestPayload.messages)}\n\nHãy đánh giá và trả về JSON.`
+
+                    const geminiResult = await callGemini(prompt, "gemini-3.1-pro-preview", systemPrompt, getAgentTools())
+
+                    const jsonMatch = geminiResult.match(/\{[\s\S]*\}/)
+                    if (jsonMatch) {
+                      const parsed = JSON.parse(jsonMatch[0])
+                      if (parsed && Array.isArray(parsed.messages)) {
+                        requestPayload.messages = parsed.messages
+                        execution.request_payload = requestPayload // update in memory
+
+                        // Update in DB so we have a record of the rewritten payload
+                        await e2eQuery(
+                          `UPDATE step_executions SET request_payload = $1 WHERE id = $2`,
+                          [JSON.stringify(requestPayload), execution.id]
+                        )
+                        console.log(`[Process AI Workflows] AI Script Evaluator successfully rewrote messages.`)
+
+                        // Track Review Messages Scheduled agent output
+                        storeAgentOutput({
+                          agentName: "Review Messages Scheduled",
+                          carId: instance.car_id,
+                          sourceInstanceId: instance.id,
+                          inputPayload: prompt,
+                          outputPayload: parsed,
+                        }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (err) {
+              console.error(`[Process AI Workflows] AI Script Evaluator failed, falling back to original payload:`, err)
+            }
+          }
+
+          // --- 2e. Execute the connector ---
           console.log(`[Process AI Workflows] Executing step "${execution.step_name}" (connector: ${execution.connector_id})`)
 
           let connectorSuccess = false
@@ -292,31 +512,152 @@ async function executeConnector(
   // Call the connector
   console.log(`[Process AI Workflows] Calling connector: ${method} ${base_url}`)
 
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000) // 5 minutes
+
   const fetchOptions: RequestInit = {
     method: method || "POST",
     headers,
+    signal: controller.signal,
   }
 
   if (method !== "GET" && method !== "HEAD") {
     fetchOptions.body = JSON.stringify(payload)
   }
 
-  const response = await fetch(base_url, fetchOptions)
-  const responseText = await response.text()
-  let data: any
   try {
-    data = JSON.parse(responseText)
-  } catch {
-    data = responseText
+    const response = await fetch(base_url, fetchOptions)
+    clearTimeout(timeoutId)
+
+    const responseText = await response.text()
+    let data: any
+    try {
+      data = JSON.parse(responseText)
+    } catch {
+      data = responseText
+    }
+
+    if (!response.ok) {
+      return {
+        success: false,
+        data,
+        error: `Connector returned ${response.status}: ${typeof data === 'string' ? data : JSON.stringify(data).slice(0, 200)}`,
+      }
+    }
+
+    return { success: true, data }
+  } catch (err) {
+    clearTimeout(timeoutId)
+    const errorMessage = err instanceof Error && err.name === 'AbortError'
+      ? 'Connector execution timed out after 5 minutes'
+      : (err instanceof Error ? err.message : String(err))
+
+    return { success: false, error: errorMessage }
+  }
+}
+
+// =========================================================================
+// Helper: Check if customer has responded in the last 2 days via Zalo chat
+// =========================================================================
+async function checkCustomerResponded(phone: string, picId: string): Promise<boolean> {
+  const CustomerResponded_MS = 2 * 24 * 60 * 60 * 1000
+
+  // Step 1: Get shop_id from n8n webhook using pic_id
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000) // 5 minutes
+
+  let shopId: string | undefined
+
+  try {
+    const n8nRes = await fetch(
+      "https://n8n.vucar.vn/webhook/f23b1b03-b198-4dc3-a196-d97a5cae8aff",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pic_id: picId }),
+        signal: controller.signal,
+      }
+    )
+    clearTimeout(timeoutId)
+
+    if (!n8nRes.ok) {
+      throw new Error(`n8n webhook failed: ${n8nRes.status}`)
+    }
+
+    let n8nData: any = await n8nRes.json()
+    if (Array.isArray(n8nData)) n8nData = n8nData[0]
+    shopId = n8nData?.shop_id
+  } catch (err) {
+    clearTimeout(timeoutId)
+    console.error(`[checkCustomerResponded] n8n fetch error:`, err)
+    // Fallback: assume responded if we can't get shopId
+    return true
+  }
+  if (!shopId) {
+    console.warn(`[checkCustomerResponded] No shop_id returned for picId=${picId}. Assuming responded.`)
+    return true
   }
 
-  if (!response.ok) {
-    return {
-      success: false,
-      data,
-      error: `Connector returned ${response.status}: ${typeof data === 'string' ? data : JSON.stringify(data).slice(0, 200)}`,
+  // Step 2: Fetch chat history from AkaBiz (with retries)
+  let chatData: any = null
+  let chatResOk = false
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const chatRes = await fetch(
+        "https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contacts_limit: 10,
+            contacts_max_pages: 10,
+            messages_limit: 20,
+            phone,
+            shop_id: shopId,
+          }),
+        }
+      )
+
+      if (chatRes.ok) {
+        const data = await chatRes.json()
+        if (data.is_successful !== false) {
+          chatData = data
+          chatResOk = true
+          break
+        }
+      }
+      console.warn(`[checkCustomerResponded] AkaBiz API failed or is_successful=false (attempt ${attempt})`)
+      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
+    } catch (e) {
+      console.warn(`[checkCustomerResponded] Fetch error on attempt ${attempt}:`, e)
+      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
     }
   }
 
-  return { success: true, data }
+  if (!chatResOk || !chatData) {
+    throw new Error(`AkaBiz chat history API failed after retries`)
+  }
+
+  const chatHistory: any[] = chatData?.chat_history || []
+
+  if (chatHistory.length === 0) {
+    console.log(`[checkCustomerResponded] No chat history found for phone=${phone}`)
+    return false
+  }
+
+  // Step 3: Find any message from the CUSTOMER (senderName without "Vucar") within 6 hours
+  const cutoff = new Date(Date.now() - CustomerResponded_MS)
+  const customerReplied = chatHistory.some((msg) => {
+    const name: string = msg.senderName || ""
+    const isCustomer = !name.toLowerCase().includes("vucar")
+    if (!isCustomer) return false
+    const msgDate = new Date(msg.dateAction)
+    return msgDate >= cutoff
+  })
+
+  console.log(
+    `[checkCustomerResponded] phone=${phone}, shopId=${shopId}, ` +
+    `messages=${chatHistory.length}, customerRepliedIn6Hours=${customerReplied}`
+  )
+  return customerReplied
 }

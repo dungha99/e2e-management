@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { submitAiFeedback } from "@/lib/insight-feedback-service"
+import { storeAgentOutput, getActiveAgentNote } from "@/lib/ai-agent-service"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -16,62 +17,91 @@ export const revalidate = 0
  */
 export async function POST(request: Request) {
   const startTime = Date.now()
+  const encoder = new TextEncoder()
 
+  // Quick validation before streaming
+  let items: any[]
   try {
     const body = await request.json()
-    const items = Array.isArray(body) ? body : [body]
-
+    items = Array.isArray(body) ? body : [body]
     if (items.length === 0) {
       return NextResponse.json(
         { success: false, error: "Empty input array" },
         { status: 400 }
       )
     }
-
-    const results = []
-
-    for (const item of items) {
-      const { phone, output } = item
-
-      if (!phone || !output) {
-        results.push({
-          phone,
-          success: false,
-          error: "Missing phone or output",
-        })
-        continue
-      }
-
-      try {
-        const result = await evaluateSingleItem(phone, output)
-        results.push(result)
-      } catch (err) {
-        console.error(`[EvaluateStep] Error for phone ${phone}:`, err)
-        results.push({
-          phone,
-          success: false,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      results,
-      durationMs: Date.now() - startTime,
-    })
-  } catch (error) {
-    console.error("[EvaluateStep] Fatal error:", error)
+  } catch {
     return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to evaluate step",
-        details: error instanceof Error ? error.message : String(error),
-        durationMs: Date.now() - startTime,
-      },
-      { status: 500 }
+      { success: false, error: "Invalid JSON body" },
+      { status: 400 }
     )
   }
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const heartbeatInterval = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode("\n"))
+        } catch {
+          clearInterval(heartbeatInterval)
+        }
+      }, 10_000)
+
+      try {
+        const results = []
+
+        for (const item of items) {
+          const { phone, output } = item
+
+          if (!phone || !output) {
+            results.push({
+              phone,
+              success: false,
+              error: "Missing phone or output",
+            })
+            continue
+          }
+
+          try {
+            const result = await evaluateSingleItem(phone, output)
+            results.push(result)
+          } catch (err) {
+            console.error(`[EvaluateStep] Error for phone ${phone}:`, err)
+            results.push({
+              phone,
+              success: false,
+              error: err instanceof Error ? err.message : String(err),
+            })
+          }
+        }
+
+        controller.enqueue(encoder.encode(JSON.stringify({
+          success: true,
+          results,
+          durationMs: Date.now() - startTime,
+        })))
+      } catch (error) {
+        console.error("[EvaluateStep] Fatal error:", error)
+        controller.enqueue(encoder.encode(JSON.stringify({
+          success: false,
+          error: "Failed to evaluate step",
+          details: error instanceof Error ? error.message : String(error),
+          durationMs: Date.now() - startTime,
+        })))
+      } finally {
+        clearInterval(heartbeatInterval)
+        controller.close()
+      }
+    }
+  })
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "no-cache",
+    },
+  })
 }
 
 // ==========================================================================
@@ -160,15 +190,26 @@ async function evaluateSingleItem(phone: string, autoChatOutput: any) {
   const existingInsight = insightResult.rows[0]?.ai_insight_summary
 
   // --- 3. Call Gemini to evaluate ---
+  const evalAgentNote = await getActiveAgentNote("Evaluate-step")
   const geminiResult = await callGeminiEvaluation(
     step,
     autoChatOutput,
-    existingInsight
+    existingInsight,
+    evalAgentNote
   )
 
   console.log(
     `[EvaluateStep] Phone=${phone}, Step="${step.step_name}", Verdict=${geminiResult.verdict}`
   )
+
+  // Track Evaluate-step agent output
+  storeAgentOutput({
+    agentName: "Evaluate-step",
+    carId: car.id,
+    sourceInstanceId: instance.id,
+    inputPayload: { step: step.step_name, autoChatOutput },
+    outputPayload: geminiResult,
+  }).catch(err => console.error("[EvaluateStep] Failed to store agent output:", err))
 
   // --- 4. If deviated, submit feedback to trigger re-analysis ---
   let strategyRevised = false
@@ -185,6 +226,7 @@ async function evaluateSingleItem(phone: string, autoChatOutput: any) {
       sourceInstanceId: instance.id,
       phoneNumber,
       feedback: `[Auto-Evaluation] ${geminiResult.thinking}\n\nAuto-chat output: ${JSON.stringify(autoChatOutput)}`,
+      retrigger: true,
     })
 
     strategyRevised = feedbackResult.success
@@ -214,35 +256,24 @@ async function callGeminiEvaluation(
     actions?: string[]
     message_suggestions?: string[]
   },
-  existingInsight?: any
+  existingInsight?: any,
+  agentNote?: string | null
 ): Promise<{ thinking: string; verdict: "on_track" | "deviated" }> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error("GEMINI_API_KEY missing")
 
   const geminiHost =
     process.env.GEMINI_HOST ||
-    "https://generativelanguage.googleapis.com/v1beta"
-  const model = "gemini-2.5-flash"
-  const url = `${geminiHost}/models/${model}:generateContent?key=${apiKey}`
+    "https://generativelanguage.googleapis.com"
+  const model = "gemini-3-flash-preview"
+  const url = `${geminiHost}/v1beta/models/${model}:generateContent?key=${apiKey}`
 
   const stepDescription = step.description || "Không có mô tả chi tiết cho bước này."
 
-  const prompt = `Bạn là 1 AI evaluator cho quy trình sales xe cũ VuCar.
+  const systemPrompt = `${agentNote ? `### Cấu Hình Bổ Sung (System Preferences):\n${agentNote}\n\n` : ''}Bạn là 1 AI evaluator cho quy trình sales xe cũ VuCar.
 
 ## NHIỆM VỤ
 Đánh giá output từ hệ thống auto-chat và xác định liệu cuộc hội thoại có đang đi đúng hướng so với mục tiêu của bước workflow hiện tại hay không.
-
-## THÔNG TIN BƯỚC HIỆN TẠI
-Tên bước: ${step.step_name}
-Mô tả chi tiết:
-${stepDescription}
-
-## OUTPUT TỪ AUTO-CHAT
-Context Summary: ${autoChatOutput.context_summary || "N/A"}
-Actions: ${JSON.stringify(autoChatOutput.actions || [])}
-Message Suggestions: ${JSON.stringify(autoChatOutput.message_suggestions || [])}
-
-${existingInsight ? `## PHÂN TÍCH AI TRƯỚC ĐÓ\n${JSON.stringify(existingInsight, null, 2).substring(0, 2000)}` : ""}
 
 ## YÊU CẦU OUTPUT
 Trả về JSON duy nhất với format:
@@ -263,11 +294,26 @@ Verdict "on_track" khi:
 
 CHỈ TRẢ VỀ JSON, KHÔNG CÓ GÌ KHÁC.`
 
+  const userPrompt = `## THÔNG TIN BƯỚC HIỆN TẠI
+Tên bước: ${step.step_name}
+Mô tả chi tiết:
+${stepDescription}
+
+## OUTPUT TỪ AUTO-CHAT
+Context Summary: ${autoChatOutput.context_summary || "N/A"}
+Actions: ${JSON.stringify(autoChatOutput.actions || [])}
+Message Suggestions: ${JSON.stringify(autoChatOutput.message_suggestions || [])}
+
+${existingInsight ? `## PHÂN TÍCH AI TRƯỚC ĐÓ\n${JSON.stringify(existingInsight, null, 2).substring(0, 2000)}` : ""}`
+
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
+      system_instruction: {
+        parts: [{ text: systemPrompt }]
+      },
+      contents: [{ parts: [{ text: userPrompt }] }],
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 2048,

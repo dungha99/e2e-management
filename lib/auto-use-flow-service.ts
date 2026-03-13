@@ -1,21 +1,9 @@
-import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { storeAgentOutput, getActiveAgentNote } from "@/lib/ai-agent-service"
 import { getAgentTools, executeToolCall } from "@/lib/agent-tools"
 
-/**
- * POST /api/e2e/auto-use-flow
- *
- * Automatically creates an AI workflow from a final_synthesis analysis.
- * Uses Gemini 2.5 Flash to decide parameter values for each step.
- *
- * Body: { carId, aiInsightSummary, picId }
- *
- * Can be called in the background (fire-and-forget) after AI insights complete.
- */
-
-// Known connector mappings (same as AiThinkingChat.tsx extractSteps)
-const CONNECTOR_MAP = {
+// Known connector mappings
+export const CONNECTOR_MAP = {
   script: {
     connectorId: "05b6afa5-786f-4062-9d53-de9cb89450ee",
     stepName: "Gửi Script",
@@ -29,27 +17,22 @@ const CONNECTOR_MAP = {
 const DEFAULT_STAGE_ID = "456e0d0b-bd97-4ef6-893e-8674447ed882"
 
 /**
- * Gemini returns scheduled_at as Vietnam local time (e.g. "2026-02-24T18:00:00").
- * On Vercel (UTC server), new Date() would parse that as UTC → 7 hrs ahead.
- * This helper ensures timezone offset is present, then converts to UTC ISO string.
+ * Converts Vietnam local time string to UTC ISO string.
+ * Gemini returns times in Vietnam local time (e.g. "2026-02-24T18:00:00").
  */
-function toUtcFromVietnam(value: string | null | undefined): string | null {
+export function toUtcFromVietnam(value: string | null | undefined): string | null {
   if (!value) return null
-  // If there's already a timezone indicator (+, Z), trust it
-  const hasOffset = /[+\-]\d{2}:\d{2}$/.test(value) || value.endsWith('Z')
+  const hasOffset = /[+\-]\d{2}:\d{2}$/.test(value) || value.endsWith("Z")
   const withOffset = hasOffset ? value : `${value}+07:00`
   const date = new Date(withOffset)
   return isNaN(date.getTime()) ? null : date.toISOString()
 }
 
-// ========================================================================
-// Step extraction from analysis (mirrors AiThinkingChat logic)
-// ========================================================================
-interface ExtractedStep {
+export interface ExtractedStep {
   stepName: string
   connectorId: string
   connectorLabel: string
-  rawContext: string // The raw action/script text for Gemini context
+  rawContext: string
   aiAction?: string
   expectedReaction?: string
   successSignal?: string
@@ -58,7 +41,7 @@ interface ExtractedStep {
   ifFailure?: string
 }
 
-function extractStepsFromAnalysis(analysis: any): ExtractedStep[] {
+export function extractStepsFromAnalysis(analysis: any): ExtractedStep[] {
   const steps: ExtractedStep[] = []
   const synthesis = analysis?.final_synthesis || analysis
 
@@ -67,7 +50,8 @@ function extractStepsFromAnalysis(analysis: any): ExtractedStep[] {
 
     const isScript = typeof obj.script === "string" && obj.script.trim()
     const action = typeof obj.action === "string" ? obj.action.toLowerCase() : ""
-    const isBidding = action.includes("tạo phiên đấu giá") ||
+    const isBidding =
+      action.includes("tạo phiên đấu giá") ||
       action.includes("tạo phiên") ||
       action.includes("đấu giá") ||
       action.includes("bidding")
@@ -87,7 +71,6 @@ function extractStepsFromAnalysis(analysis: any): ExtractedStep[] {
       })
 
       if (isBidding) {
-        console.log(`[extractStepsFromAnalysis] Auto-appending SCRIPT step after BIDDING`)
         steps.push({
           stepName: CONNECTOR_MAP.script.stepName,
           connectorId: CONNECTOR_MAP.script.connectorId,
@@ -112,9 +95,6 @@ function extractStepsFromAnalysis(analysis: any): ExtractedStep[] {
   return steps
 }
 
-// ========================================================================
-// Server-side schema parsing (mirrors connectorFormUtils.ts but uses DB directly)
-// ========================================================================
 interface SchemaProperty {
   type?: string
   default?: any
@@ -169,7 +149,7 @@ function parseInputSchema(inputSchema: any): ParsedField[] | null {
       readOnly: schemaProp["read-only"] === true,
     }
 
-    if ((schemaProp.type === 'dict' || schemaProp.type === 'object') && schemaProp.properties) {
+    if ((schemaProp.type === "dict" || schemaProp.type === "object") && schemaProp.properties) {
       field.subFields = Object.entries(schemaProp.properties).map(([subName, subProp]) => {
         const subSchemaProp = subProp as SchemaProperty
         return {
@@ -191,34 +171,38 @@ function parseInputSchema(inputSchema: any): ParsedField[] | null {
 }
 
 async function enrichDictFields(fields: ParsedField[]): Promise<ParsedField[]> {
-  const dictFields = fields.filter(f => f.type === 'dict' || f.type === 'object')
+  const dictFields = fields.filter((f) => f.type === "dict" || f.type === "object")
   if (dictFields.length === 0) return fields
 
   try {
     const res = await e2eQuery(`SELECT * FROM dict_variables LIMIT 100`)
     const dictVars = res.rows
 
-    return fields.map(field => {
-      if (field.type !== 'dict' && field.type !== 'object') return field
+    return fields.map((field) => {
+      if (field.type !== "dict" && field.type !== "object") return field
 
       const dictVar = dictVars.find((d: any) => d.name === field.name)
       if (!dictVar || !dictVar.variables) return field
 
       let variables = dictVar.variables
-      if (typeof variables === 'string') {
-        try { variables = JSON.parse(variables) } catch { return field }
+      if (typeof variables === "string") {
+        try {
+          variables = JSON.parse(variables)
+        } catch {
+          return field
+        }
       }
 
       const subFields: ParsedField[] = Object.entries(variables).map(([subName, subDef]: [string, any]) => ({
         name: `${field.name}.${subName}`,
         label: subDef.description || subName,
-        type: subDef.type || 'string',
+        type: subDef.type || "string",
         required: subDef.required || false,
         default: subDef.default,
         description: subDef.description,
         enumValues: subDef.enum,
         hidden: subDef.hidden === true,
-        readOnly: subDef['read-only'] === true,
+        readOnly: subDef["read-only"] === true,
       }))
 
       return { ...field, subFields }
@@ -228,14 +212,8 @@ async function enrichDictFields(fields: ParsedField[]): Promise<ParsedField[]> {
   }
 }
 
-// ========================================================================
-// Load connector schema fields
-// ========================================================================
 async function loadConnectorSchema(connectorId: string): Promise<{ connector: any; fields: ParsedField[] }> {
-  const res = await e2eQuery(
-    `SELECT * FROM api_connectors WHERE id = $1 LIMIT 1`,
-    [connectorId]
-  )
+  const res = await e2eQuery(`SELECT * FROM api_connectors WHERE id = $1 LIMIT 1`, [connectorId])
   if (res.rows.length === 0) return { connector: null, fields: [] }
 
   const connector = res.rows[0]
@@ -243,7 +221,11 @@ async function loadConnectorSchema(connectorId: string): Promise<{ connector: an
 
   let schema = connector.input_schema
   if (typeof schema === "string") {
-    try { schema = JSON.parse(schema) } catch { return { connector, fields: [] } }
+    try {
+      schema = JSON.parse(schema)
+    } catch {
+      return { connector, fields: [] }
+    }
   }
 
   const parsed = parseInputSchema(schema)
@@ -253,10 +235,7 @@ async function loadConnectorSchema(connectorId: string): Promise<{ connector: an
   return { connector, fields: enriched }
 }
 
-// ========================================================================
-// Fetch lead context from DB
-// ========================================================================
-async function fetchLeadContext(carId: string): Promise<string> {
+export async function fetchLeadContext(carId: string): Promise<string> {
   try {
     const result = await vucarV2Query(
       `SELECT c.brand, c.model, c.variant, c.year, c.location, c.mileage, c.plate, c.slug,
@@ -275,7 +254,6 @@ async function fetchLeadContext(carId: string): Promise<string> {
 
     const row = result.rows[0]
 
-    // Build context string
     const parts: string[] = []
     parts.push(`=== LEAD CONTEXT ===`)
     parts.push(`Customer: ${row.customer_name || "Unknown"}`)
@@ -294,14 +272,13 @@ async function fetchLeadContext(carId: string): Promise<string> {
     parts.push(`Negotiation Ability: ${row.negotiation_ability || "N/A"}`)
     parts.push(`Notes: ${row.notes || "N/A"}`)
 
-    // Chat history (last 10 messages for brevity)
     if (row.messages_zalo && Array.isArray(row.messages_zalo)) {
       const recentMessages = row.messages_zalo.slice(-10)
       if (recentMessages.length > 0) {
         parts.push(`\n=== RECENT CHAT HISTORY (last ${recentMessages.length} messages) ===`)
         recentMessages.forEach((msg: any) => {
           const sender = msg.fromMe ? "PIC" : "Customer"
-          const text = typeof msg === "string" ? msg : (msg.text || msg.body || JSON.stringify(msg))
+          const text = typeof msg === "string" ? msg : msg.text || msg.body || JSON.stringify(msg)
           parts.push(`[${sender}]: ${text}`)
         })
       }
@@ -309,35 +286,32 @@ async function fetchLeadContext(carId: string): Promise<string> {
 
     return parts.join("\n")
   } catch (error) {
-    console.error("[Auto Use Flow] Error fetching lead context:", error)
+    console.error("[Auto Use Flow Service] Error fetching lead context:", error)
     return "Error fetching lead context."
   }
 }
 
-// ========================================================================
-// Call Gemini 2.5 Flash to decide parameters (one step at a time)
-// ========================================================================
-
 function buildFieldDescriptions(fields: ParsedField[]): string {
   return fields
-    .filter(f => !f.hidden)
-    .map(f => {
-      let desc = `  - "${f.name}" (type: ${f.type}${f.required ? ', REQUIRED' : ''}): ${f.description || f.label}`
+    .filter((f) => !f.hidden)
+    .map((f) => {
+      let desc = `  - "${f.name}" (type: ${f.type}${f.required ? ", REQUIRED" : ""}): ${f.description || f.label}`
       if (f.default !== undefined) desc += ` [default: ${JSON.stringify(f.default)}]`
-      if (f.enumValues) desc += ` [options: ${f.enumValues.join(', ')}]`
+      if (f.enumValues) desc += ` [options: ${f.enumValues.join(", ")}]`
       if (f.subFields) {
         desc += `\n    Sub-fields:`
-        f.subFields.filter(sf => !sf.hidden).forEach(sf => {
-          desc += `\n      - "${sf.name.split('.').pop()}" (${sf.type}${sf.required ? ', REQUIRED' : ''}): ${sf.description || sf.label}`
-        })
+        f.subFields
+          .filter((sf) => !sf.hidden)
+          .forEach((sf) => {
+            desc += `\n      - "${sf.name.split(".").pop()}" (${sf.type}${sf.required ? ", REQUIRED" : ""}): ${sf.description || sf.label}`
+          })
       }
       return desc
     })
-    .join('\n')
+    .join("\n")
 }
 
 function parseGeminiJson(rawText: string): any {
-  // Parse JSON from response (may be wrapped in code block)
   const jsonMatch = rawText.match(/\{[\s\S]*\}/)
   if (!jsonMatch) {
     throw new Error(`Gemini did not return valid JSON. Response: ${rawText.slice(0, 300)}`)
@@ -345,40 +319,49 @@ function parseGeminiJson(rawText: string): any {
 
   let jsonStr = jsonMatch[0]
 
-  // Try parsing directly first
   try {
     return JSON.parse(jsonStr)
   } catch {
-    console.warn("[Auto Use Flow] JSON parse failed, attempting repair...")
+    console.warn("[Auto Use Flow Service] JSON parse failed, attempting repair...")
   }
 
-  // Repair truncated JSON
-  jsonStr = jsonStr.replace(/,\s*"[^"]*$/, '')
+  jsonStr = jsonStr.replace(/,\s*"[^"]*$/, "")
   jsonStr = jsonStr.replace(/:\s*"[^"]*$/, ': ""')
 
-  let openBraces = 0, openBrackets = 0
-  let inString = false, escape = false
+  let openBraces = 0,
+    openBrackets = 0
+  let inString = false,
+    escape = false
   for (const ch of jsonStr) {
-    if (escape) { escape = false; continue }
-    if (ch === '\\') { escape = true; continue }
-    if (ch === '"') { inString = !inString; continue }
+    if (escape) {
+      escape = false
+      continue
+    }
+    if (ch === "\\") {
+      escape = true
+      continue
+    }
+    if (ch === '"') {
+      inString = !inString
+      continue
+    }
     if (inString) continue
-    if (ch === '{') openBraces++
-    if (ch === '}') openBraces--
-    if (ch === '[') openBrackets++
-    if (ch === ']') openBrackets--
+    if (ch === "{") openBraces++
+    if (ch === "}") openBraces--
+    if (ch === "[") openBrackets++
+    if (ch === "]") openBrackets--
   }
 
   if (inString) jsonStr += '"'
-  for (let i = 0; i < openBraces; i++) jsonStr += '}'
-  for (let i = 0; i < openBrackets; i++) jsonStr += ']'
+  for (let i = 0; i < openBraces; i++) jsonStr += "}"
+  for (let i = 0; i < openBrackets; i++) jsonStr += "]"
 
   try {
     const parsed = JSON.parse(jsonStr)
-    console.log("[Auto Use Flow] Successfully repaired truncated JSON")
+    console.log("[Auto Use Flow Service] Successfully repaired truncated JSON")
     return parsed
   } catch (repairErr) {
-    console.error("[Auto Use Flow] JSON repair also failed:", repairErr)
+    console.error("[Auto Use Flow Service] JSON repair also failed:", repairErr)
   }
 
   throw new Error(`Could not parse Gemini response as JSON. Raw: ${rawText.slice(0, 500)}`)
@@ -402,7 +385,7 @@ async function callGeminiForParameters(
 
   const now = new Date()
   const vnTime = new Date(now.getTime() + 7 * 60 * 60 * 1000)
-  const todayInfo = `Current date and time (Vietnam UTC+7): ${vnTime.toISOString().replace('T', ' ').slice(0, 19)}, ${['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][vnTime.getUTCDay()]}`
+  const todayInfo = `Current date and time (Vietnam UTC+7): ${vnTime.toISOString().replace("T", " ").slice(0, 19)}, ${["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"][vnTime.getUTCDay()]}`
 
   const url = `${geminiHost}/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`
 
@@ -413,7 +396,6 @@ async function callGeminiForParameters(
     const schema = stepSchemas[idx]
     const fieldDescriptions = buildFieldDescriptions(schema.fields)
 
-    // Build previous step context (if any)
     let previousStepContext = ""
     if (idx > 0) {
       const prevStep = steps[idx - 1]
@@ -427,7 +409,7 @@ Decided parameters: ${JSON.stringify(prevResult.parameters, null, 2)}
 `
     }
 
-    const systemPrompt = `${workerAgentNote ? `### Cấu Hình Bổ Sung (System Preferences):\n${workerAgentNote}\n\n` : ''}Role: Bạn là một Trợ lý Bán hàng (Sales Agent) chuyên nghiệp tại Vucar. Nhiệm vụ của bạn là trích xuất dữ liệu từ kịch bản tư vấn để điều phối quy trình qua API.
+    const systemPrompt = `${workerAgentNote ? `### Cấu Hình Bổ Sung (System Preferences):\n${workerAgentNote}\n\n` : ""}Role: Bạn là một Trợ lý Bán hàng (Sales Agent) chuyên nghiệp tại Vucar. Nhiệm vụ của bạn là trích xuất dữ liệu từ kịch bản tư vấn để điều phối quy trình qua API.
 
 Objective: Xác định đúng hành động (Action) và điền tham số (parameters). Đặc biệt lưu ý tính toán thời gian scheduled_at dựa trên trình tự các bước.
 
@@ -503,7 +485,7 @@ ${previousStepContext}
 Instruction: "${step.rawContext}"
 
 Required Fields:
-${fieldDescriptions || '  (no schema fields - provide raw payload)'}
+${fieldDescriptions || "  (no schema fields - provide raw payload)"}
 
 Context IDs:
 - picId: "${picId}"
@@ -512,14 +494,12 @@ Context IDs:
 
 Return JSON object.`
 
-    console.log(`[Auto Use Flow] Calling Gemini for step ${idx + 1}/${steps.length}: "${step.stepName}"...`)
+    console.log(`[Auto Use Flow Service] Calling Gemini for step ${idx + 1}/${steps.length}: "${step.stepName}"...`)
 
-    // Retry loop for JSON parsing
     let parsed: any = null
     let currentPrompt = userPrompt
 
     for (let parseAttempt = 0; parseAttempt < 3; parseAttempt++) {
-      // Function calling loop: Gemini may call tools (booking, google search) before generating JSON
       const contents: any[] = [{ role: "user", parts: [{ text: currentPrompt }] }]
       const baseBody = {
         system_instruction: { parts: [{ text: systemPrompt }] },
@@ -546,7 +526,7 @@ Return JSON object.`
 
         if (functionCall && iteration < 3) {
           const { name, args } = functionCall.functionCall
-          console.log(`[Auto Use Flow] Step ${idx + 1} tool call: ${name}(${JSON.stringify(args)})`)
+          console.log(`[Auto Use Flow Service] Step ${idx + 1} tool call: ${name}(${JSON.stringify(args)})`)
           const toolResult = await executeToolCall(name, args || {})
           contents.push({ role: "model", parts })
           contents.push({ role: "user", parts: [{ functionResponse: { name, response: { result: toolResult } } }] })
@@ -557,15 +537,15 @@ Return JSON object.`
         break
       }
 
-      console.log(`[Auto Use Flow] Gemini response for step ${idx + 1} (attempt ${parseAttempt + 1}):`, rawText.slice(0, 300))
+      console.log(`[Auto Use Flow Service] Gemini response for step ${idx + 1} (attempt ${parseAttempt + 1}):`, rawText.slice(0, 300))
 
       try {
         parsed = parseGeminiJson(rawText)
-        break // Success
+        break
       } catch (err: any) {
-        console.warn(`[Auto Use Flow] JSON parse failed on attempt ${parseAttempt + 1} for step ${idx + 1}`)
+        console.warn(`[Auto Use Flow Service] JSON parse failed on attempt ${parseAttempt + 1} for step ${idx + 1}`)
         if (parseAttempt === 2) {
-          throw err // Fail after 3 attempts
+          throw err
         }
         currentPrompt += `\n\nERROR on previous attempt: You did not return a valid JSON object. Please ensure your ENTIRE response is a single valid JSON object without markdown formatting or extra text. Previous invalid response: ${rawText}`
       }
@@ -577,33 +557,31 @@ Return JSON object.`
   return results
 }
 
-// ========================================================================
-// Main endpoint
-// ========================================================================
-export async function POST(request: Request) {
+export interface RunAutoUseFlowResult {
+  success: boolean
+  workflowId?: string
+  workflowName?: string
+  instanceId?: string
+  stepsCreated?: number
+  geminiDecisions?: any[]
+  durationMs: number
+  error?: string
+  details?: string
+}
+
+/**
+ * Core service function to run the auto-use-flow logic.
+ * Can be called from any server-side context without HTTP auth.
+ */
+export async function runAutoUseFlow(
+  carId: string,
+  aiInsightSummary: any,
+  picId?: string | null
+): Promise<RunAutoUseFlowResult> {
   const startTime = Date.now()
 
-  // --- 0. Authentication Check ---
-  const authHeader = request.headers.get("x-api-secret")
-  const apiSecret = process.env.VUCAR_API_SECRET
-
-  if (apiSecret && authHeader !== apiSecret) {
-    console.warn("[Auto Use Flow] Unauthorized attempt - missing or invalid x-api-secret")
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
-
   try {
-    const body = await request.json()
-    let { carId, aiInsightSummary, picId } = body
-
-    if (!carId || !aiInsightSummary) {
-      return NextResponse.json(
-        { success: false, error: "Missing required fields: carId, aiInsightSummary" },
-        { status: 400 }
-      )
-    }
-
-    // Auto-fetch picId from DB if not provided (same pattern as ai-insights/callback)
+    // Auto-fetch picId from DB if not provided
     if (!picId) {
       try {
         const leadCheck = await vucarV2Query(
@@ -611,37 +589,34 @@ export async function POST(request: Request) {
           [carId]
         )
         picId = leadCheck.rows[0]?.pic_id || null
-        console.log(`[Auto Use Flow] picId auto-resolved from DB: ${picId}`)
+        console.log(`[Auto Use Flow Service] picId auto-resolved from DB: ${picId}`)
       } catch (err) {
-        console.warn("[Auto Use Flow] Failed to auto-resolve picId:", err)
+        console.warn("[Auto Use Flow Service] Failed to auto-resolve picId:", err)
       }
     }
 
-    // --- 1. Extract steps from analysis ---
+    // 1. Extract steps from analysis
     const extractedSteps = extractStepsFromAnalysis(aiInsightSummary)
-    console.log(`[Auto Use Flow] Extracted ${extractedSteps.length} steps from analysis`)
+    console.log(`[Auto Use Flow Service] Extracted ${extractedSteps.length} steps from analysis`)
 
-    // Track Router (Plan) agent output
     storeAgentOutput({
       agentName: "Router (Plan)",
       carId,
-      inputPayload: { prompt: typeof aiInsightSummary === 'string' ? aiInsightSummary : JSON.stringify(aiInsightSummary) },
+      inputPayload: { prompt: typeof aiInsightSummary === "string" ? aiInsightSummary : JSON.stringify(aiInsightSummary) },
       outputPayload: { extractedSteps },
-    }).catch(err => console.error("[Auto Use Flow] Failed to store Router output:", err))
+    }).catch((err) => console.error("[Auto Use Flow Service] Failed to store Router output:", err))
 
     if (extractedSteps.length === 0) {
-      return NextResponse.json({
+      return {
         success: true,
-        message: "No actionable steps found in analysis",
-        stepsFound: 0,
+        stepsCreated: 0,
         durationMs: Date.now() - startTime,
-      })
+      }
     }
 
-    // --- 2. Fetch lead context ---
+    // 2. Fetch lead context
     const leadContext = await fetchLeadContext(carId)
 
-    // Get phone number from lead
     const phoneResult = await vucarV2Query(
       `SELECT l.phone, l.additional_phone FROM cars c
        JOIN leads l ON l.id = c.lead_id
@@ -650,42 +625,36 @@ export async function POST(request: Request) {
     )
     const phoneNumber = phoneResult.rows[0]?.phone || phoneResult.rows[0]?.additional_phone || ""
 
-    // --- 3. Load connector schemas ---
-    const stepSchemas = await Promise.all(
-      extractedSteps.map(step => loadConnectorSchema(step.connectorId))
-    )
+    // 3. Load connector schemas
+    const stepSchemas = await Promise.all(extractedSteps.map((step) => loadConnectorSchema(step.connectorId)))
 
-    // --- 4. Call Gemini to decide parameters ---
+    // 4. Call Gemini to decide parameters
     const workerAgentNote = await getActiveAgentNote("Worker (Parameter/Rule)")
     const geminiResults = await callGeminiForParameters(
       extractedSteps,
       stepSchemas,
       leadContext,
-      picId,
+      picId || "",
       carId,
       phoneNumber,
       workerAgentNote
     )
 
-    console.log(`[Auto Use Flow] Gemini decided parameters for ${geminiResults.length} steps`)
-
-    // Track Worker (Parameter/Rule) agent output
     storeAgentOutput({
       agentName: "Worker (Parameter/Rule)",
       carId,
       inputPayload: { prompt: geminiResults.map((r: any) => r._prompt).join("\n\n=== NEXT STEP ===\n\n") },
       outputPayload: geminiResults,
-    }).catch(err => console.error("[Auto Use Flow] Failed to store Worker output:", err))
+    }).catch((err) => console.error("[Auto Use Flow Service] Failed to store Worker output:", err))
 
-    // --- 5. Build workflow creation payload ---
-    const workflowName = `AI Auto Flow ${new Date().toLocaleDateString('vi-VN')}`
+    // 5. Build workflow creation payload
+    const workflowName = `AI Auto Flow ${new Date().toLocaleDateString("vi-VN")}`
 
     const stepsPayload = extractedSteps.map((step, idx) => {
       const geminiStep = geminiResults[idx] || {}
       const actualValues = geminiStep.parameters || {}
       const fields = stepSchemas[idx]?.fields || []
 
-      // Build generic input_mapping template
       const genericMapping: Record<string, string> = {}
       if (fields.length > 0) {
         for (const field of fields) {
@@ -698,7 +667,6 @@ export async function POST(request: Request) {
         }
       }
 
-      // Build step description from AI metadata
       const nextStep = extractedSteps[idx + 1]
       const descriptionParts = [
         step.aiAction ? `Action: ${step.aiAction}` : null,
@@ -717,11 +685,11 @@ export async function POST(request: Request) {
         inputMapping: genericMapping,
         requestPayload: actualValues,
         scheduledAt: geminiStep.scheduled_at || null,
-        description: descriptionParts.join('\n'),
+        description: descriptionParts.join("\n"),
       }
     })
 
-    // --- 6. Create workflow (same logic as create-ai-workflow) ---
+    // 6. Create workflow
     const workflowResult = await e2eQuery(
       `INSERT INTO workflows (name, stage_id, is_active, description, type)
        VALUES ($1, $2, true, $3, 'AI')
@@ -741,8 +709,7 @@ export async function POST(request: Request) {
       createdSteps.push(stepResult.rows[0])
     }
 
-    // 6. Terminate existing "running" instances for this car
-    console.log(`[Auto Use Flow] Terminating existing running workflows for car ${carId}...`)
+    // Terminate existing running instances for this car
     await e2eQuery(
       `UPDATE workflow_instances SET status = 'terminated' WHERE car_id = $1 AND status = 'running'`,
       [carId]
@@ -760,18 +727,13 @@ export async function POST(request: Request) {
       await e2eQuery(
         `INSERT INTO step_executions (instance_id, step_id, status, scheduled_at, request_payload)
          VALUES ($1, $2, 'pending', $3, $4)`,
-        [
-          instance.id,
-          createdSteps[i].id,
-          stepsPayload[i].scheduledAt || null,
-          JSON.stringify(stepsPayload[i].requestPayload),
-        ]
+        [instance.id, createdSteps[i].id, stepsPayload[i].scheduledAt || null, JSON.stringify(stepsPayload[i].requestPayload)]
       )
     }
 
-    console.log(`[Auto Use Flow] Created workflow "${workflowName}" with ${createdSteps.length} steps`)
+    console.log(`[Auto Use Flow Service] Created workflow "${workflowName}" with ${createdSteps.length} steps`)
 
-    return NextResponse.json({
+    return {
       success: true,
       workflowId: workflow.id,
       workflowName,
@@ -779,17 +741,14 @@ export async function POST(request: Request) {
       stepsCreated: createdSteps.length,
       geminiDecisions: geminiResults,
       durationMs: Date.now() - startTime,
-    })
+    }
   } catch (error) {
-    console.error("[Auto Use Flow] Error:", error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to auto-create AI workflow",
-        details: error instanceof Error ? error.message : String(error),
-        durationMs: Date.now() - startTime,
-      },
-      { status: 500 }
-    )
+    console.error("[Auto Use Flow Service] Error:", error)
+    return {
+      success: false,
+      error: "Failed to auto-create AI workflow",
+      details: error instanceof Error ? error.message : String(error),
+      durationMs: Date.now() - startTime,
+    }
   }
 }

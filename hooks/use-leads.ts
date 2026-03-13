@@ -141,23 +141,31 @@ export function useWorkflowInstances(carId: string | null | undefined) {
 
 // Hook for fetching AI insights (mutation-like query)
 // This fetches AI recommendation based on completed workflow
-export async function fetchAiInsights(carId: string, sourceInstanceId: string, phoneNumber: string, userFeedback?: string) {
+export async function fetchAiInsights(carId: string, phoneNumber: string, userFeedback?: string) {
   const response = await fetch("/api/e2e/ai-insights", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ carId, sourceInstanceId, phoneNumber, userFeedback }),
+    body: JSON.stringify({ carId, phoneNumber, userFeedback }),
   })
 
   const data = await response.json()
 
-  // Handle 202 "still processing" status
+  // Handle 202 "still processing" — return a marker instead of throwing
+  // (throwing causes Next.js dev error overlay to appear)
   if (response.status === 202) {
-    throw new Error(data.message || "AI insights are still being processed")
+    return { processing: true, message: data.message }
   }
 
   if (!response.ok) {
     throw new Error(data.error || "Failed to fetch AI insights")
   }
 
+  // Also detect 200 responses that are actually still processing
+  // (e.g., after feedback submission, API returns 200 with processing placeholder)
+  if (data?.analysis?.processing === true || data?.processing === true) {
+    return { processing: true }
+  }
+
   return data
 }
+

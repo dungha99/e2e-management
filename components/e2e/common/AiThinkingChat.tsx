@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo } from "react"
-import { Bot, Target, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, History, BrainCircuit, Zap } from "lucide-react"
+import { Bot, Target, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, History, BrainCircuit, Hand } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -193,6 +193,8 @@ export function AiThinkingChat({
 }: AiThinkingChatProps) {
   const [feedback, setFeedback] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isRewriting, setIsRewriting] = useState(false)
+  const [isAutoFlowing, setIsAutoFlowing] = useState(false)
   const [expandedIndices, setExpandedIndices] = useState<number[]>([])
   const [hasAnimated, setHasAnimated] = useState<string | null>(null) // Tracks last animated unique state
   const [showHistory, setShowHistory] = useState(false) // Toggle for chat history visibility
@@ -208,6 +210,63 @@ export function AiThinkingChat({
       setFeedback("")
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const handleAutoUseFlow = async (aiInsightSummary: any) => {
+    if (!carId || !aiInsightSummary) return
+    setIsAutoFlowing(true)
+    try {
+      const res = await fetch("/api/e2e/auto-use-flow-ui", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          carId,
+          aiInsightSummary,
+          picId: currentUserId || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        // Optionally notify parent that a workflow was created
+        if (onUseFlow) {
+          // Pass an empty array to signal "auto flow created" - parent can refresh
+          onUseFlow([])
+        }
+      } else {
+        console.error("[Auto Use Flow] Failed:", data.error)
+      }
+    } catch (err) {
+      console.error("[Auto Use Flow] Error:", err)
+    } finally {
+      setIsAutoFlowing(false)
+    }
+  }
+
+  const handleRewritePrompt = async () => {
+    setIsRewriting(true)
+    try {
+      const res = await fetch("/api/e2e/rewrite-prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: feedback,
+          carId,
+          phone: leadPhone
+        })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.rewrittenPrompt) {
+          setFeedback(data.rewrittenPrompt)
+        }
+      } else {
+        console.error("Failed to rewrite prompt")
+      }
+    } catch (err) {
+      console.error("Error rewriting prompt:", err)
+    } finally {
+      setIsRewriting(false)
     }
   }
 
@@ -589,14 +648,25 @@ export function AiThinkingChat({
                   if (flowSteps.length === 0) return null
 
                   return (
-                    <div className="mt-4 pt-4 border-t border-amber-100">
+                    <div className="mt-4 pt-4 border-t border-amber-100 flex gap-2">
                       <Button
                         size="sm"
                         onClick={() => onUseFlow(flowSteps)}
-                        className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-md text-xs h-9"
+                        className="flex-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-md text-xs h-9"
                       >
-                        <Zap className="h-3.5 w-3.5 mr-1.5" />
-                        Use Flow ({flowSteps.length} bước)
+                        <Hand className="h-3.5 w-3.5 mr-1.5" />
+                        Kích hoạt Flow thủ công ({flowSteps.length} bước)
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={isAutoFlowing}
+                        onClick={() => handleAutoUseFlow(analysis)}
+                        className="flex-1 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white shadow-md text-xs h-9"
+                      >
+                        {isAutoFlowing
+                          ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Đang tạo...</>
+                          : <><Bot className="h-3.5 w-3.5 mr-1.5" />Kích hoạt Flow tự động</>
+                        }
                       </Button>
                     </div>
                   )
@@ -616,17 +686,28 @@ export function AiThinkingChat({
             <Textarea
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
-              placeholder="Nhập thêm thông tin thực tế để AI tối ưu kịch bản... (Ví dụ: Khách đang rất cứng giá, không thích nhắn tin nhiều, thích nói chuyện ngoài lề, gap giá 20tr, giá dealer căng nhất rồi, tiếp theo gọi điện chốt lịch tối nay"
-              className="pr-12 min-h-[90px] text-sm focus-visible:ring-indigo-500 border-indigo-100 shadow-sm resize-none rounded-xl"
+              disabled={isLoading || isSubmitting || isRewriting}
+              placeholder={isLoading ? "AI đang xử lý, vui lòng chờ..." : "Nhập thêm thông tin thực tế để AI tối ưu kịch bản... (Ví dụ: Khách đang rất cứng giá, không thích nhắn tin nhiều, thích nói chuyện ngoài lề, gap giá 20tr, giá dealer căng nhất rồi, tiếp theo gọi điện chốt lịch tối nay"}
+              className="pr-[90px] min-h-[90px] max-h-[400px] text-sm focus-visible:ring-indigo-500 border-indigo-100 shadow-sm resize-y rounded-xl"
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !isLoading && !isSubmitting && !isRewriting) {
                   handleSendFeedback()
                 }
               }}
             />
             <Button
               size="icon"
-              disabled={!feedback.trim() || isSubmitting || isLoading}
+              variant="outline"
+              disabled={isRewriting || isLoading || isSubmitting}
+              onClick={handleRewritePrompt}
+              title="Nhờ AI viết lại hoặc gợi ý yêu cầu"
+              className="absolute bottom-[3.25rem] right-3 bg-white/80 hover:bg-white text-indigo-600 border-indigo-200 h-9 w-9 rounded-xl shadow-sm transition-transform active:scale-95 z-10"
+            >
+              {isRewriting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            </Button>
+            <Button
+              size="icon"
+              disabled={!feedback.trim() || isSubmitting || isLoading || isRewriting}
               onClick={handleSendFeedback}
               className="absolute bottom-3 right-3 bg-indigo-600 hover:bg-indigo-700 h-9 w-9 text-white rounded-xl shadow-lg transition-transform active:scale-95"
             >

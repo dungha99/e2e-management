@@ -24,24 +24,7 @@ export async function updateAiNoteFromFeedback(params: {
   const currentNote = await getLatestAiNote(block);
   const today = new Date().toISOString().split('T')[0];
 
-  const prompt = `
-You are an expert AI system prompt engineer. Your task is to maintain a "Knowledge Diary" for an AI assistant. This diary is a cumulative list of instructions, patterns, and lessons learned that are used in the AI's system prompt to make it smarter over time.
-
-Today's Date: ${today}
-
-DO NOT REPLACE the old instructions. Instead, you must ENRICH the Knowledge Diary by adding new "Entries" based on the latest interaction.
-
-Current Knowledge Diary for this block ("${block}"):
-${currentNote || "None - Initializing Diary"}
-
---- 
-LATEST INTERACTION CONTEXT:
-The AI recently gave this response:
-${aiResponse}
-
-The user gave this feedback (Type: ${feedbackType}):
-${userFeedback}
----
+  const systemPrompt = `You are an expert AI system prompt engineer. Your task is to maintain a "Knowledge Diary" for an AI assistant. This diary is a cumulative list of instructions, patterns, and lessons learned that are used in the AI's system prompt to make it smarter over time.
 
 Goal:
 1. Review the Current Knowledge Diary.
@@ -60,16 +43,29 @@ The diary should track:
 - Component-level requirements (e.g. structural shifts, new fields).
 - Strategic understanding of generalized user needs.
 
-Output only the full text of the updated Knowledge Diary:
-  `.trim();
+Output only the full text of the updated Knowledge Diary.`;
+
+  const userPrompt = `
+Today's Date: ${today}
+Current Knowledge Diary for block "${block}":
+${currentNote || "None - Initializing Diary"}
+
+--- 
+LATEST INTERACTION CONTEXT:
+The AI recently gave this response:
+${aiResponse}
+
+The user gave this feedback (Type: ${feedbackType}):
+${userFeedback}
+---`.trim();
 
   try {
     let newNote = "";
     try {
-      newNote = await callGemini(prompt, "gemini-2.0-flash");
+      newNote = await callGemini(userPrompt, "gemini-2.0-flash", systemPrompt);
     } catch (e) {
       console.warn("Gemini 2.0 Flash failed, falling back to 1.5 Flash", e);
-      newNote = await callGemini(prompt, "gemini-1.5-flash");
+      newNote = await callGemini(userPrompt, "gemini-1.5-flash", systemPrompt);
     }
 
     // Save to database using the correct specific column

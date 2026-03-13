@@ -1,5 +1,6 @@
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { findSimilarLeads } from "@/lib/vector-search"
+import { getActiveAgentNote } from "@/lib/ai-agent-service"
 
 /**
  * Shared service for submitting AI feedback and triggering re-analysis.
@@ -13,12 +14,15 @@ export interface SubmitFeedbackParams {
   sourceInstanceId: string
   phoneNumber: string
   feedback: string
+  chat_history?: any
+  retrigger?: boolean
 }
 
 export interface SubmitFeedbackResult {
   success: boolean
   insightId?: string
   newAnalysis?: any
+  processing?: boolean
   error?: string
 }
 
@@ -27,7 +31,7 @@ export interface SubmitFeedbackResult {
  * and save the new analysis. Same logic as the feedback path in ai-insights/route.ts.
  */
 export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<SubmitFeedbackResult> {
-  const { carId, sourceInstanceId, phoneNumber, feedback } = params
+  const { carId, sourceInstanceId, phoneNumber, feedback, chat_history, retrigger } = params
 
   try {
     // --- 1. Get existing insight ---
@@ -98,6 +102,34 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
       insightIdToUpdate = placeholderResult.rows[0].id
     }
 
+    // --- 2.5 Fetch historical feedback ---
+    let feedbackHistoryText = ""
+    try {
+      const historyResult = await e2eQuery(
+        `SELECT oai.user_feedback, oai.created_at
+         FROM old_ai_insights oai
+         JOIN ai_insights ai ON ai.id = oai.ai_insight_id
+         WHERE ai.car_id = $1
+         ORDER BY oai.created_at ASC`,
+        [carId]
+      )
+
+      if (historyResult.rows.length > 0) {
+        // Construct the history text with order
+        feedbackHistoryText = historyResult.rows
+          .map((row, index) => {
+            const dateObj = new Date(row.created_at)
+            // Add 7 hours for VN time (similar to workflow-service logic)
+            const vnTime = new Date(dateObj.getTime() + 7 * 60 * 60 * 1000)
+            const dateStr = vnTime.toISOString().replace('T', ' ').slice(0, 16)
+            return `[Lần ${index + 1} - ${dateStr}] Feedback: ${row.user_feedback}`
+          })
+          .join('\n\n')
+      }
+    } catch (err) {
+      console.error("[InsightFeedback] Failed to fetch feedback history (non-blocking):", err)
+    }
+
     // --- 3. Vector search for similar leads context ---
     let similarLeadsContext = ""
     let currentContext = ""
@@ -137,14 +169,56 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
     const connector = connectorResult.rows[0]
     const { base_url, method, auth_config } = connector
 
+    // Resolve the real previousInsight:
+    // If existing insight is in "processing" state (from a previous call),
+    // fetch the last archived insight from old_ai_insights instead.
+    let realPreviousInsight = existingInsight?.ai_insight_summary
+    if (realPreviousInsight?.processing === true) {
+      try {
+        const archivedResult = await e2eQuery(
+          `SELECT ai_insight_summary FROM old_ai_insights
+           WHERE ai_insight_id = $1
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [existingInsight.id]
+        )
+        if (archivedResult.rows.length > 0) {
+          const archived = archivedResult.rows[0].ai_insight_summary
+          realPreviousInsight = typeof archived === 'string' ? JSON.parse(archived) : archived
+          console.log(`[InsightFeedback] previousInsight was processing, using archived insight instead`)
+        }
+      } catch (err) {
+        console.warn(`[InsightFeedback] Failed to fetch archived insight, using processing state:`, err)
+      }
+    }
+
+    const feedbackAgentNote = await getActiveAgentNote("Feedback")
+    const routerAgentNote = await getActiveAgentNote("Router (Plan)")
+
+    // If chat_history is empty/undefined, fetch real-time Zalo chat from AkaBiz CRM API
+    let resolvedChatHistory = chat_history
+    if (!resolvedChatHistory || (Array.isArray(resolvedChatHistory) && resolvedChatHistory.length === 0)) {
+      try {
+        const { fetchZaloChatHistory } = await import("@/lib/chat-history-service")
+        resolvedChatHistory = await fetchZaloChatHistory({ carId, phone: phoneNumber })
+      } catch (err) {
+        console.warn("[InsightFeedback] Failed to fetch chat history (non-blocking):", err)
+      }
+    }
+
     const payload = {
       carId,
       sourceInstanceId,
       phoneNumber,
-      previousInsight: existingInsight?.ai_insight_summary,
-      feedback,
+      previousInsight: realPreviousInsight,
+      feedback: feedback || "",
+      feedbackHistory: feedbackHistoryText,
       currentContext,
       similarLeadsContext,
+      chat_history: resolvedChatHistory,
+      feedbackAgentNote,
+      routerAgentNote,
+      retrigger: retrigger || false,
     }
 
     const headers: Record<string, string> = {
@@ -164,52 +238,35 @@ export async function submitAiFeedback(params: SubmitFeedbackParams): Promise<Su
     const webhookUrl = `${base_url}/${encodeURIComponent(phoneNumber)}`
     console.log(`[InsightFeedback] Calling webhook: ${method || "POST"} ${webhookUrl}`)
 
+    // --- 5. Async webhook call with callback ---
+    const appBaseUrl = process.env.APP_BASE_URL
+      || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+    const callbackUrl = `${appBaseUrl}/api/e2e/ai-insights/callback`
+
+    const asyncPayload = {
+      ...payload,
+      insightIdToUpdate,
+      callbackUrl,
+    }
+
     const response = await fetch(webhookUrl, {
       method: method || "POST",
       headers,
-      body: JSON.stringify(payload),
+      body: JSON.stringify(asyncPayload),
     })
 
+    // n8n should respond immediately via "Respond to Webhook" node
     if (!response.ok) {
       throw new Error(`AI Webhook failed: ${response.status}`)
     }
 
-    let aiResponse = await response.json()
-    if (Array.isArray(aiResponse)) aiResponse = aiResponse[0]
+    console.log(`[InsightFeedback] Webhook accepted for insight ${insightIdToUpdate}, awaiting callback`)
 
-    // --- 5. Extract and save result ---
-    const findNestedValue = (obj: any, targetKey: string): any => {
-      if (!obj || typeof obj !== "object") return undefined
-      if (targetKey in obj) return obj[targetKey]
-      for (const key in obj) {
-        const found = findNestedValue(obj[key], targetKey)
-        if (found !== undefined) return found
-      }
-      return undefined
-    }
-
-    const selectedTransitionId = findNestedValue(aiResponse, "selected_transition_id")
-    const targetWorkflowId = findNestedValue(aiResponse, "target_workflow_id")
-    const storageSummary = aiResponse.analysis || aiResponse
-
-    await e2eQuery(
-      `UPDATE ai_insights
-       SET ai_insight_summary = $1, selected_transition_id = $2, target_workflow_id = $3
-       WHERE id = $4`,
-      [
-        JSON.stringify(storageSummary),
-        selectedTransitionId,
-        targetWorkflowId,
-        insightIdToUpdate,
-      ]
-    )
-
-    console.log(`[InsightFeedback] Successfully updated insight ${insightIdToUpdate}`)
-
+    // Return immediately — the callback endpoint will handle DB update, Auto Use Flow, and agent tracking
     return {
       success: true,
       insightId: insightIdToUpdate,
-      newAnalysis: storageSummary,
+      processing: true,
     }
   } catch (error) {
     console.error("[InsightFeedback] Error:", error)

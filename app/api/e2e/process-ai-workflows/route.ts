@@ -298,8 +298,14 @@ Bạn CHỈ được trả về JSON object duy nhất.
 {
   "messages": ["tin nhắn 1", "tin nhắn 2"],
   "reasoning": "Tóm tắt lý do tại sao giữ nguyên hoặc sửa đổi tin nhắn (để Planner hiểu lý do)",
-  "status": "APPROVED / REVISED / EMPTY"
+  "status": "APPROVED / REVISED / REVISED_PLAN / EMPTY"
 }
+
+MÔ TẢ STATUS:
+- APPROVED: Tin nhắn phù hợp, giữ nguyên.
+- REVISED: Tin nhắn được chỉnh sửa nhỏ nhưng vẫn gửi đi.
+- EMPTY: Không cần gửi tin nhắn lúc này.
+- REVISED_PLAN: *Bối cảnh thực tế KHÔNG khớp với kế hoạch hiện tại.* Ví dụ: khách đã từ chối rõ ràng, hoặc cuộc hội thoại đã vượt qua bước này mà workflow chưa biết. Khi dùng status này, trả messages=[] và điền reasoning đầy đủ gồm: context_summary (tóm tắt ngữ cảnh), actions (các hành động AI nên làm tiếp theo), message_suggestions (gợi ý tin nhắn nếu AI quyết định gửi sau khi re-plan).
 
 # QUY ĐỊNH BẮT BUỘC
 - KHÔNG giải thích dài dòng ngoài phạm vi JSON.
@@ -320,23 +326,67 @@ Bạn CHỈ được trả về JSON object duy nhất.
                     if (jsonMatch) {
                       const parsed = JSON.parse(jsonMatch[0])
                       if (parsed && Array.isArray(parsed.messages)) {
-                        requestPayload.messages = parsed.messages
-                        execution.request_payload = requestPayload // update in memory
 
-                        // Update in DB so we have a record of the rewritten payload
+                        // ── LEVEL 2: REVISED_PLAN ─────────────────────────────────────────────
+                        // Context does not match current workflow plan → trigger evaluate-step,
+                        // skip this step entirely (do NOT send messages to customer).
+                        if (parsed.status === "REVISED_PLAN") {
+                          console.log(`[Process AI Workflows] REVISED_PLAN detected — triggering evaluate-step, skipping messages for ${customerPhone}`)
+
+                          // Build the output payload from the evaluator's reasoning
+                          const revisedPlanOutput = typeof parsed.reasoning === "object"
+                            ? parsed.reasoning
+                            : {
+                              context_summary: typeof parsed.reasoning === "string" ? parsed.reasoning : "Context mismatch detected by script evaluator",
+                              actions: parsed.actions || [],
+                              message_suggestions: parsed.messages || [],
+                            }
+
+                          // Call evaluate-step in background (non-blocking)
+                          const evalStepPayload = [{ phone: customerPhone, index: 0, output: revisedPlanOutput }]
+                          fetch(`${process.env.NEXT_PUBLIC_APP_URL || "https://e2e-management.vercel.app"}/api/e2e/evaluate-step`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(evalStepPayload),
+                          }).catch(err => console.error("[Process AI Workflows] evaluate-step call failed:", err))
+
+                          // Mark this step as skipped (not failed) — don't send messages
+                          await e2eQuery(
+                            `UPDATE step_executions SET status = 'skipped', error_message = $1, completed_at = NOW() WHERE id = $2`,
+                            [`REVISED_PLAN: ${typeof parsed.reasoning === "string" ? parsed.reasoning.slice(0, 300) : "Plan mismatch"}`, execution.id]
+                          )
+
+                          storeAgentOutput({
+                            agentName: "Review Messages Scheduled",
+                            carId: instance.car_id,
+                            sourceInstanceId: instance.id,
+                            inputPayload: prompt,
+                            outputPayload: { ...parsed, level: 2 },
+                          }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
+
+                          // Stop processing this instance for now
+                          result.stoppedReason = "customer_no_response"
+                          continueLoop = false
+                          break
+                        }
+
+                        // ── LEVEL 1: APPROVED / REVISED / EMPTY ──────────────────────────────
+                        // Normal path: update messages and continue to send
+                        requestPayload.messages = parsed.messages
+                        execution.request_payload = requestPayload
+
                         await e2eQuery(
                           `UPDATE step_executions SET request_payload = $1 WHERE id = $2`,
                           [JSON.stringify(requestPayload), execution.id]
                         )
-                        console.log(`[Process AI Workflows] AI Script Evaluator successfully rewrote messages.`)
+                        console.log(`[Process AI Workflows] AI Script Evaluator (Level 1) rewrote messages. Status=${parsed.status}`)
 
-                        // Track Review Messages Scheduled agent output
                         storeAgentOutput({
                           agentName: "Review Messages Scheduled",
                           carId: instance.car_id,
                           sourceInstanceId: instance.id,
                           inputPayload: prompt,
-                          outputPayload: parsed,
+                          outputPayload: { ...parsed, level: 1 },
                         }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
                       }
                     }

@@ -320,7 +320,7 @@ MÔ TẢ STATUS:
                     const tacticalCommand = execution.description || execution.step_name
                     const prompt = `Lịch sử chat (100 tin nhắn gần nhất):\n${JSON.stringify(recentChat)}\n\nTactical Command:\n${tacticalCommand}\n\nTin nhắn dự kiến sắp gửi:\n${JSON.stringify(requestPayload.messages)}\n\nHãy đánh giá và trả về JSON.`
 
-                    const geminiResult = await callGemini(prompt, "gemini-2.5-pro", systemPrompt, getAgentTools())
+                    const geminiResult = await callGemini(prompt, "gemini-3-flash-preview", systemPrompt, getAgentTools())
 
                     const jsonMatch = geminiResult.match(/\{[\s\S]*\}/)
                     if (jsonMatch) {

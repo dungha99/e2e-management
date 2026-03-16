@@ -75,7 +75,7 @@ export function extractStepsFromAnalysis(analysis: any): ExtractedStep[] {
           stepName: CONNECTOR_MAP.script.stepName,
           connectorId: CONNECTOR_MAP.script.connectorId,
           connectorLabel: "Gửi Script",
-          rawContext: `YÊU CẦU BẮT BUỘC: Generate parameters với mảng messages chính xác chứa 1 phần tử là: "dạ e gửi link phiên đấu giá ạ: https://vucar.vn/phien-dau-gia/tin-xe/{{cars.sku}}" (giữ nguyên từng chữ, không di dịch, chỉ thay đổi cars.sku thành giá trị sku chính xác của xe).`,
+          rawContext: `YÊU CẦU BẮT BUỘC: Generate parameters với mảng messages chính xác chứa 1 phần tử là: "dạ e gửi link phiên đấu giá ạ: https://vucar.vn/phien-dau-gia/tin-xe/{{cars.slug}}" (giữ nguyên từng chữ, không di dịch, chỉ thay đổi cars.slug thành giá trị slug chính xác của xe).`,
           aiAction: "Gửi link phiên đấu giá tự động cho khách",
           expectedReaction: "Khách hàng nhận được link và xem phiên đấu giá",
         })

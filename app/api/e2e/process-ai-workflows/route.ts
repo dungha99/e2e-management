@@ -120,8 +120,10 @@ export async function GET() {
 
           const execution = execResult.rows[0]
 
-          // Skip if already completed, failed, or currently running (prevents duplicate sends when cron fires again)
-          if (execution.status === 'success' || execution.status === 'failed' || execution.status === 'running') {
+          // Skip only truly terminal / in-progress states.
+          // NOTE: 'running' is intentionally NOT guarded here — stale running steps
+          // (timed-out after >5 min) are handled by the atomic re-claim below.
+          if (execution.status === 'success' || execution.status === 'failed' || execution.status === 'skipped') {
             // Move to next step
             currentStepId = await getNextStepId(instance.workflow_id, execution.step_order)
             if (currentStepId) {
@@ -208,11 +210,31 @@ export async function GET() {
             console.log(`[Process AI Workflows] Customer HAS responded recently. Proceeding with step.`)
           }
 
-          // --- 2c. Mark step as running ---
-          await e2eQuery(
-            `UPDATE step_executions SET status = 'running', executed_at = NOW() WHERE id = $1`,
+          // --- 2c. Atomic claim: mark step as running only if still pending OR stale ---
+          // Guards against:
+          //   • Concurrent cron runs (race condition) → only one claim succeeds
+          //   • Stale 'running' steps (AI took >5 min, Vercel timed out) → re-claimed
+          const isStaleRunning = execution.status === 'running'
+          const claimResult = await e2eQuery(
+            `UPDATE step_executions SET status = 'running', executed_at = NOW()
+             WHERE id = $1
+               AND (
+                 status = 'pending'
+                 OR (status = 'running' AND executed_at < NOW() - INTERVAL '5 minutes')
+               )
+             RETURNING id`,
             [execution.id]
           )
+          if (claimResult.rows.length === 0) {
+            // Either another cron already claimed it, or it's still actively running (<5 min)
+            console.log(`[Process AI Workflows] Step "${execution.step_name}" is locked (running <5 min or already claimed), skipping`)
+            result.stoppedReason = "scheduled_future"
+            continueLoop = false
+            break
+          }
+          if (isStaleRunning) {
+            console.warn(`[Process AI Workflows] Re-claiming stale step "${execution.step_name}" — was stuck in 'running' >5 min`)
+          }
 
           // --- 2d. Pre-execution AI Script Evaluator (for "Gửi Script" only) ---
           if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee") { // Gửi Script
@@ -318,7 +340,8 @@ MÔ TẢ STATUS:
 - KHÔNG tìm kiếm các thông tin đã có sẵn trong context (tên khách, phone, picId).`
 
                     const tacticalCommand = execution.description || execution.step_name
-                    const prompt = `Lịch sử chat (100 tin nhắn gần nhất):\n${JSON.stringify(recentChat)}\n\nTactical Command:\n${tacticalCommand}\n\nTin nhắn dự kiến sắp gửi:\n${JSON.stringify(requestPayload.messages)}\n\nHãy đánh giá và trả về JSON.`
+                    const leadContext = await fetchLeadContext(instance.car_id || "")
+                    const prompt = `Lịch sử chat (100 tin nhắn gần nhất):\n${JSON.stringify(recentChat)}\n\nThông tin xe và Lead:\n${leadContext}\n\nTactical Command:\n${tacticalCommand}\n\nTin nhắn dự kiến sắp gửi:\n${JSON.stringify(requestPayload.messages)}\n\nHãy đánh giá và trả về JSON.`
 
                     const geminiResult = await callGemini(prompt, "gemini-3-flash-preview", systemPrompt, getAgentTools())
 
@@ -596,13 +619,56 @@ async function executeConnector(
     }
 
     return { success: true, data }
-  } catch (err) {
+  } catch (err: any) {
     clearTimeout(timeoutId)
-    const errorMessage = err instanceof Error && err.name === 'AbortError'
-      ? 'Connector execution timed out after 5 minutes'
-      : (err instanceof Error ? err.message : String(err))
+    const errMessage = err.name === 'AbortError' ? 'Connector timeout' : err.message
+    return { success: false, error: errMessage }
+  }
+}
 
-    return { success: false, error: errorMessage }
+// =========================================================================
+// Helper: Fetch lead context from DB (same as auto-use-flow)
+// =========================================================================
+async function fetchLeadContext(carId: string): Promise<string> {
+  if (!carId) return "No lead data available."
+  try {
+    const result = await vucarV2Query(
+      `SELECT c.brand, c.model, c.variant, c.year, c.location, c.mileage, c.plate, c.slug,
+              ss.price_customer, ss.price_highest_bid, ss.stage, ss.qualified,
+              ss.intention, ss.negotiation_ability, ss.notes,
+              l.name as customer_name, l.phone, l.additional_phone,
+              l.customer_feedback, l.source
+       FROM cars c
+       LEFT JOIN leads l ON l.id = c.lead_id
+       LEFT JOIN sale_status ss ON ss.car_id = c.id
+       WHERE c.id = $1 LIMIT 1`,
+      [carId]
+    )
+
+    if (result.rows.length === 0) return "No lead data found."
+
+    const row = result.rows[0]
+
+    // Build context string
+    const parts: string[] = []
+    parts.push(`Customer: ${row.customer_name || "Unknown"} (Phone: ${row.phone || "N/A"})`)
+    parts.push(`Car: ${[row.brand, row.model, row.variant].filter(Boolean).join(" ")} ${row.year || ""}`)
+    parts.push(`Car Slug: ${row.slug || "N/A"} (use this exact value when referencing {{cars.slug}} in the bidding link)`)
+    parts.push(`Plate: ${row.plate || "N/A"}`)
+    parts.push(`Bidding Link: https://vucar.vn/phien-dau-gia/tin-xe/${row.slug || "{{cars.slug}}"}`)
+    parts.push(`Location: ${row.location || "N/A"}`)
+    parts.push(`Mileage: ${row.mileage ? `${row.mileage} km` : "N/A"}`)
+    parts.push(`Price Customer: ${row.price_customer ? `${row.price_customer} triệu` : "N/A"}`)
+    parts.push(`Price Highest Bid: ${row.price_highest_bid ? `${row.price_highest_bid} triệu` : "N/A"}`)
+    parts.push(`Stage: ${row.stage || "N/A"}`)
+    parts.push(`Qualified: ${row.qualified || "N/A"}`)
+    parts.push(`Intention: ${row.intention || "N/A"}`)
+    parts.push(`Negotiation Ability: ${row.negotiation_ability || "N/A"}`)
+
+    return parts.join("\n")
+  } catch (error) {
+    console.error("[Process AI Workflows] Error fetching lead context:", error)
+    return "Error fetching lead context."
   }
 }
 

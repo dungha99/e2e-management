@@ -22,12 +22,9 @@ function extractCarImage(additionalImages: any): string | null {
   return null
 }
 
-function formatMinutes(minutes: number): string {
-  const totalSeconds = Math.abs(Math.round(minutes * 60))
-  const h = Math.floor(totalSeconds / 3600)
-  const m = Math.floor((totalSeconds % 3600) / 60)
-  const s = totalSeconds % 60
-  return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+function formatHours(minutes: number): string {
+  const hours = Math.max(1, Math.round(Math.abs(minutes) / 60))
+  return `${hours} tiếng`
 }
 
 export async function GET(request: Request) {
@@ -106,6 +103,8 @@ export async function GET(request: Request) {
       LEFT JOIN users u ON u.id = l.pic_id
       LEFT JOIN sale_status ss ON ss.car_id = c.id
       WHERE c.id = ANY($1::uuid[])
+        AND (ss.stage IS NULL OR ss.stage NOT IN ('FAILED', 'DEPOSIT_PAID', 'COMPLETED'))
+        AND (ss.qualified IS NULL OR ss.qualified NOT IN ('NON_QUALIFIED', 'TEST'))
       ${picClause}
     `, carParams)
 
@@ -141,6 +140,7 @@ export async function GET(request: Request) {
         label: r.label ?? r.step_key,
         status: r.status as StepStatus,
         is_overdue: r.is_overdue,
+        condition_end_met: false, // populated below
       }
       if (existing >= 0) list[existing] = step
       else list.push(step)
@@ -149,6 +149,28 @@ export async function GET(request: Request) {
     stepsMap.forEach((list, key) => {
       stepsMap.set(key, list.sort((a, b) => STEP_ORDER.indexOf(a.step_key) - STEP_ORDER.indexOf(b.step_key)))
     })
+
+    // ── 4b. Fetch condition_end_met from CRM API for each step in parallel ────
+    // Exception: thu_thap_thong_tin derives condition_end_met from cars.additional_images
+    const CRM_BASE = "https://crm-vucar-api.vucar.vn/api/v1/lead-monitor"
+    const conditionFetches: Promise<void>[] = []
+    stepsMap.forEach((steps, carId) => {
+      steps.forEach((step) => {
+        if (step.step_key === "thu_thap_thong_tin") {
+          const car = carMap.get(carId)
+          step.condition_end_met = !!extractCarImage(car?.additional_images)
+          return
+        }
+        const path = step.step_key.replace(/_/g, "-")
+        conditionFetches.push(
+          fetch(`${CRM_BASE}/${path}/${carId}/success`, { method: "POST" })
+            .then((res) => res.ok ? res.json() : null)
+            .then((data) => { if (data) step.condition_end_met = data.condition_end_met === true })
+            .catch(() => {})
+        )
+      })
+    })
+    await Promise.all(conditionFetches)
 
     // ── 5. Build one HITLLead per car ─────────────────────────────────────────
     const leads: HITLLead[] = []
@@ -182,8 +204,8 @@ export async function GET(request: Request) {
       let time_string: string | undefined
       if (!isEscalation && timeOverdue != null) {
         time_string = timeOverdue > 0
-          ? `Vượt ${formatMinutes(timeOverdue)}`
-          : `Còn ${formatMinutes(-timeOverdue)}`
+          ? `Quá hạn ${formatHours(timeOverdue)}`
+          : `Còn ${formatHours(-timeOverdue)}`
       }
 
       leads.push({

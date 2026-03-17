@@ -20,11 +20,27 @@ export function LeadMonitorPage() {
   const [selectedPicId, setSelectedPicId] = useState<string>("all")
 
   const picOptions = useMemo(() => {
-    const map = new Map<string, string>()
+    const nameMap = new Map<string, string>()
+    const overdueMap = new Map<string, number>()   // sum of time_overdue_minutes per PIC
+    const escalationMap = new Map<string, number>() // count of escalation car_ids per PIC
     leads.forEach((l) => {
-      if (l.pic_id && !map.has(l.pic_id)) map.set(l.pic_id, l.pic_name || l.pic_id)
+      if (!l.pic_id) return
+      if (!nameMap.has(l.pic_id)) nameMap.set(l.pic_id, l.pic_name || l.pic_id)
+      if (l.trigger.type === "SLA_BREACH" && l.time_overdue_minutes != null && l.time_overdue_minutes > 0) {
+        overdueMap.set(l.pic_id, (overdueMap.get(l.pic_id) ?? 0) + l.time_overdue_minutes)
+      }
+      if (l.trigger.type === "ESCALATION") {
+        escalationMap.set(l.pic_id, (escalationMap.get(l.pic_id) ?? 0) + 1)
+      }
     })
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
+    return Array.from(nameMap.entries())
+      .map(([id, name]) => ({
+        id,
+        name,
+        totalOverdueMinutes: overdueMap.get(id) ?? 0,
+        escalationCount: escalationMap.get(id) ?? 0,
+      }))
+      .sort((a, b) => (b.totalOverdueMinutes + b.escalationCount * 60) - (a.totalOverdueMinutes + a.escalationCount * 60))
   }, [leads])
 
   // Derive KPI counts directly from loaded leads
@@ -160,7 +176,19 @@ export function LeadMonitorPage() {
                 <SelectItem value="all">Tất cả PIC</SelectItem>
                 {picOptions.map((pic) => (
                   <SelectItem key={pic.id} value={pic.id}>
-                    {pic.name}
+                    <span className="flex items-center gap-2 w-full">
+                      <span className="flex-1">{pic.name}</span>
+                      {pic.totalOverdueMinutes > 0 && (
+                        <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">
+                          {Math.max(1, Math.round(pic.totalOverdueMinutes / 60))}h SLA
+                        </span>
+                      )}
+                      {pic.escalationCount > 0 && (
+                        <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-700">
+                          {pic.escalationCount} ESC
+                        </span>
+                      )}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>

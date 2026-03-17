@@ -20,7 +20,7 @@ const COLUMNS: { key: StepKey; title: string; dotColor: string }[] = [
 
 export function HITLKanbanBoard({ leads, onResolve, onDetail }: HITLKanbanBoardProps) {
   // Sort and group leads
-  const groupedLeads = useMemo(() => {
+  const { groupedLeads, overdueColumns } = useMemo(() => {
     // Initialize groups
     const groups: Record<StepKey, HITLLead[]> = {
       zalo_connect: [],
@@ -50,7 +50,15 @@ export function HITLKanbanBoard({ leads, onResolve, onDetail }: HITLKanbanBoardP
       groups[key as StepKey].sort(sortLeads)
     })
 
-    return groups
+    // Columns where any lead has exceeded SLA
+    const overdue = new Set<StepKey>()
+    Object.entries(groups).forEach(([key, colLeads]) => {
+      if (colLeads.some(l => l.time_overdue_minutes != null && l.time_overdue_minutes > 0)) {
+        overdue.add(key as StepKey)
+      }
+    })
+
+    return { groupedLeads: groups, overdueColumns: overdue }
   }, [leads])
 
   return (
@@ -60,7 +68,7 @@ export function HITLKanbanBoard({ leads, onResolve, onDetail }: HITLKanbanBoardP
           <div key={col.key} className="flex h-full min-h-0">
             <HITLKanbanColumn
               title={col.title}
-              dotColor={col.dotColor}
+              dotColor={overdueColumns.has(col.key) ? "bg-red-500" : col.dotColor}
               leads={groupedLeads[col.key]}
               onResolve={onResolve}
               onDetail={onDetail}

@@ -19,22 +19,14 @@ const STEP_SHORT: Record<string, string> = {
   dam_phan_1:         "Đàm phán",
 }
 
-const STEP_STATUS_STYLE: Record<string, string> = {
-  success:     "bg-green-100 text-green-700 border-green-200",
-  failed:      "bg-red-100   text-red-600   border-red-200",
-  ongoing:     "bg-blue-100  text-blue-700  border-blue-200",
-  not_started: "bg-gray-100  text-gray-400  border-gray-200",
-  terminated:  "bg-gray-100  text-gray-400  border-gray-200",
-}
-
 function StepStrip({ steps }: { steps: StepProgress[] }) {
   if (!steps.length) return null
   return (
     <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
       {steps.map((s) => {
-        const style = s.is_overdue && s.status !== "success"
-          ? "bg-amber-100 text-amber-700 border-amber-200"
-          : STEP_STATUS_STYLE[s.status] ?? STEP_STATUS_STYLE.not_started
+        const style = s.condition_end_met
+          ? "bg-green-100 text-green-700 border-green-200"
+          : "bg-red-100 text-red-700 border-red-200"
         return (
           <span
             key={s.step_key}
@@ -73,10 +65,9 @@ export function HITLLeadCard({ lead, onResolve, onDetail }: HITLLeadCardProps) {
   }
 
   const isSLA = trigger.type === "SLA_BREACH"
+  const isOverdue = lead.time_overdue_minutes != null && lead.time_overdue_minutes > 0
   const triggerBg = isSLA
-    ? trigger.severity === "CRITICAL" ? "bg-red-50 text-red-600"
-    : trigger.severity === "WARN"     ? "bg-amber-50 text-amber-600"
-    :                                    "bg-blue-50 text-blue-600"
+    ? isOverdue ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"
     : "bg-purple-50 text-purple-700"
 
   return (

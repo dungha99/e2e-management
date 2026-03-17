@@ -29,6 +29,7 @@ export interface StepProgress {
   label: string
   status: StepStatus
   is_overdue: boolean
+  condition_end_met: boolean
 }
 
 export interface TriggerInfo {

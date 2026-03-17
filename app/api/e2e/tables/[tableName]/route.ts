@@ -11,6 +11,8 @@ const ALLOWED_TABLES = [
     "step_executions",
     "api_connectors",
     "dict_variables",
+    "escalation_rules",
+    "escalation_logging",
 ]
 
 // Field configurations for each table
@@ -53,6 +55,16 @@ const TABLE_FIELDS: Record<string, {
         required: ["name", "base_url", "method"],
         optional: ["auth_config", "input_schema", "output_schema"],
         generated: ["id"],
+    },
+    escalation_rules: {
+        required: ["label", "condition_start"],
+        optional: ["is_active", "version"],
+        generated: ["id", "created_at"],
+    },
+    escalation_logging: {
+        required: ["car_id", "escalation_id"],
+        optional: ["status", "keywords_matched", "resolve_note"],
+        generated: ["id", "triggered_at", "resolved_at"],
     },
 }
 

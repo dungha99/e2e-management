@@ -116,6 +116,7 @@ ${prevPropsSection}
 Từ đoạn tóm tắt được cung cấp, hãy trích xuất các thông tin sau và trả về MỘT JSON object duy nhất:
 
 {
+  "thinking_process": "Giải thích chi tiết lý do tại sao bạn điền từng giá trị vào các trường bên dưới. Ví dụ: 'location=TP.HCM vì tóm tắt đề cập khách ở HCM; stage=negotiation vì khách hỏi giá 700 triệu; qualified=weak_qualified vì không thấy đề cập ảnh xe'",
   "location": "Tỉnh/thành phố của xe (chỉ tên tỉnh/thành, không cần quận/huyện). null nếu không có.",
   "brand": "Thương hiệu xe (VD: Toyota, Honda, ...). null nếu không có.",
   "model": "Dòng xe (VD: Camry, Civic, ...). null nếu không có.",
@@ -125,7 +126,8 @@ Từ đoạn tóm tắt được cung cấp, hãy trích xuất các thông tin 
   "plate": "Biển số xe. null nếu không có.",
   "qualified": "Xem logic qualified bên dưới",
   "stage": "Xem logic stage bên dưới",
-  "price_customer": "Giá khách muốn bán HIỆN TẠI (số nguyên VND, VD: nếu khách nói '700tr' thì 700000000, nếu '1,2 tỷ' thì 1200000000). Nếu giá đã thay đổi qua đàm phán, lấy giá MỚI NHẤT khách đề nghị. null nếu không có đề cập."
+  "price_customer": "Giá khách muốn bán HIỆN TẠI (số nguyên VND, VD: nếu khách nói '700tr' thì 700000000, nếu '1,2 tỷ' thì 1200000000). Nếu giá đã thay đổi qua đàm phán, lấy giá MỚI NHẤT khách đề nghị. null nếu không có đề cập.",
+  "had_image": "Khách đã gửi hình ảnh chưa (true/false)."
 }
 
 LOGIC QUALIFIED:
@@ -142,7 +144,7 @@ LOGIC STAGE (ưu tiên theo thứ tự từ cao xuống thấp):
 
 CHỈ trả về JSON object. KHÔNG giải thích, KHÔNG markdown, KHÔNG text thêm.`
 
-  const rawResponse = await callGemini(`TÓM TẮT HỘI THOẠI:\n${summary}`, "gemini-2.0-flash", systemPrompt)
+  const rawResponse = await callGemini(`TÓM TẮT HỘI THOẠI:\n${summary}`, "gemini-2.5-flash", systemPrompt)
 
   const jsonMatch = rawResponse.match(/\{[\s\S]*\}/)
   if (!jsonMatch) throw new Error(`Gemini did not return valid JSON: ${rawResponse.slice(0, 300)}`)

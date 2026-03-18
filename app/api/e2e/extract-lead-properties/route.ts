@@ -49,7 +49,8 @@ Từ đoạn tóm tắt được cung cấp, hãy trích xuất các thông tin 
   "plate": "Biển số xe. null nếu không có.",
   "qualified": "Xem logic qualified bên dưới",
   "stage": "Xem logic stage bên dưới",
-  "price_customer": "Giá khách muốn bán (số nguyên VND, VD: nếu khách nói '700tr' thì 700000000, nếu '1,2 tỷ' thì 1200000000). null nếu không có đề cập."
+  "price_customer": "Giá khách muốn bán (số nguyên VND, VD: nếu khách nói '700tr' thì 700000000, nếu '1,2 tỷ' thì 1200000000). null nếu không có đề cập.",
+  "had_image": "Khách đã gửi hình ảnh chưa (true/false)."
 }
 
 LOGIC QUALIFIED:

@@ -1,17 +1,17 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { HITLLead, StepKey } from "./types"
+import { HITLLead, StepKey, PaginatedLeadsResponse } from "./types"
 
-const PAGE_SIZE = 15
+const LIMIT = 15
 
 interface UseColumnLeadsReturn {
-  leads: HITLLead[]
-  isLoading: boolean
+  items: HITLLead[]
+  isLoadingInitial: boolean
+  isFetchingMore: boolean
   hasMore: boolean
-  total: number
   loadMore: () => void
-  removeLead: (id: string) => void
+  removeItem: (id: string) => void
 }
 
 export function useColumnLeads(
@@ -19,77 +19,63 @@ export function useColumnLeads(
   picId: string,
   refreshKey: number
 ): UseColumnLeadsReturn {
-  const [leads, setLeads] = useState<HITLLead[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [hasMore, setHasMore] = useState(false)
-  const [total, setTotal] = useState(0)
+  const [items, setItems] = useState<HITLLead[]>([])
+  const [isLoadingInitial, setIsLoadingInitial] = useState(true)
+  const [isFetchingMore, setIsFetchingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
 
   const cursorRef = useRef<string | null>(null)
   const fetchingRef = useRef(false)
 
-  // Initial/reset load when filters change
-  useEffect(() => {
-    let cancelled = false
-    cursorRef.current = null
-    fetchingRef.current = true
-    setIsLoading(true)
-    setLeads([])
-    setHasMore(false)
+  const fetchPage = useCallback(
+    async (cursor: string | null, isInitial: boolean) => {
+      if (fetchingRef.current) return
+      fetchingRef.current = true
 
-    const params = new URLSearchParams({ step_key: stepKey, limit: String(PAGE_SIZE) })
-    if (picId !== "all") params.set("pic_id", picId)
+      if (isInitial) setIsLoadingInitial(true)
+      else setIsFetchingMore(true)
 
-    fetch(`/api/lead-monitor/queue?${params}`)
-      .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
-      .then((data) => {
-        if (cancelled) return
-        setLeads(data.items ?? [])
+      try {
+        const params = new URLSearchParams({ step_key: stepKey, limit: String(LIMIT) })
+        if (picId !== "all") params.set("pic_id", picId)
+        if (cursor) params.set("cursor", cursor)
+
+        const res = await fetch(`/api/lead-monitor/queue?${params}`)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+        const data: PaginatedLeadsResponse = await res.json()
         cursorRef.current = data.next_cursor ?? null
         setHasMore(data.has_more ?? false)
-        setTotal(data.total ?? 0)
-      })
-      .catch((e) => { if (!cancelled) console.error(`[useColumnLeads] ${stepKey}:`, e) })
-      .finally(() => {
-        if (!cancelled) {
-          setIsLoading(false)
-          fetchingRef.current = false
-        }
-      })
+        setItems((prev) => (isInitial ? data.items : [...prev, ...data.items]))
+      } catch (e) {
+        console.error(`[useColumnLeads] ${stepKey}:`, e)
+      } finally {
+        fetchingRef.current = false
+        if (isInitial) setIsLoadingInitial(false)
+        else setIsFetchingMore(false)
+      }
+    },
+    [stepKey, picId]
+  )
 
-    return () => { cancelled = true }
-  }, [stepKey, picId, refreshKey])
+  // Reset + initial fetch whenever picId or refreshKey changes
+  useEffect(() => {
+    cursorRef.current = null
+    fetchingRef.current = false
+    setItems([])
+    setHasMore(true)
+    fetchPage(null, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picId, refreshKey, stepKey])
 
   const loadMore = useCallback(() => {
-    if (fetchingRef.current || !hasMore || !cursorRef.current) return
-    fetchingRef.current = true
-    setIsLoading(true)
+    if (!hasMore || fetchingRef.current) return
+    fetchPage(cursorRef.current, false)
+  }, [hasMore, fetchPage])
 
-    const params = new URLSearchParams({
-      step_key: stepKey,
-      limit: String(PAGE_SIZE),
-      cursor: cursorRef.current,
-    })
-    if (picId !== "all") params.set("pic_id", picId)
-
-    fetch(`/api/lead-monitor/queue?${params}`)
-      .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
-      .then((data) => {
-        setLeads((prev) => [...prev, ...(data.items ?? [])])
-        cursorRef.current = data.next_cursor ?? null
-        setHasMore(data.has_more ?? false)
-        setTotal(data.total ?? 0)
-      })
-      .catch((e) => console.error(`[useColumnLeads] loadMore ${stepKey}:`, e))
-      .finally(() => {
-        setIsLoading(false)
-        fetchingRef.current = false
-      })
-  }, [stepKey, picId, hasMore])
-
-  const removeLead = useCallback((id: string) => {
-    setLeads((prev) => prev.filter((l) => l.id !== id))
-    setTotal((prev) => Math.max(0, prev - 1))
+  const removeItem = useCallback((id: string) => {
+    setItems((prev) => prev.filter((l) => l.id !== id))
   }, [])
 
-  return { leads, isLoading, hasMore, total, loadMore, removeLead }
+  return { items, isLoadingInitial, isFetchingMore, hasMore, loadMore, removeItem }
 }

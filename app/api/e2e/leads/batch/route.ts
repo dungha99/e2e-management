@@ -2,6 +2,12 @@ import { NextResponse } from "next/server"
 import { vucarV2Query } from "@/lib/db"
 import { getCached } from "@/lib/cache"
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function isValidUUID(id: unknown): id is string {
+  return typeof id === "string" && UUID_REGEX.test(id)
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()
@@ -9,6 +15,10 @@ export async function POST(request: Request) {
 
     if (!uid) {
       return NextResponse.json({ error: "UID is required" }, { status: 400 })
+    }
+
+    if (!isValidUUID(uid)) {
+      return NextResponse.json({ leads: [], pagination: { current_page: page, per_page } })
     }
 
     // Validate tab parameter

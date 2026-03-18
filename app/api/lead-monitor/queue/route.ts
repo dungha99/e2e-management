@@ -149,28 +149,35 @@ async function handleColumnPagination(
     })
   }
 
-  // ── 3. Apply PIC filter (intersect with VucarV2 valid car_ids) ─────────────
-  let validPicCarIds: Set<string> | null = null
-  if (picIdFilter) {
-    const picResult = await vucarV2Query(`
+  // ── 3. Cross-DB validation BEFORE pagination ──────────────────────────────
+  // Query VucarV2 for all car_ids from allRows that pass business rules.
+  // This must happen before slice() so pagination counts are accurate.
+  const allRowCarIds = allRows.map((r: any) => r.car_id)
+  const validCarIds = new Set<string>()
+
+  if (allRowCarIds.length > 0) {
+    const validParams: any[] = [allRowCarIds]
+    const picClauseValid = picIdFilter ? `AND l.pic_id = $2` : ""
+    if (picIdFilter) validParams.push(picIdFilter)
+
+    const validResult = await vucarV2Query(`
       SELECT c.id AS car_id
       FROM cars c
-      JOIN leads l ON l.id = c.lead_id
+      LEFT JOIN leads l ON l.id = c.lead_id
       LEFT JOIN sale_status ss ON ss.car_id = c.id
-      WHERE l.pic_id = $1
+      WHERE c.id = ANY($1::uuid[])
         AND (ss.stage IS NULL OR ss.stage NOT IN ('FAILED', 'DEPOSIT_PAID', 'COMPLETED'))
         AND (ss.qualified IS NULL OR ss.qualified NOT IN ('NON_QUALIFIED', 'TEST'))
-    `, [picIdFilter])
-    validPicCarIds = new Set(picResult.rows.map((r: any) => r.car_id))
+      ${picClauseValid}
+    `, validParams)
+
+    validResult.rows.forEach((r: any) => validCarIds.add(r.car_id))
   }
 
-  const filteredRows = validPicCarIds
-    ? allRows.filter((r: any) => validPicCarIds!.has(r.car_id))
-    : allRows
-
+  const filteredRows = allRows.filter((r: any) => validCarIds.has(r.car_id))
   const total = filteredRows.length
 
-  // ── 4. Apply cursor to find start index ──────────────────────────────────
+  // ── 4. Paginate on the fully-filtered list ────────────────────────────────
   let startIndex = 0
   if (cursor) {
     const pos = filteredRows.findIndex((r: any) => r.id === cursor.id)
@@ -188,11 +195,8 @@ async function handleColumnPagination(
 
   const pageCarIds = pageRows.map((r: any) => r.car_id)
 
-  // ── 5. Fetch car + lead + PIC info from VucarV2 for page cars only ────────
-  const carParams: any[] = [pageCarIds]
-  const picClause = picIdFilter ? `AND l.pic_id = $2` : ""
-  if (picIdFilter) carParams.push(picIdFilter)
-
+  // ── 5. Fetch full car + lead + PIC info for this page only ────────────────
+  // No business-rule filters here — cars already validated in step 3.
   const carsResult = await vucarV2Query(`
     SELECT
       c.id              AS car_id,
@@ -215,10 +219,7 @@ async function handleColumnPagination(
     LEFT JOIN users u ON u.id = l.pic_id
     LEFT JOIN sale_status ss ON ss.car_id = c.id
     WHERE c.id = ANY($1::uuid[])
-      AND (ss.stage IS NULL OR ss.stage NOT IN ('FAILED', 'DEPOSIT_PAID', 'COMPLETED'))
-      AND (ss.qualified IS NULL OR ss.qualified NOT IN ('NON_QUALIFIED', 'TEST'))
-    ${picClause}
-  `, carParams)
+  `, [pageCarIds])
 
   const carMap = new Map<string, any>()
   carsResult.rows.forEach((r: any) => carMap.set(r.car_id, r))
@@ -459,8 +460,6 @@ async function handleLegacyFull(picIdFilter: string | null): Promise<NextRespons
     LEFT JOIN users u ON u.id = l.pic_id
     LEFT JOIN sale_status ss ON ss.car_id = c.id
     WHERE c.id = ANY($1::uuid[])
-      AND (ss.stage IS NULL OR ss.stage NOT IN ('FAILED', 'DEPOSIT_PAID', 'COMPLETED'))
-      AND (ss.qualified IS NULL OR ss.qualified NOT IN ('NON_QUALIFIED', 'TEST'))
     ${picClause}
   `, carParams)
 

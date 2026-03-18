@@ -10,6 +10,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "UID is required" }, { status: 400 })
     }
 
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!UUID_REGEX.test(uid)) {
+      return NextResponse.json({ priority: 0, nurture: 0, total: 0 })
+    }
+
     // Build search condition for phone, lead name, and car display name (brand + model)
     const searchCondition = search
       ? `AND (

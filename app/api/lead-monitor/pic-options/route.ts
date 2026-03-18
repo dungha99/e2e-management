@@ -49,11 +49,9 @@ export async function GET() {
       const carResult = await vucarV2Query(`
         SELECT c.id AS car_id, l.pic_id, ss.bot_status
         FROM cars c
-        JOIN leads l ON l.id = c.lead_id
+        LEFT JOIN leads l ON l.id = c.lead_id
         LEFT JOIN sale_status ss ON ss.car_id = c.id
         WHERE c.id = ANY($1::uuid[])
-          AND (ss.stage IS NULL OR ss.stage NOT IN ('FAILED', 'DEPOSIT_PAID', 'COMPLETED'))
-          AND (ss.qualified IS NULL OR ss.qualified NOT IN ('NON_QUALIFIED', 'TEST'))
       `, [allFlaggedCarIds])
 
       // ── 5. Accumulate counts onto base user list ───────────────────────────

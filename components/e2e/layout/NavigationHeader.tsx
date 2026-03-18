@@ -2,144 +2,126 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Menu, LayoutList, LayoutGrid } from "lucide-react"
+import { Menu, User, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 interface NavigationHeaderProps {
-    currentPage: "dashboard" | "campaigns" | "e2e" | "workflow"
-    selectedAccount?: string
-    accountSelector?: React.ReactNode
-    viewMode?: "list" | "kanban"
-    onViewModeChange?: (mode: "list" | "kanban") => void
-    showViewToggle?: boolean
+  currentPage: "dashboard" | "campaigns" | "e2e" | "workflow" | "lead-monitor" | "lead-management" | "ai-performance"
+  selectedAccount?: string
+  accountSelector?: React.ReactNode
+  // legacy — kept for backward compat, unused in new design
+  viewMode?: "list" | "kanban"
+  onViewModeChange?: (mode: "list" | "kanban") => void
+  showViewToggle?: boolean
 }
 
 const NAV_ITEMS = [
-    { value: "dashboard", label: "Dashboard", href: "/" },
-    { value: "campaigns", label: "Quản lý Decoy", href: "/decoy-management" },
-    { value: "e2e", label: "Quản lý E2E", href: (accountId: string) => `/e2e/${accountId}?tab=priority&page=1` },
-    { value: "workflow", label: "Quản lý Workflow", href: "/workflow-management" },
+  { value: "dashboard",        label: "Dashboard",           href: "/" },
+  { value: "campaigns",        label: "Quản lý Decoy",       href: "/decoy-management" },
+  { value: "e2e",              label: "Quản lý E2E",         href: (id: string) => `/e2e/${id}?tab=priority&page=1` },
+  { value: "lead-management",  label: "Lead Management",     href: "/lead-management" },
+  { value: "lead-monitor",     label: "Lead Monitor",        href: "/lead-monitor" },
+  { value: "ai-performance",   label: "AI Performance",      href: "/ai-performance" },
+  { value: "workflow",         label: "Quản lý Workflow",    href: "/workflow-management" },
 ]
 
-export function NavigationHeader({
-    currentPage,
-    selectedAccount,
-    accountSelector,
-    viewMode = "list",
-    onViewModeChange,
-    showViewToggle = false,
-}: NavigationHeaderProps) {
-    const router = useRouter()
-    const [menuOpen, setMenuOpen] = useState(false)
+export function NavigationHeader({ currentPage, selectedAccount, accountSelector }: NavigationHeaderProps) {
+  const router = useRouter()
+  const [menuOpen, setMenuOpen] = useState(false)
 
-    // Handle mobile navigation
-    const handleMobileNavigation = (value: string) => {
-        const item = NAV_ITEMS.find(i => i.value === value)
-        if (!item) return
+  const navigate = (item: typeof NAV_ITEMS[number]) => {
+    const href = typeof item.href === "function"
+      ? item.href(selectedAccount || "placeholder")
+      : item.href
+    router.push(href)
+  }
 
-        let href: string
-        if (value === "e2e" && typeof item.href === "function") {
-            href = item.href(selectedAccount || "placeholder")
-        } else {
-            href = typeof item.href === "string" ? item.href : "/"
-        }
+  return (
+    <>
+      {/* ── MOBILE ────────────────────────────────────────────────────── */}
+      <div className="sm:hidden sticky top-0 z-40 bg-white border-b px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <button
+            onClick={() => setMenuOpen(true)}
+            className="h-9 w-9 flex items-center justify-center rounded-md hover:bg-gray-100 transition-colors"
+          >
+            <Menu className="h-5 w-5 text-gray-600" />
+          </button>
+          <div className="flex-1 flex justify-center">{accountSelector}</div>
+        </div>
 
-        router.push(href)
-        setMenuOpen(false)
-    }
+        <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+          <SheetContent side="left" className="w-64">
+            <SheetHeader>
+              <SheetTitle>Navigation</SheetTitle>
+            </SheetHeader>
+            <nav className="flex flex-col gap-1 mt-6">
+              {NAV_ITEMS.map((item) => (
+                <button
+                  key={item.value}
+                  onClick={() => { navigate(item); setMenuOpen(false) }}
+                  className={cn(
+                    "flex items-center gap-2 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-left transition-colors",
+                    currentPage === item.value
+                      ? "bg-gray-100 text-gray-900"
+                      : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+                  )}
+                >
+                  {item.label}
+                  {item.value === "lead-monitor" && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 ml-0.5" />
+                  )}
+                </button>
+              ))}
+            </nav>
+          </SheetContent>
+        </Sheet>
+      </div>
 
-    return (
-        <>
-            {/* MOBILE HEADER (sm:hidden) */}
-            <div className="sm:hidden sticky top-0 z-40 bg-white border-b px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                    {/* Left: Burger Menu */}
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-9 w-9 p-0"
-                        onClick={() => setMenuOpen(true)}
-                    >
-                        <Menu className="h-5 w-5" />
-                        <span className="sr-only">Open menu</span>
-                    </Button>
+      {/* ── DESKTOP ───────────────────────────────────────────────────── */}
+      <div className="hidden sm:flex items-center justify-between px-5 py-3 bg-white border-b border-gray-100">
 
-                    {/* Center: Account Selector (Passed as Prop) */}
-                    <div className="flex-1 flex justify-center">
-                        {accountSelector}
-                    </div>
+        {/* Logo */}
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center">
+            <span className="text-white text-xs font-bold">V</span>
+          </div>
+          <span className="text-sm font-bold text-gray-800 tracking-tight">Vucar</span>
+        </div>
 
-                    {/* Right: View Mode Toggle */}
-                    {showViewToggle && onViewModeChange && (
-                        <div className="flex items-center gap-1 bg-gray-100 rounded-md p-1">
-                            <Button
-                                variant={viewMode === "list" ? "secondary" : "ghost"}
-                                size="sm"
-                                className="h-7 w-7 p-0"
-                                onClick={() => onViewModeChange("list")}
-                            >
-                                <LayoutList className="h-4 w-4" />
-                                <span className="sr-only">List view</span>
-                            </Button>
-                            <Button
-                                variant={viewMode === "kanban" ? "secondary" : "ghost"}
-                                size="sm"
-                                className="h-7 w-7 p-0"
-                                onClick={() => onViewModeChange("kanban")}
-                            >
-                                <LayoutGrid className="h-4 w-4" />
-                                <span className="sr-only">Kanban view</span>
-                            </Button>
-                        </div>
-                    )}
-                </div>
+        {/* Nav tabs */}
+        <nav className="flex items-center gap-0.5 mx-6 overflow-x-auto scrollbar-none">
+          {NAV_ITEMS.map((item) => {
+            const active = currentPage === item.value
+            return (
+              <button
+                key={item.value}
+                onClick={() => navigate(item)}
+                className={cn(
+                  "relative flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm whitespace-nowrap transition-colors",
+                  active
+                    ? "bg-gray-100 text-gray-900 font-semibold"
+                    : "text-gray-500 font-medium hover:text-gray-800 hover:bg-gray-50"
+                )}
+              >
+                {item.label}
+                {item.value === "lead-monitor" && (
+                  <span className={cn(
+                    "w-1.5 h-1.5 rounded-full bg-red-500 shrink-0",
+                    active ? "opacity-100" : "opacity-70"
+                  )} />
+                )}
+              </button>
+            )
+          })}
+        </nav>
 
-                {/* Navigation Sheet */}
-                <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
-                    <SheetContent side="left" className="w-64">
-                        <SheetHeader>
-                            <SheetTitle>Navigation</SheetTitle>
-                        </SheetHeader>
-                        <nav className="flex flex-col gap-2 mt-6">
-                            {NAV_ITEMS.map((item) => (
-                                <Button
-                                    key={item.value}
-                                    variant={currentPage === item.value ? "secondary" : "ghost"}
-                                    className={cn(
-                                        "justify-start h-11",
-                                        currentPage === item.value && "bg-blue-50 text-blue-700 font-medium"
-                                    )}
-                                    onClick={() => handleMobileNavigation(item.value)}
-                                >
-                                    {item.label}
-                                </Button>
-                            ))}
-                        </nav>
-                    </SheetContent>
-                </Sheet>
-            </div>
-
-            {/* DESKTOP HEADER (hidden sm:flex) */}
-            <div className="hidden sm:flex items-center justify-between mb-6 gap-4 px-4 pt-4">
-                <div className="overflow-x-auto flex-shrink min-w-0">
-                    <TabsList>
-                        <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-                        <TabsTrigger value="campaigns">Quản lý Decoy</TabsTrigger>
-                        <TabsTrigger value="e2e">Quản lý E2E</TabsTrigger>
-                        <TabsTrigger value="workflow">Quản lý Workflow</TabsTrigger>
-                    </TabsList>
-                </div>
-
-                {/* Portal targets for AccountSelector and View Mode Toggle */}
-                {/* Note: The functionality for these is portaled in from child components */}
-                <div className="flex items-center gap-4">
-                    <div id="header-account-selector"></div>
-                    <div id="header-view-toggle"></div>
-                </div>
-            </div>
-        </>
-    )
+        {/* Right: account selector + user profile */}
+        <div className="flex items-center gap-3 shrink-0">
+          {accountSelector}
+        </div>
+      </div>
+    </>
+  )
 }

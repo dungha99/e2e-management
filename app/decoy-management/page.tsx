@@ -112,6 +112,8 @@ function DecoyManagementPageContent() {
         } else if (value === "e2e") {
             const picId = selectedAccount || "placeholder"
             router.push(`/e2e/${picId}?tab=priority&page=1`)
+        } else if (value === "lead-monitor") {
+            router.push("/lead-monitor")
         } else if (value === "workflow") {
             router.push("/workflow-management")
         }

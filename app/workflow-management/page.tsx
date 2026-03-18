@@ -29,6 +29,8 @@ interface Stage { id: string; name: string }
 interface Transition { id: string; from_workflow_id: string; to_workflow_id: string; condition_logic: string; priority: number; transition_sla_hours?: number }
 interface WorkflowInstance { id: string; car_id: string; workflow_id: string; status: string; started_at: string; completed_at?: string }
 interface ApiConnector { id: string; name: string; base_url: string; method: string; auth_config?: any; input_schema?: any; output_schema?: any }
+interface EscalationRule { id: string; label: string; is_active: boolean; version: number; condition_start: any; created_at: string }
+interface EscalationLog { id: string; car_id: string; escalation_id: string; status: string; keywords_matched: string[]; triggered_at: string; resolved_at?: string }
 
 // Node position for flow diagram
 interface NodePosition { x: number; y: number }
@@ -38,7 +40,7 @@ function WorkflowManagementContent() {
     const { toast } = useToast()
 
     const [mainTab, setMainTab] = useState<"flow" | "monitor">("flow")
-    const [flowSubTab, setFlowSubTab] = useState<"workflows" | "apis">("workflows")
+    const [flowSubTab, setFlowSubTab] = useState<"workflows" | "apis" | "escalation_rules" | "escalation_logs">("workflows")
     const [workflows, setWorkflows] = useState<WorkflowType[]>([])
     const [steps, setSteps] = useState<WorkflowStep[]>([])
     const [allSteps, setAllSteps] = useState<WorkflowStep[]>([])
@@ -46,6 +48,8 @@ function WorkflowManagementContent() {
     const [transitions, setTransitions] = useState<Transition[]>([])
     const [instances, setInstances] = useState<WorkflowInstance[]>([])
     const [apiConnectors, setApiConnectors] = useState<ApiConnector[]>([])
+    const [escalationRules, setEscalationRules] = useState<EscalationRule[]>([])
+    const [escalationLogs, setEscalationLogs] = useState<EscalationLog[]>([])
     const [selectedStage, setSelectedStage] = useState<Stage | null>(null)
     const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowType | null>(null)
     const [selectedStep, setSelectedStep] = useState<WorkflowStep | null>(null)
@@ -71,6 +75,8 @@ function WorkflowManagementContent() {
     const [transitionForm, setTransitionForm] = useState<Partial<Transition>>({})
     const [apiConnectorForm, setApiConnectorForm] = useState<Partial<ApiConnector>>({})
     const [editingApiConnector, setEditingApiConnector] = useState<Partial<ApiConnector> | null>(null)
+    const [createRuleOpen, setCreateRuleOpen] = useState(false)
+    const [ruleForm, setRuleForm] = useState<Partial<EscalationRule>>({})
 
     // Flow diagram node positions
     const [nodePositions, setNodePositions] = useState<Record<string, NodePosition>>({})
@@ -117,21 +123,25 @@ function WorkflowManagementContent() {
     async function fetchAllData() {
         setLoading(true)
         try {
-            const [wfRes, stRes, trRes, instRes, stepsRes, apiRes] = await Promise.all([
+            const [wfRes, stRes, trRes, instRes, stepsRes, apiRes, rulesRes, logsRes] = await Promise.all([
                 fetch("/api/e2e/tables/workflows?limit=100"),
                 fetch("/api/e2e/tables/workflow_stages?limit=100"),
                 fetch("/api/e2e/tables/workflow_transitions?limit=100"),
                 fetch("/api/e2e/tables/workflow_instances?limit=100&orderBy=started_at&orderDir=desc"),
                 fetch("/api/e2e/tables/workflow_steps?limit=500"),
-                fetch("/api/e2e/tables/api_connectors?limit=100")
+                fetch("/api/e2e/tables/api_connectors?limit=100"),
+                fetch("/api/e2e/tables/escalation_rules?limit=100"),
+                fetch("/api/e2e/tables/escalation_logging?limit=100&orderBy=triggered_at&orderDir=desc")
             ])
-            const [wfData, stData, trData, instData, stepsData, apiData] = await Promise.all([wfRes.json(), stRes.json(), trRes.json(), instRes.json(), stepsRes.json(), apiRes.json()])
+            const [wfData, stData, trData, instData, stepsData, apiData, rulesData, logsData] = await Promise.all([wfRes.json(), stRes.json(), trRes.json(), instRes.json(), stepsRes.json(), apiRes.json(), rulesRes.json(), logsRes.json()])
             if (stData.success) { setStages(stData.data); if (!selectedStage && stData.data.length > 0) setSelectedStage(stData.data[0]) }
             if (wfData.success) setWorkflows(wfData.data)
             if (trData.success) setTransitions(trData.data)
             if (instData.success) setInstances(instData.data)
             if (stepsData.success) setAllSteps(stepsData.data)
             if (apiData.success) setApiConnectors(apiData.data)
+            if (rulesData.success) setEscalationRules(rulesData.data)
+            if (logsData.success) setEscalationLogs(logsData.data)
         } catch (error) { console.error("Error:", error) }
         finally { setLoading(false) }
     }
@@ -259,6 +269,27 @@ function WorkflowManagementContent() {
         } finally { setSaving(false) }
     }
 
+    async function handleCreateEscalationRule() {
+        setSaving(true)
+        try {
+            const payload = {
+                ...ruleForm,
+                condition_start: parseJsonField(ruleForm.condition_start) || {}
+            }
+            const res = await fetch("/api/e2e/tables/escalation_rules", {
+                method: "POST",
+                body: JSON.stringify(payload),
+                headers: { "Content-Type": "application/json" }
+            })
+            if ((await res.json()).success) {
+                toast({ title: "Thành công" })
+                setCreateRuleOpen(false)
+                setRuleForm({})
+                fetchAllData()
+            }
+        } finally { setSaving(false) }
+    }
+
     async function handleSaveApiConnector() {
         if (!editingApiConnector || !selectedApiConnector) return
         setSaving(true)
@@ -353,6 +384,7 @@ function WorkflowManagementContent() {
         if (value === "dashboard") router.push("/")
         else if (value === "campaigns") router.push("/decoy-management")
         else if (value === "e2e") router.push(`/e2e/${localStorage.getItem("e2e-selectedAccount") || "placeholder"}?tab=priority&page=1`)
+        else if (value === "lead-monitor") router.push("/lead-monitor")
     }
 
     // Get stage name
@@ -407,6 +439,34 @@ function WorkflowManagementContent() {
                                             <div className="flex items-center gap-2">
                                                 <Settings className="h-4 w-4" />
                                                 API Connectors
+                                            </div>
+                                        </button>
+                                        <button
+                                            onClick={() => setFlowSubTab("escalation_rules")}
+                                            className={cn(
+                                                "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
+                                                flowSubTab === "escalation_rules"
+                                                    ? "border-purple-500 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700"
+                                            )}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <AlertTriangle className="h-4 w-4" />
+                                                Escalation Rules
+                                            </div>
+                                        </button>
+                                        <button
+                                            onClick={() => setFlowSubTab("escalation_logs")}
+                                            className={cn(
+                                                "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
+                                                flowSubTab === "escalation_logs"
+                                                    ? "border-purple-500 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700"
+                                            )}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <Activity className="h-4 w-4" />
+                                                Escalation Logging
                                             </div>
                                         </button>
                                     </div>
@@ -953,6 +1013,100 @@ function WorkflowManagementContent() {
                                         </div>
                                     </div>
                                 )}
+
+                                {/* Escalation Rules Sub-Tab Content */}
+                                {flowSubTab === "escalation_rules" && (
+                                    <div className="flex-1 overflow-auto p-6 bg-gray-50">
+                                        <div className="max-w-5xl mx-auto">
+                                            <div className="flex items-center justify-between mb-6">
+                                                <div>
+                                                    <h2 className="text-2xl font-bold text-gray-900">Escalation Rules</h2>
+                                                    <p className="text-sm text-gray-500 mt-1">Quản lý các quy tắc cảnh báo Escalation</p>
+                                                </div>
+                                                <Button onClick={() => { setRuleForm({ is_active: true, version: 1 }); setCreateRuleOpen(true) }}>
+                                                    <Plus className="h-4 w-4 mr-2" />
+                                                    Thêm Quy Tắc
+                                                </Button>
+                                            </div>
+                                            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                                <Table>
+                                                    <TableHeader className="bg-gray-50">
+                                                        <TableRow>
+                                                            <TableHead className="font-semibold px-4 w-[100px]">ID</TableHead>
+                                                            <TableHead className="font-semibold px-4">Label</TableHead>
+                                                            <TableHead className="font-semibold px-4 w-[120px]">Is Active</TableHead>
+                                                            <TableHead className="font-semibold px-4 w-[100px]">Version</TableHead>
+                                                            <TableHead className="font-semibold px-4 text-right">Created At</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {escalationRules.length === 0 ? (
+                                                            <TableRow><TableCell colSpan={5} className="text-center py-8 text-gray-500">Chưa có quy tắc nào</TableCell></TableRow>
+                                                        ) : (
+                                                            escalationRules.map(rule => (
+                                                                <TableRow key={rule.id}>
+                                                                    <TableCell className="font-mono text-[10px] text-blue-500 max-w-[100px] truncate px-4" title={rule.id}>{rule.id}</TableCell>
+                                                                    <TableCell className="font-medium text-gray-900 px-4">{rule.label}</TableCell>
+                                                                    <TableCell className="px-4"><Badge variant={rule.is_active ? "default" : "secondary"} className={cn(rule.is_active && "bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200 font-medium")}>{rule.is_active ? "true" : "false"}</Badge></TableCell>
+                                                                    <TableCell className="px-4">{rule.version}</TableCell>
+                                                                    <TableCell className="text-right text-sm text-gray-500 px-4">{new Date(rule.created_at).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</TableCell>
+                                                                </TableRow>
+                                                            ))
+                                                        )}
+                                                    </TableBody>
+                                                </Table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Escalation Logs Sub-Tab Content */}
+                                {flowSubTab === "escalation_logs" && (
+                                    <div className="flex-1 overflow-auto p-6 bg-gray-50">
+                                        <div className="max-w-[1400px] mx-auto">
+                                            <div className="flex items-center justify-between mb-6">
+                                                <div>
+                                                    <h2 className="text-2xl font-bold text-gray-900">Escalation Logging</h2>
+                                                    <p className="text-sm text-gray-500 mt-1">Lịch sử cảnh báo các trường hợp Escalation</p>
+                                                </div>
+                                            </div>
+                                            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                                <Table>
+                                                    <TableHeader className="bg-gray-50">
+                                                        <TableRow>
+                                                            <TableHead className="font-semibold px-4 w-[120px]">ID</TableHead>
+                                                            <TableHead className="font-semibold px-4 w-[120px]">Car ID</TableHead>
+                                                            <TableHead className="font-semibold px-4 w-[120px]">Escalation ID</TableHead>
+                                                            <TableHead className="font-semibold px-4 w-[100px]">Status</TableHead>
+                                                            <TableHead className="font-semibold px-4 max-w-[200px]">Keywords Matched</TableHead>
+                                                            <TableHead className="font-semibold px-4 w-[180px]">Triggered At</TableHead>
+                                                            <TableHead className="font-semibold px-4 text-right w-[180px]">Resolved At</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {escalationLogs.length === 0 ? (
+                                                            <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-500">Chưa có lịch sử trạng thái nào</TableCell></TableRow>
+                                                        ) : (
+                                                            escalationLogs.map(log => (
+                                                                <TableRow key={log.id}>
+                                                                    <TableCell className="font-mono text-[10px] text-blue-500 max-w-[120px] truncate px-4" title={log.id}>{log.id}</TableCell>
+                                                                    <TableCell className="font-mono text-[10px] text-gray-700 max-w-[120px] truncate px-4" title={log.car_id}>{log.car_id}</TableCell>
+                                                                    <TableCell className="font-mono text-[10px] text-gray-700 max-w-[120px] truncate px-4" title={log.escalation_id}>{log.escalation_id}</TableCell>
+                                                                    <TableCell className="px-4">
+                                                                        <Badge variant={log.status === 'running' ? 'secondary' : 'outline'} className={cn("text-xs font-normal", log.status === 'running' && "bg-gray-100 text-gray-800 border-none")}>{log.status}</Badge>
+                                                                    </TableCell>
+                                                                    <TableCell className="text-sm px-4 max-w-[200px] truncate">{(log.keywords_matched || []).map(k => `["${k}"]`).join(", ") || "-"}</TableCell>
+                                                                    <TableCell className="text-sm text-gray-500 px-4">{new Date(log.triggered_at).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</TableCell>
+                                                                    <TableCell className="text-right text-sm text-gray-500 px-4">{log.resolved_at ? new Date(log.resolved_at).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : "-"}</TableCell>
+                                                                </TableRow>
+                                                            ))
+                                                        )}
+                                                    </TableBody>
+                                                </Table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -1117,6 +1271,32 @@ function WorkflowManagementContent() {
                         </div>
                     </div>
                     <DialogFooter><Button variant="outline" onClick={() => setCreateApiConnectorOpen(false)}>Hủy</Button><Button onClick={handleCreateApiConnector} disabled={saving || !apiConnectorForm.name || !apiConnectorForm.base_url || !apiConnectorForm.method}>Tạo</Button></DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={createRuleOpen} onOpenChange={setCreateRuleOpen}>
+                <DialogContent>
+                    <DialogHeader><DialogTitle>Tạo Quy Tắc Escalation</DialogTitle></DialogHeader>
+                    <div className="space-y-3 py-2">
+                        <div>
+                            <Label className="text-xs">Label</Label>
+                            <Input value={ruleForm.label || ""} onChange={e => setRuleForm({ ...ruleForm, label: e.target.value })} className="mt-1" placeholder="VD: Escalation - Nghi ngo / tuc gian" />
+                        </div>
+                        <div>
+                            <Label className="text-xs">Condition Start (JSON)</Label>
+                            <Textarea
+                                value={typeof ruleForm.condition_start === 'string' ? ruleForm.condition_start : (ruleForm.condition_start ? JSON.stringify(ruleForm.condition_start, null, 2) : "")}
+                                onChange={e => setRuleForm({ ...ruleForm, condition_start: e.target.value })}
+                                className="mt-1 min-h-[80px] text-xs font-mono"
+                                placeholder='{"keyword": "lua_dao"}'
+                            />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div><Label className="text-xs">Version</Label><Input type="number" value={ruleForm.version || 1} onChange={e => setRuleForm({ ...ruleForm, version: parseInt(e.target.value) })} className="mt-1" /></div>
+                            <div className="flex items-end pb-1"><div className="flex items-center gap-2"><Switch checked={ruleForm.is_active} onCheckedChange={c => setRuleForm({ ...ruleForm, is_active: c })} /><Label className="text-xs">Hoạt động</Label></div></div>
+                        </div>
+                    </div>
+                    <DialogFooter><Button variant="outline" onClick={() => setCreateRuleOpen(false)}>Hủy</Button><Button onClick={handleCreateEscalationRule} disabled={saving || !ruleForm.label || !ruleForm.condition_start}>Tạo</Button></DialogFooter>
                 </DialogContent>
             </Dialog>
 

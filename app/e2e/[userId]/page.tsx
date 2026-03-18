@@ -60,6 +60,8 @@ function E2EPageContent({ userId }: { userId: string }) {
       router.push("/")
     } else if (value === "campaigns") {
       router.push(`/decoy-management`)
+    } else if (value === "lead-monitor") {
+      router.push("/lead-monitor")
     } else if (value === "workflow") {
       router.push("/workflow-management")
     }

@@ -151,21 +151,29 @@ export async function GET(request: Request) {
     })
 
     // ── 4b. Fetch condition_end_met from CRM API for each step in parallel ────
-    // Exception: thu_thap_thong_tin derives condition_end_met from cars.additional_images
     const CRM_BASE = "https://crm-vucar-api.vucar.vn/api/v1/lead-monitor"
     const conditionFetches: Promise<void>[] = []
     stepsMap.forEach((steps, carId) => {
       steps.forEach((step) => {
-        if (step.step_key === "thu_thap_thong_tin") {
-          const car = carMap.get(carId)
-          step.condition_end_met = !!extractCarImage(car?.additional_images)
-          return
-        }
         const path = step.step_key.replace(/_/g, "-")
         conditionFetches.push(
           fetch(`${CRM_BASE}/${path}/${carId}/success`, { method: "POST" })
             .then((res) => res.ok ? res.json() : null)
-            .then((data) => { if (data) step.condition_end_met = data.condition_end_met === true })
+            .then((data) => {
+              if (!data) return
+              step.condition_end_met = data.condition_end_met === true
+              if (step.step_key === "thu_thap_thong_tin") {
+                const car = carMap.get(carId)
+                if (car) car._crm_has_images = data.has_images === true
+              }
+              if (step.step_key === "dat_lich_kiem_dinh") {
+                step.inspection_exists = data.inspection_exists === true
+              }
+              if (step.step_key === "dam_phan_1") {
+                step.price_sold = data.price_sold ?? null
+                step.stage = data.stage ?? undefined
+              }
+            })
             .catch(() => {})
         )
       })
@@ -177,6 +185,7 @@ export async function GET(request: Request) {
     const processedCarIds = new Set<string>()
 
     function buildCarBlock(car: any) {
+      const thumbnail = extractCarImage(car.additional_images)
       return {
         model: [car.car_brand, car.car_model].filter(Boolean).join(" ") || "Unknown",
         year: car.car_year ? parseInt(car.car_year) : 0,
@@ -184,8 +193,8 @@ export async function GET(request: Request) {
         location: car.car_location ?? null,
         price_expected: car.price_expected ? parseFloat(car.price_expected) : null,
         price_max: car.price_max ? parseFloat(car.price_max) : null,
-        thumbnail: extractCarImage(car.additional_images),
-        has_images: !!extractCarImage(car.additional_images),
+        thumbnail,
+        has_images: car._crm_has_images ?? !!thumbnail,
       }
     }
 

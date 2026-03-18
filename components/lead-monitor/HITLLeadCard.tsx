@@ -19,6 +19,18 @@ const STEP_SHORT: Record<string, string> = {
   dam_phan_1:         "Đàm phán",
 }
 
+function stepTooltip(s: StepProgress): string {
+  const parts: string[] = [s.label]
+  if (s.step_key === "dat_lich_kiem_dinh") {
+    parts.push(`Kiểm định: ${s.inspection_exists ? "Có" : "Chưa có"}`)
+  }
+  if (s.step_key === "dam_phan_1") {
+    if (s.stage) parts.push(`Stage: ${s.stage}`)
+    parts.push(`Giá bán: ${s.price_sold != null ? `${s.price_sold} Tr` : "Chưa có"}`)
+  }
+  return parts.join(" · ")
+}
+
 function StepStrip({ steps }: { steps: StepProgress[] }) {
   if (!steps.length) return null
   return (
@@ -31,7 +43,7 @@ function StepStrip({ steps }: { steps: StepProgress[] }) {
           <span
             key={s.step_key}
             className={`shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${style}`}
-            title={s.label}
+            title={stepTooltip(s)}
           >
             {STEP_SHORT[s.step_key] ?? s.step_key}
           </span>

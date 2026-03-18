@@ -30,6 +30,11 @@ export interface StepProgress {
   status: StepStatus
   is_overdue: boolean
   condition_end_met: boolean
+  // dat_lich_kiem_dinh
+  inspection_exists?: boolean
+  // dam_phan_1
+  price_sold?: number | null
+  stage?: string
 }
 
 export interface TriggerInfo {

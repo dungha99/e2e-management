@@ -68,7 +68,23 @@ export interface KPISummary {
   total_alerts: number
   sla_breach: number
   escalation: number
+  needs_action_count: number  // SLA exceeded + condition_end_met=false, each lead = 1
   bot_handled_percent: number
   bot_handled_count: number
   total_active_leads: number
+}
+
+export interface PaginatedLeadsResponse {
+  items: HITLLead[]
+  next_cursor: string | null
+  has_more: boolean
+  total: number
+}
+
+export interface PicOption {
+  id: string
+  name: string
+  slaBreachCount: number   // leads with condition_end_met=false AND exceeds SLA (each = 1)
+  escalationCount: number
+  botActiveCount: number   // leads in monitoring queue with bot_status = 'active'
 }

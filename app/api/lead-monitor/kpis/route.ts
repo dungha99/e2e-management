@@ -22,7 +22,17 @@ export async function GET() {
 
     const row = blockersResult.rows[0] ?? {}
 
-    // ── 2. Bot coverage stats from VucarV2 ──────────────────────────────────
+    // ── 2. Needs-action count: SLA exceeded + condition_end_met=false ────────
+    const needsActionResult = await e2eQuery(`
+      SELECT COUNT(DISTINCT sl.car_id) AS needs_action
+      FROM sla_logging sl
+      JOIN sla_rules sr ON sr.id = sl.sla_id
+      WHERE sl.status IN ('ongoing', 'failed')
+        AND NOW() > (sl.started_at + sr.sla_duration_hours * INTERVAL '1 hour')
+    `)
+    const needsAction = parseInt(needsActionResult.rows[0]?.needs_action ?? "0")
+
+    // ── 3. Bot coverage stats from VucarV2 ──────────────────────────────────
     const botResult = await vucarV2Query(`
       SELECT
         COUNT(*)                                                        AS total_active,
@@ -40,6 +50,7 @@ export async function GET() {
       total_alerts: parseInt(row.total_alerts ?? "0"),
       sla_breach: parseInt(row.sla_breach ?? "0"),
       escalation: parseInt(row.escalation ?? "0"),
+      needs_action_count: needsAction,
       bot_handled_percent: totalActive > 0 ? Math.round((botActive / totalActive) * 100) : 0,
       bot_handled_count: botActive,
       total_active_leads: totalActive,

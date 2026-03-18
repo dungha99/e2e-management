@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
-import { HITLLead } from "./types"
+import { useState, useEffect, useCallback, useMemo } from "react"
+import { PicOption } from "./types"
 import { KPIRibbon } from "./KPIRibbon"
 import { HITLKanbanBoard } from "./HITLKanbanBoard"
 import { PerformanceWatch } from "./PerformanceWatch"
@@ -13,68 +13,55 @@ import { Button } from "@/components/ui/button"
 type SubTab = "monitor" | "performance"
 
 export function LeadMonitorPage() {
-  const [leads, setLeads] = useState<HITLLead[]>([])
-  const [loading, setLoading] = useState(true)
+  const [picOptions, setPicOptions] = useState<PicOption[]>([])
+  const [picOptionsLoading, setPicOptionsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [subTab, setSubTab] = useState<SubTab>("monitor")
   const [selectedPicId, setSelectedPicId] = useState<string>("all")
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  const picOptions = useMemo(() => {
-    const nameMap = new Map<string, string>()
-    const overdueMap = new Map<string, number>()   // sum of time_overdue_minutes per PIC
-    const escalationMap = new Map<string, number>() // count of escalation car_ids per PIC
-    leads.forEach((l) => {
-      if (!l.pic_id) return
-      if (!nameMap.has(l.pic_id)) nameMap.set(l.pic_id, l.pic_name || l.pic_id)
-      if (l.trigger.type === "SLA_BREACH" && l.time_overdue_minutes != null && l.time_overdue_minutes > 0) {
-        overdueMap.set(l.pic_id, (overdueMap.get(l.pic_id) ?? 0) + l.time_overdue_minutes)
-      }
-      if (l.trigger.type === "ESCALATION") {
-        escalationMap.set(l.pic_id, (escalationMap.get(l.pic_id) ?? 0) + 1)
-      }
-    })
-    return Array.from(nameMap.entries())
-      .map(([id, name]) => ({
-        id,
-        name,
-        totalOverdueMinutes: overdueMap.get(id) ?? 0,
-        escalationCount: escalationMap.get(id) ?? 0,
-      }))
-      .sort((a, b) => (b.totalOverdueMinutes + b.escalationCount * 60) - (a.totalOverdueMinutes + a.escalationCount * 60))
-  }, [leads])
-
-  // Derive KPI counts directly from loaded leads
-  const kpis = useMemo(() => ({
-    total: leads.length,
-    escalation: leads.filter((l) => l.trigger.type === "ESCALATION").length,
-    botActive: leads.filter((l) => l.is_bot_active).length,
-  }), [leads])
-
-  const fetchData = async () => {
-    setLoading(true)
+  const fetchMeta = useCallback(async () => {
+    setPicOptionsLoading(true)
     try {
-      const queueUrl = selectedPicId !== "all"
-        ? `/api/lead-monitor/queue?pic_id=${encodeURIComponent(selectedPicId)}`
-        : "/api/lead-monitor/queue"
-
-      const res = await fetch(queueUrl)
-      const data = await res.json()
-      setLeads(Array.isArray(data) ? data : [])
+      const res = await fetch("/api/lead-monitor/pic-options")
+      if (res.ok) {
+        const pics = await res.json()
+        setPicOptions(Array.isArray(pics) ? pics : [])
+      }
     } catch (error) {
-      console.error("Failed to fetch Lead Monitor data:", error)
+      console.error("Failed to fetch Lead Monitor meta:", error)
     } finally {
-      setLoading(false)
+      setPicOptionsLoading(false)
     }
+  }, [])
+
+  useEffect(() => {
+    fetchMeta()
+  }, [fetchMeta])
+
+  const handleRefresh = () => {
+    fetchMeta()
+    setRefreshKey((k) => k + 1)
   }
 
-  // Fetch on mount and whenever PIC filter changes
-  useEffect(() => {
-    fetchData()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPicId])
+  // "All PICs" → sum across all PICs; specific PIC → that PIC's counts
+  const displayKpis = useMemo(() => {
+    if (selectedPicId === "all") {
+      return {
+        needsAction: picOptions.reduce((s, p) => s + p.slaBreachCount, 0),
+        escalation: picOptions.reduce((s, p) => s + p.escalationCount, 0),
+        botActive: picOptions.reduce((s, p) => s + p.botActiveCount, 0),
+      }
+    }
+    const pic = picOptions.find((p) => p.id === selectedPicId)
+    return {
+      needsAction: pic?.slaBreachCount ?? 0,
+      escalation: pic?.escalationCount ?? 0,
+      botActive: pic?.botActiveCount ?? 0,
+    }
+  }, [selectedPicId, picOptions])
 
   const handleResolve = async (id: string) => {
-    setLeads((prev) => prev.filter((l) => l.id !== id))
     try {
       await fetch("/api/lead-monitor/resolve", {
         method: "POST",
@@ -83,23 +70,12 @@ export function LeadMonitorPage() {
       })
     } catch (error) {
       console.error("Failed to resolve blocker:", error)
-      fetchData()
     }
   }
 
   const handleDetail = (id: string) => {
     console.log("Open detail for lead:", id)
   }
-
-  // Client-side text search (PIC filter is handled server-side)
-  const filteredLeads = leads.filter((lead) => {
-    const q = searchQuery.toLowerCase()
-    return (
-      lead.customer.name.toLowerCase().includes(q) ||
-      (lead.customer.phone && lead.customer.phone.includes(q)) ||
-      lead.car.model.toLowerCase().includes(q)
-    )
-  })
 
   return (
     <div className="flex flex-col h-[calc(100vh-140px)] w-full overflow-hidden bg-white/50">
@@ -141,18 +117,18 @@ export function LeadMonitorPage() {
               </button>
             </div>
 
-            <Button variant="outline" size="sm" onClick={fetchData} className="gap-2 h-9">
-              <RotateCcw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+            <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-2 h-9">
+              <RotateCcw className={`w-3.5 h-3.5 ${picOptionsLoading ? "animate-spin" : ""}`} /> Refresh
             </Button>
           </div>
         </div>
 
-        {/* KPIs — derived from loaded leads */}
+        {/* KPIs */}
         <KPIRibbon
-          total={kpis.total}
-          escalation={kpis.escalation}
-          botActive={kpis.botActive}
-          loading={loading}
+          needsAction={displayKpis.needsAction}
+          escalation={displayKpis.escalation}
+          botActive={displayKpis.botActive}
+          loading={picOptionsLoading}
         />
 
         {/* Search & Filters — only on Monitor tab */}
@@ -178,9 +154,9 @@ export function LeadMonitorPage() {
                   <SelectItem key={pic.id} value={pic.id}>
                     <span className="flex items-center gap-2 w-full">
                       <span className="flex-1">{pic.name}</span>
-                      {pic.totalOverdueMinutes > 0 && (
+                      {pic.slaBreachCount > 0 && (
                         <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">
-                          {Math.max(1, Math.round(pic.totalOverdueMinutes / 60))}h SLA
+                          {pic.slaBreachCount} SLA
                         </span>
                       )}
                       {pic.escalationCount > 0 && (
@@ -201,7 +177,9 @@ export function LeadMonitorPage() {
       <div className="flex-1 overflow-hidden px-1">
         {subTab === "monitor" ? (
           <HITLKanbanBoard
-            leads={filteredLeads}
+            picId={selectedPicId}
+            searchQuery={searchQuery}
+            refreshKey={refreshKey}
             onResolve={handleResolve}
             onDetail={handleDetail}
           />

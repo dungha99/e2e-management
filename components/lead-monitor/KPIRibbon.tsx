@@ -1,13 +1,13 @@
 "use client"
 
 interface KPIRibbonProps {
-  total: number
+  needsAction: number
   escalation: number
   botActive: number
   loading: boolean
 }
 
-export function KPIRibbon({ total, escalation, botActive, loading }: KPIRibbonProps) {
+export function KPIRibbon({ needsAction, escalation, botActive, loading }: KPIRibbonProps) {
   if (loading) {
     return (
       <div className="flex items-center w-full bg-white mb-6 border-b pb-4 gap-4">
@@ -29,8 +29,8 @@ export function KPIRibbon({ total, escalation, botActive, loading }: KPIRibbonPr
           <span className="text-red-500">⚠</span> CẦN XỬ LÝ
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="text-4xl font-bold">{total}</span>
-          <span className="text-sm font-medium text-gray-400">alerts</span>
+          <span className="text-4xl font-bold">{needsAction}</span>
+          <span className="text-sm font-medium text-gray-400">leads</span>
         </div>
       </div>
 
@@ -52,7 +52,7 @@ export function KPIRibbon({ total, escalation, botActive, loading }: KPIRibbonPr
         </div>
         <div className="flex items-baseline gap-2">
           <span className="text-4xl font-bold">{botActive}</span>
-          <span className="text-sm font-medium text-gray-400">/ {total} leads</span>
+          <span className="text-sm font-medium text-gray-400">leads</span>
         </div>
       </div>
     </div>

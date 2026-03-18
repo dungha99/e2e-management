@@ -17,14 +17,12 @@ interface NavigationHeaderProps {
 }
 
 const NAV_ITEMS = [
-  { value: "dashboard",        label: "Dashboard",           href: "/" },
-  { value: "campaigns",        label: "Quản lý Decoy",       href: "/decoy-management" },
+  { value: "dashboard",        label: "AI Performance",      href: "/" },
   { value: "e2e",              label: "Quản lý E2E",         href: (id: string) => `/e2e/${id}?tab=priority&page=1` },
-  { value: "lead-management",  label: "Lead Management",     href: "/lead-management" },
   { value: "lead-monitor",     label: "Lead Monitor",        href: "/lead-monitor" },
-  { value: "ai-performance",   label: "AI Performance",      href: "/ai-performance" },
   { value: "workflow",         label: "Quản lý Workflow",    href: "/workflow-management" },
 ]
+
 
 export function NavigationHeader({ currentPage, selectedAccount, accountSelector }: NavigationHeaderProps) {
   const router = useRouter()

@@ -61,6 +61,7 @@ export interface HITLLead {
   triggered_at: string
   steps: StepProgress[]
   time_overdue_minutes?: number // positive = overdue, negative = time remaining
+  qualified_status?: string | null // e.g. "STRONG_QUALIFIED", "SLOW", etc.
 }
 
 export interface KPISummary {

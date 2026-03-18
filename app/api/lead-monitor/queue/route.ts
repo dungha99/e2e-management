@@ -208,7 +208,8 @@ async function handleColumnPagination(
       u.user_name       AS pic_name,
       ss.price_customer AS price_expected,
       ss.price_highest_bid AS price_max,
-      ss.bot_status
+      ss.bot_status,
+      ss.qualified AS qualified_status
     FROM cars c
     LEFT JOIN leads l ON l.id = c.lead_id
     LEFT JOIN users u ON u.id = l.pic_id
@@ -347,6 +348,7 @@ async function handleColumnPagination(
           keywords: row.keywords_matched ?? [],
         },
         is_bot_active: car.bot_status === "active",
+        qualified_status: car.qualified_status ?? null,
         triggered_at: row.triggered_at,
         steps: stepsMap.get(row.car_id) ?? [],
         time_overdue_minutes: slaOverlayMap.get(row.car_id),
@@ -376,6 +378,7 @@ async function handleColumnPagination(
           time_string,
         },
         is_bot_active: car.bot_status === "active",
+        qualified_status: car.qualified_status ?? null,
         triggered_at: row.triggered_at,
         steps: stepsMap.get(row.car_id) ?? [],
         time_overdue_minutes: timeOverdue,
@@ -449,7 +452,8 @@ async function handleLegacyFull(picIdFilter: string | null): Promise<NextRespons
       u.user_name       AS pic_name,
       ss.price_customer AS price_expected,
       ss.price_highest_bid AS price_max,
-      ss.bot_status
+      ss.bot_status,
+      ss.qualified AS qualified_status
     FROM cars c
     LEFT JOIN leads l ON l.id = c.lead_id
     LEFT JOIN users u ON u.id = l.pic_id

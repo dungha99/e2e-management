@@ -1,5 +1,7 @@
 "use client"
 
+import { AlertTriangle, Zap, Bot } from "lucide-react"
+
 interface KPIRibbonProps {
   needsAction: number
   escalation: number
@@ -10,11 +12,11 @@ interface KPIRibbonProps {
 export function KPIRibbon({ needsAction, escalation, botActive, loading }: KPIRibbonProps) {
   if (loading) {
     return (
-      <div className="flex items-center w-full bg-white mb-6 border-b pb-4 gap-4">
+      <div className="flex items-stretch w-full bg-white rounded-xl border border-gray-100 mb-5 overflow-hidden">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="flex-1 px-4 animate-pulse">
-            <div className="h-3 bg-gray-100 rounded w-24 mb-2" />
-            <div className="h-9 bg-gray-100 rounded w-16" />
+          <div key={i} className="flex-1 px-6 py-4 animate-pulse border-r border-gray-100 last:border-r-0">
+            <div className="h-3 bg-gray-100 rounded w-28 mb-3" />
+            <div className="h-9 bg-gray-100 rounded w-12" />
           </div>
         ))}
       </div>
@@ -22,39 +24,44 @@ export function KPIRibbon({ needsAction, escalation, botActive, loading }: KPIRi
   }
 
   return (
-    <div className="flex items-center w-full bg-white mb-6 border-b pb-4">
+    <div className="flex items-stretch w-full bg-white rounded-xl border border-gray-100 mb-5 overflow-hidden shadow-sm">
+
       {/* CẦN XỬ LÝ */}
-      <div className="flex-1 px-4 flex flex-col justify-center border-r">
-        <div className="flex items-center gap-1 text-xs font-semibold text-gray-500 mb-1">
-          <span className="text-red-500">⚠</span> CẦN XỬ LÝ
+      <div className="flex-1 px-6 py-4 border-r border-gray-100">
+        <div className="flex items-center gap-1.5 mb-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500" strokeWidth={2.5} />
+          <span className="text-[11px] font-bold tracking-widest text-gray-400 uppercase">Cần xử lý</span>
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="text-4xl font-bold">{needsAction}</span>
-          <span className="text-sm font-medium text-gray-400">leads</span>
+          <span className="text-4xl font-black text-gray-900 leading-none">{needsAction}</span>
+          <span className="text-sm font-medium text-gray-400">alerts</span>
         </div>
       </div>
 
       {/* ESCALATION */}
-      <div className="flex-1 px-4 flex flex-col justify-center border-r">
-        <div className="flex items-center gap-1 text-xs font-semibold text-gray-500 mb-1">
-          <span className="text-purple-500">⚡</span> ESCALATION
+      <div className="flex-1 px-6 py-4 border-r border-gray-100">
+        <div className="flex items-center gap-1.5 mb-2">
+          <Zap className="w-3.5 h-3.5 text-orange-500" strokeWidth={2.5} />
+          <span className="text-[11px] font-bold tracking-widest text-gray-400 uppercase">Escalation</span>
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="text-4xl font-bold">{escalation}</span>
+          <span className="text-4xl font-black text-gray-900 leading-none">{escalation}</span>
           <span className="text-sm font-medium text-gray-400">chưa resolve</span>
         </div>
       </div>
 
       {/* BOT TỰ XỬ LÝ */}
-      <div className="flex-1 px-4 flex flex-col justify-center">
-        <div className="flex items-center gap-1 text-xs font-semibold text-gray-500 mb-1">
-          <span className="text-green-500">🤖</span> BOT TỰ XỬ LÝ
+      <div className="flex-1 px-6 py-4">
+        <div className="flex items-center gap-1.5 mb-2">
+          <Bot className="w-3.5 h-3.5 text-violet-500" strokeWidth={2.5} />
+          <span className="text-[11px] font-bold tracking-widest text-gray-400 uppercase">Bot tự xử lý</span>
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="text-4xl font-bold">{botActive}</span>
-          <span className="text-sm font-medium text-gray-400">leads</span>
+          <span className="text-4xl font-black text-gray-900 leading-none">{botActive}</span>
+          <span className="text-sm font-medium text-gray-400">/ {needsAction + escalation} leads</span>
         </div>
       </div>
+
     </div>
   )
 }

@@ -120,14 +120,6 @@ export function NavigationHeader({ currentPage, selectedAccount, accountSelector
         {/* Right: account selector + user profile */}
         <div className="flex items-center gap-3 shrink-0">
           {accountSelector}
-
-          <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors text-sm text-gray-700">
-            <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center">
-              <User className="w-3.5 h-3.5 text-blue-600" />
-            </div>
-            <span className="font-medium max-w-[100px] truncate">Admin</span>
-            <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-          </button>
         </div>
       </div>
     </>

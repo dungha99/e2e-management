@@ -6,9 +6,11 @@ import { KPIRibbon } from "./KPIRibbon"
 import { HITLKanbanBoard } from "./HITLKanbanBoard"
 import { PerformanceWatch } from "./PerformanceWatch"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, RotateCcw, LayoutList, LayoutGrid, Filter } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Search, RotateCcw, LayoutList, LayoutGrid, Filter, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 
 type SubTab = "monitor" | "performance"
 
@@ -19,6 +21,7 @@ export function LeadMonitorPage() {
   const [subTab, setSubTab] = useState<SubTab>("monitor")
   const [selectedPicId, setSelectedPicId] = useState<string>("all")
   const [refreshKey, setRefreshKey] = useState(0)
+  const [picPopoverOpen, setPicPopoverOpen] = useState(false)
 
   const fetchMeta = useCallback(async () => {
     setPicOptionsLoading(true)
@@ -44,7 +47,6 @@ export function LeadMonitorPage() {
     setRefreshKey((k) => k + 1)
   }
 
-  // "All PICs" → sum across all PICs; specific PIC → that PIC's counts
   const displayKpis = useMemo(() => {
     if (selectedPicId === "all") {
       return {
@@ -76,6 +78,11 @@ export function LeadMonitorPage() {
   const handleDetail = (id: string) => {
     console.log("Open detail for lead:", id)
   }
+
+  const selectedPicName =
+    selectedPicId === "all"
+      ? "Tất cả PIC"
+      : (picOptions.find((p) => p.id === selectedPicId)?.name ?? "Tất cả PIC")
 
   return (
     <div className="flex flex-col h-[calc(100vh-140px)] w-full overflow-hidden bg-white/50">
@@ -146,35 +153,65 @@ export function LeadMonitorPage() {
               />
             </div>
 
-            {/* PIC filter */}
-            <Select value={selectedPicId} onValueChange={setSelectedPicId}>
-              <SelectTrigger className="w-[200px] h-9 text-sm bg-white border-gray-200 rounded-lg [&>svg]:hidden">
-                <div className="flex items-center gap-1.5">
+            {/* PIC filter — Combobox */}
+            <Popover open={picPopoverOpen} onOpenChange={setPicPopoverOpen}>
+              <PopoverTrigger asChild>
+                <button className="flex items-center gap-1.5 w-[220px] h-9 px-3 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left truncate">
                   <Filter className="w-4 h-4 text-gray-500 shrink-0" />
-                  <SelectValue placeholder="Tất cả PIC" />
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tất cả PIC</SelectItem>
-                {picOptions.map((pic) => (
-                  <SelectItem key={pic.id} value={pic.id}>
-                    <span className="flex items-center gap-2 w-full">
-                      <span className="flex-1 truncate">{pic.name}</span>
-                      {pic.slaBreachCount > 0 && (
-                        <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 shrink-0">
-                          {pic.slaBreachCount} CẦN XỬ LÝ
-                        </span>
-                      )}
-                      {pic.escalationCount > 0 && (
-                        <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 shrink-0">
-                          {pic.escalationCount} ESC
-                        </span>
-                      )}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                  <span className="flex-1 truncate text-gray-700">{selectedPicName}</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[280px] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Tìm tên PIC..." className="h-9 text-sm" />
+                  <CommandList>
+                    <CommandEmpty>Không tìm thấy PIC.</CommandEmpty>
+                    <CommandGroup>
+                      {/* "Tất cả PIC" option */}
+                      <CommandItem
+                        value="all"
+                        onSelect={() => {
+                          setSelectedPicId("all")
+                          setPicPopoverOpen(false)
+                        }}
+                        className="flex items-center gap-2"
+                      >
+                        <Check className={cn("w-3.5 h-3.5 shrink-0", selectedPicId === "all" ? "opacity-100" : "opacity-0")} />
+                        <span className="flex-1">Tất cả PIC</span>
+                      </CommandItem>
+
+                      {/* Per-PIC options */}
+                      {picOptions.map((pic) => (
+                        <CommandItem
+                          key={pic.id}
+                          value={pic.name}
+                          onSelect={() => {
+                            setSelectedPicId(pic.id)
+                            setPicPopoverOpen(false)
+                          }}
+                          className="flex items-center gap-2"
+                        >
+                          <Check className={cn("w-3.5 h-3.5 shrink-0", selectedPicId === pic.id ? "opacity-100" : "opacity-0")} />
+                          <span className="flex-1 truncate">{pic.name}</span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {pic.slaBreachCount > 0 && (
+                              <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">
+                                {pic.slaBreachCount} SLA
+                              </span>
+                            )}
+                            {pic.escalationCount > 0 && (
+                              <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700">
+                                {pic.escalationCount} ESC
+                              </span>
+                            )}
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
         )}
       </div>

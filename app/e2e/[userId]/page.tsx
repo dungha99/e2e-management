@@ -7,13 +7,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Toaster } from "@/components/ui/toaster"
 import { NavigationHeader } from "@/components/e2e/layout/NavigationHeader"
 import { useAccounts } from "@/contexts/AccountsContext"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Check, ChevronsUpDown } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 // Mobile account selector
 function MobileAccountSelector({
@@ -24,20 +21,42 @@ function MobileAccountSelector({
   onAccountChange: (value: string) => void
 }) {
   const { accounts } = useAccounts()
+  const [open, setOpen] = useState(false)
+  const selectedName = accounts.find((a) => a.uid === selectedAccount)?.name ?? "Tài khoản"
 
   return (
-    <Select value={selectedAccount} onValueChange={onAccountChange}>
-      <SelectTrigger className="w-32 h-9 text-xs">
-        <SelectValue placeholder="Tài khoản" />
-      </SelectTrigger>
-      <SelectContent>
-        {accounts.map((account) => (
-          <SelectItem key={account.uid} value={account.uid}>
-            {account.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className="flex items-center justify-between gap-1 w-32 h-9 px-2.5 text-xs bg-background border border-input rounded-md hover:bg-accent transition-colors truncate">
+          <span className="truncate">{selectedName}</span>
+          <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-48 p-0" align="end">
+        <Command>
+          <CommandInput placeholder="Tìm tài khoản..." className="h-9 text-sm" />
+          <CommandList>
+            <CommandEmpty>Không tìm thấy.</CommandEmpty>
+            <CommandGroup>
+              {accounts.map((account) => (
+                <CommandItem
+                  key={account.uid}
+                  value={account.name}
+                  onSelect={() => {
+                    onAccountChange(account.uid)
+                    setOpen(false)
+                  }}
+                  className="flex items-center gap-2 text-sm"
+                >
+                  <Check className={cn("w-3.5 h-3.5 shrink-0", selectedAccount === account.uid ? "opacity-100" : "opacity-0")} />
+                  {account.name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   )
 }
 

@@ -780,13 +780,16 @@ ${dealerBidsStr}`
             }
 
             return (
-              <div className="overflow-x-auto pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-thin">
-                <div className="flex items-start justify-between gap-3 sm:gap-4 mb-4 sm:mb-8 min-w-[500px] sm:min-w-0 px-1 sm:px-4">
+              <div className="overflow-x-auto pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-thin snap-x snap-mandatory">
+                <div className="flex items-start gap-3 sm:gap-4 mb-4 sm:mb-8 w-max sm:w-full sm:justify-between px-1 sm:px-4">
                   {workflowSteps.length > 0 ? (
                     workflowSteps.map((step: any, idx: number) => {
                       const status = getStepStatus(step)
                       return (
-                        <div key={step.id} className="flex flex-col items-center gap-2 sm:gap-3 flex-1">
+                        <div
+                          key={step.id}
+                          className="flex flex-col items-center gap-2 sm:gap-3 snap-center shrink-0 w-[120px] sm:w-auto sm:flex-1"
+                        >
                           <WorkflowStep
                             icon={
                               status.isCompleted ? (
@@ -840,7 +843,7 @@ ${dealerBidsStr}`
 
                 {/* Activation Buttons - Same position as "Kích hoạt WF 2" */}
                 {visibleTransitions.length > 0 && (
-                  <div className="flex items-center gap-2 mt-4">
+                  <div className="flex flex-wrap items-center gap-2 mt-4">
                     {visibleTransitions.map(transition => (
                       <Button
                         key={transition.to_workflow_id}

@@ -8,6 +8,20 @@ const AKABIZ_CHAT_HISTORY_URL = "https://crm-vucar-api.vucar.vn/api/v1/akabiz/ge
 const AKABIZ_SEND_MESSAGE_URL = "https://crm-vucar-api.vucar.vn/api/v1/akabiz/send-customer-message"
 const N8N_AUTO_CHAT_WEBHOOK = "https://n8n.vucar.vn/webhook/bdb8f9b8-4b12-4a08-9a94-d0406e0d16b0"
 
+async function parseJsonResponse(res: Response, label: string) {
+  const text = await res.text()
+  const trimmed = text.trim()
+  if (!trimmed) {
+    throw new Error(`${label}: empty response body (status ${res.status})`)
+  }
+  try {
+    return JSON.parse(trimmed)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    throw new Error(`${label}: invalid JSON (status ${res.status}): ${msg}. Body preview: ${trimmed.substring(0, 500)}`)
+  }
+}
+
 /**
  * POST /api/e2e/retrigger
  *
@@ -91,7 +105,17 @@ export async function POST(request: Request) {
           return
         }
 
-        let n8nData: any = await n8nRes.json()
+        let n8nData: any
+        try {
+          n8nData = await parseJsonResponse(n8nRes, "n8n shopId webhook")
+        } catch (e) {
+          controller.enqueue(encoder.encode(JSON.stringify({
+            success: false,
+            error: "Failed to parse n8n shopId webhook response",
+            details: e instanceof Error ? e.message : String(e),
+          })))
+          return
+        }
         if (Array.isArray(n8nData)) n8nData = n8nData[0]
         const shopId = n8nData?.shop_id
 
@@ -156,7 +180,17 @@ export async function POST(request: Request) {
           return
         }
 
-        let autoChatData: any = await autoChatRes.json()
+        let autoChatData: any
+        try {
+          autoChatData = await parseJsonResponse(autoChatRes, "n8n auto-chat webhook")
+        } catch (e) {
+          controller.enqueue(encoder.encode(JSON.stringify({
+            success: false,
+            error: "Failed to parse n8n auto-chat webhook response",
+            details: e instanceof Error ? e.message : String(e),
+          })))
+          return
+        }
         // n8n may return a single object or an array
         if (!Array.isArray(autoChatData)) autoChatData = [autoChatData]
 
@@ -190,7 +224,13 @@ export async function POST(request: Request) {
             })
 
             if (sendRes.ok) {
-              const sendData = await sendRes.json()
+              let sendData: any = null
+              try {
+                sendData = await parseJsonResponse(sendRes, "AkaBiz send message")
+              } catch (e) {
+                // AkaBiz sometimes returns non-JSON even when status=200; keep going but capture details.
+                sendData = { parseError: e instanceof Error ? e.message : String(e) }
+              }
               totalMessagesSent += messages.length
               sendResults.push({ phone: itemPhone, sent: true, messageCount: messages.length, response: sendData })
               console.log(`[Retrigger] Successfully sent ${messages.length} message(s) to ${itemPhone}`)

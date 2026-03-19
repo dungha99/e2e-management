@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, memo } from "react"
-import { Bot, Target, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, History, BrainCircuit, Hand } from "lucide-react"
+import { Bot, Target, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, History, BrainCircuit, Hand, Power, Play, RefreshCw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { useToast } from "@/hooks/use-toast"
 import { AiInsight } from "../types"
 import {
   Dialog,
@@ -199,8 +200,104 @@ export function AiThinkingChat({
   const [hasAnimated, setHasAnimated] = useState<string | null>(null) // Tracks last animated unique state
   const [showHistory, setShowHistory] = useState(false) // Toggle for chat history visibility
   const scrollRef = useRef<HTMLDivElement>(null)
+  const { toast } = useToast()
 
   const [localRatings, setLocalRatings] = useState<Record<string, boolean | null>>({})
+
+  // External Action States
+  const [isBlacklisted, setIsBlacklisted] = useState(false)
+  const [togglingBlacklist, setTogglingBlacklist] = useState(false)
+  const [retriggeringAi, setRetriggeringAi] = useState(false)
+
+  // Fetch Backlist status on mount or carId change
+  useEffect(() => {
+    async function fetchBlacklistStatus() {
+      if (!carId) return
+      try {
+        const res = await fetch(`/api/e2e/ai-process-status/${carId}`)
+        if (res.ok) {
+          const data = await res.json()
+          setIsBlacklisted(!!data.isBlacklisted)
+        }
+      } catch (err) {
+        console.error("Failed to fetch blacklist status:", err)
+      }
+    }
+    fetchBlacklistStatus()
+  }, [carId])
+
+  async function toggleBlacklist(action: "deactivate" | "rerun") {
+    if (!carId) return
+    setTogglingBlacklist(true)
+    try {
+      const res = await fetch(`/api/e2e/ai-process-status/${carId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setIsBlacklisted(!!data.isBlacklisted)
+        toast({
+          title: "Thành công",
+          description: action === "deactivate" ? "Đã dừng AI cho Lead này" : "Đã bật lại AI cho Lead này"
+        })
+      } else {
+        toast({ title: "Lỗi", description: "Không thể cập nhật trạng thái AI", variant: "destructive" })
+      }
+    } catch (err) {
+      console.error("Failed to toggle blacklist:", err)
+      toast({ title: "Lỗi", description: "Lỗi hệ thống", variant: "destructive" })
+    } finally {
+      setTogglingBlacklist(false)
+    }
+  }
+
+  async function retriggerAi() {
+    if (!leadPhone || !carId) {
+      toast({ title: "Lỗi", description: "Không tìm thấy thông tin Lead", variant: "destructive" })
+      return
+    }
+
+    setRetriggeringAi(true)
+    try {
+      const res = await fetch("/api/e2e/retrigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: leadPhone, carId }),
+      })
+
+      // Read stream to completion (heartbeat-based streaming)
+      let resultText = ""
+      if (res.body) {
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          resultText += decoder.decode(value, { stream: true })
+        }
+      } else {
+        resultText = await res.text()
+      }
+
+      // Parse the final JSON from the stream (skip heartbeat newlines)
+      const jsonStr = resultText.trim()
+      const lastJsonStart = jsonStr.lastIndexOf("{")
+      const data = lastJsonStart >= 0 ? JSON.parse(jsonStr.substring(lastJsonStart)) : { success: false, error: "No response" }
+
+      if (data.success) {
+        toast({
+          title: "Thành công ✅",
+          description: `Đã gửi ${data.totalMessagesSent} tin nhắn tự động cho khách hàng.`,
+        })
+      }
+    } catch (err) {
+      console.error("Failed to retrigger:", err)
+    } finally {
+      setRetriggeringAi(false)
+    }
+  }
 
   const handleSendFeedback = async () => {
     if (!feedback.trim()) return
@@ -647,29 +744,8 @@ export function AiThinkingChat({
                   const flowSteps = extractSteps()
                   if (flowSteps.length === 0) return null
 
-                  return (
-                    <div className="mt-4 pt-4 border-t border-amber-100 flex gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => onUseFlow(flowSteps)}
-                        className="flex-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-md text-xs h-9"
-                      >
-                        <Hand className="h-3.5 w-3.5 mr-1.5" />
-                        Kích hoạt Flow thủ công ({flowSteps.length} bước)
-                      </Button>
-                      <Button
-                        size="sm"
-                        disabled={isAutoFlowing}
-                        onClick={() => handleAutoUseFlow(analysis)}
-                        className="flex-1 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white shadow-md text-xs h-9"
-                      >
-                        {isAutoFlowing
-                          ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Đang tạo...</>
-                          : <><Bot className="h-3.5 w-3.5 mr-1.5" />Kích hoạt Flow tự động</>
-                        }
-                      </Button>
-                    </div>
-                  )
+                  // We now render this button in the action Box above the prompt instead of here.
+                  return null
                 })()}
 
               </div>
@@ -677,8 +753,62 @@ export function AiThinkingChat({
           )}
         </div>
 
+        {/* Action Buttons Box (Above Textarea) */}
+        <div className="flex flex-wrap items-center gap-2 mt-2 pt-4 border-t border-gray-100 bg-white/50 p-2 rounded-xl">
+          {onUseFlow && !isLoading && analysis && (
+            <Button
+              size="sm"
+              disabled={isAutoFlowing}
+              onClick={() => handleAutoUseFlow(analysis)}
+              className="bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white shadow-sm text-xs h-8 px-3"
+            >
+              {isAutoFlowing
+                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Đang tạo...</>
+                : <><Bot className="h-3.5 w-3.5 mr-1.5" />Kích hoạt Flow tự động</>
+              }
+            </Button>
+          )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs px-3 border-orange-300 text-orange-600 hover:bg-orange-50 shadow-sm"
+            onClick={retriggerAi}
+            disabled={retriggeringAi}
+          >
+            {retriggeringAi
+              ? <><Loader2 className="h-3 w-3 animate-spin mr-1" />Đang xử lý...</>
+              : <><RefreshCw className="h-3 w-3 mr-1" />RE-TRIGGER</>
+            }
+          </Button>
+
+          {isBlacklisted ? (
+            <Button
+              variant="default"
+              size="sm"
+              className="h-8 text-xs px-3 bg-blue-600 hover:bg-blue-700 shadow-sm"
+              onClick={() => toggleBlacklist("rerun")}
+              disabled={togglingBlacklist}
+            >
+              {togglingBlacklist ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+              RERUN AI
+            </Button>
+          ) : (
+            <Button
+              variant="destructive"
+              size="sm"
+              className="h-8 text-xs px-3 shadow-sm"
+              onClick={() => toggleBlacklist("deactivate")}
+              disabled={togglingBlacklist}
+            >
+              {togglingBlacklist ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Power className="h-3 w-3 mr-1" />}
+              DEACTIVATE AI
+            </Button>
+          )}
+        </div>
+
         {/* Feedback Input Area (Sticky at bottom if container grows too large) */}
-        <div className="flex items-start gap-3 mt-2 border-t pt-4 border-gray-100">
+        <div className="flex items-start gap-3 border-t pt-4 border-gray-100">
           <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center flex-shrink-0 border border-indigo-100 shadow-inner">
             <User className="h-6 w-6 text-indigo-400" />
           </div>

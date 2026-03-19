@@ -49,13 +49,6 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
   // State for Inspector
   const [selectedOutput, setSelectedOutput] = useState<AgentOutput | null>(null)
 
-  // State for Blacklist
-  const [isBlacklisted, setIsBlacklisted] = useState(false)
-  const [togglingBlacklist, setTogglingBlacklist] = useState(false)
-
-  // State for Re-trigger
-  const [retriggeringAi, setRetriggeringAi] = useState(false)
-
   // State for Configuration Form
   const [isConfigMode, setIsConfigMode] = useState(false)
   const [agents, setAgents] = useState<Agent[]>([])
@@ -79,98 +72,8 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
   useEffect(() => {
     if (selectedLead?.car_id) {
       fetchOutputs()
-      fetchBlacklistStatus()
     }
   }, [selectedLead?.car_id])
-
-  async function fetchBlacklistStatus() {
-    if (!selectedLead?.car_id) return
-    try {
-      const res = await fetch(`/api/e2e/ai-process-status/${selectedLead.car_id}`)
-      if (res.ok) {
-        const data = await res.json()
-        setIsBlacklisted(!!data.isBlacklisted)
-      }
-    } catch (err) {
-      console.error("Failed to fetch blacklist status:", err)
-    }
-  }
-
-  async function toggleBlacklist(action: "deactivate" | "rerun") {
-    if (!selectedLead?.car_id) return
-    setTogglingBlacklist(true)
-    try {
-      const res = await fetch(`/api/e2e/ai-process-status/${selectedLead.car_id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action })
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setIsBlacklisted(!!data.isBlacklisted)
-        toast({
-          title: "Thành công",
-          description: action === "deactivate" ? "Đã dừng AI cho Lead này" : "Đã bật lại AI cho Lead này"
-        })
-      } else {
-        toast({ title: "Lỗi", description: "Không thể cập nhật trạng thái AI", variant: "destructive" })
-      }
-    } catch (err) {
-      console.error("Failed to toggle blacklist:", err)
-      toast({ title: "Lỗi", description: "Lỗi hệ thống", variant: "destructive" })
-    } finally {
-      setTogglingBlacklist(false)
-    }
-  }
-
-  async function retriggerAi() {
-    const phone = selectedLead?.phone || selectedLead?.additional_phone
-    const carId = selectedLead?.car_id
-    if (!phone || !carId) {
-      toast({ title: "Lỗi", description: "Không tìm thấy thông tin Lead", variant: "destructive" })
-      return
-    }
-
-    setRetriggeringAi(true)
-    try {
-      const res = await fetch("/api/e2e/retrigger", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, carId }),
-      })
-
-      // Read stream to completion (heartbeat-based streaming)
-      let resultText = ""
-      if (res.body) {
-        const reader = res.body.getReader()
-        const decoder = new TextDecoder()
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          resultText += decoder.decode(value, { stream: true })
-        }
-      } else {
-        resultText = await res.text()
-      }
-
-      // Parse the final JSON from the stream (skip heartbeat newlines)
-      const jsonStr = resultText.trim()
-      const lastJsonStart = jsonStr.lastIndexOf("{")
-      const data = lastJsonStart >= 0 ? JSON.parse(jsonStr.substring(lastJsonStart)) : { success: false, error: "No response" }
-
-      if (data.success) {
-        toast({
-          title: "Thành công ✅",
-          description: `Đã gửi ${data.totalMessagesSent} tin nhắn tự động cho khách hàng.`,
-        })
-        fetchOutputs() // refresh the timeline
-      }
-    } catch (err) {
-      console.error("Failed to retrigger:", err)
-    } finally {
-      setRetriggeringAi(false)
-    }
-  }
 
   useEffect(() => {
     // Only fetch agents if we open config mode for the first time
@@ -179,7 +82,6 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
     }
   }, [isConfigMode, agents.length])
 
-  // Fetch active note when agent is selected in config mode
   const fetchActiveNote = useCallback(async (agentId: string) => {
     if (!agentId) {
       setCurrentNoteContent(null)
@@ -198,6 +100,9 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
           setCurrentNoteContent(null)
           setCurrentNoteVersion(null)
         }
+      } else {
+        setCurrentNoteContent(null)
+        setCurrentNoteVersion(null)
       }
     } catch (err) {
       console.error("Failed to fetch active note:", err)
@@ -550,49 +455,6 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
                 <FileText className="h-4 w-4 text-gray-500" />
                 {selectedOutput ? `Inspector: ${selectedOutput.agent_name}` : 'Agent Actions'}
               </h3>
-
-              <div className="flex items-center gap-2">
-                {/* Re-trigger AI button */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs px-3 border-orange-300 text-orange-600 hover:bg-orange-50 min-w-[120px]"
-                  onClick={retriggerAi}
-                  disabled={retriggeringAi}
-                >
-                  {retriggeringAi
-                    ? <><Loader2 className="h-3 w-3 animate-spin mr-1" />Đang xử lý...</>
-                    : <><RefreshCw className="h-3 w-3 mr-1" />RE-TRIGGER</>
-                  }
-                </Button>
-
-                {/* Deactivate / Rerun AI */}
-                <div className="flex items-center rounded-lg">
-                  {isBlacklisted ? (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className="h-8 text-xs px-4 bg-blue-600 hover:bg-blue-700"
-                      onClick={() => toggleBlacklist("rerun")}
-                      disabled={togglingBlacklist}
-                    >
-                      {togglingBlacklist ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
-                      RERUN AI
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="h-8 text-xs px-4"
-                      onClick={() => toggleBlacklist("deactivate")}
-                      disabled={togglingBlacklist}
-                    >
-                      {togglingBlacklist ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Power className="h-3 w-3 mr-1" />}
-                      DEACTIVATE AI
-                    </Button>
-                  )}
-                </div>
-              </div>
             </div>
 
             {selectedOutput ? (

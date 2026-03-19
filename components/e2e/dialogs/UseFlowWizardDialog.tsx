@@ -13,7 +13,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Loader2, AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Zap, Clock, X, Plus, ChevronDown, ChevronUp } from "lucide-react"
+import { Loader2, AlertCircle, ChevronLeft, ChevronRight, Zap, Clock, X, Plus, ChevronDown, ChevronUp } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import {
   ParsedField,
@@ -22,6 +22,7 @@ import {
   applyFieldChange,
 } from "./connectorFormUtils"
 import { createAiWorkflowAction } from "@/app/actions/workflow"
+import { useToast } from "@/hooks/use-toast"
 
 /** A single step extracted from the AI analysis */
 export interface FlowStep {
@@ -65,10 +66,10 @@ export function UseFlowWizardDialog({
   const [loadingSchemas, setLoadingSchemas] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
   const [flowName, setFlowName] = useState(workflowName || "")
   const [flowDescription, setFlowDescription] = useState(workflowDescription || "")
   const [showPayloads, setShowPayloads] = useState<Record<number, boolean>>({})
+  const { toast } = useToast()
 
   // Reset on open
   useEffect(() => {
@@ -77,7 +78,6 @@ export function UseFlowWizardDialog({
       setStepPayloads(steps.map(s => ({ ...s.defaultValues })))
       setStepSchedules(steps.map(() => ""))
       setError(null)
-      setSuccess(false)
       setFlowName(workflowName || `AI Flow ${new Date().toLocaleDateString('vi-VN')}`)
       setFlowDescription(workflowDescription || "")
       setShowPayloads({})
@@ -438,11 +438,9 @@ export function UseFlowWizardDialog({
         throw new Error(res.error || "Failed to create workflow")
       }
 
-      setSuccess(true)
-      setTimeout(() => {
-        onOpenChange(false)
-        onSuccess?.()
-      }, 1500)
+      onOpenChange(false)
+      toast({ title: "Kích hoạt Flow tự động thành công!" })
+      onSuccess?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Có lỗi xảy ra")
     } finally {
@@ -457,22 +455,6 @@ export function UseFlowWizardDialog({
   const step = steps[currentStep]
   const fields = stepFields[currentStep] || []
   const currentPayload = stepPayloads[currentStep] || {}
-
-  if (success) {
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-lg">
-          <div className="flex flex-col items-center gap-4 py-8">
-            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
-              <CheckCircle2 className="h-8 w-8 text-green-600" />
-            </div>
-            <p className="text-lg font-semibold text-green-700">Flow đã được tạo thành công!</p>
-            <p className="text-sm text-gray-500">Workflow &quot;{flowName}&quot; với {totalSteps} bước đã được lưu.</p>
-          </div>
-        </DialogContent>
-      </Dialog>
-    )
-  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

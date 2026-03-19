@@ -325,13 +325,10 @@ export function AiThinkingChat({
       })
       const data = await res.json()
       if (data.success) {
-        // Optionally notify parent that a workflow was created
-        if (onUseFlow) {
-          // Pass an empty array to signal "auto flow created" - parent can refresh
-          onUseFlow([])
-        }
+        toast({ title: "Kích hoạt Flow tự động thành công!" })
       } else {
         console.error("[Auto Use Flow] Failed:", data.error)
+        toast({ title: "Kích hoạt Flow thất bại", description: data.error || "Có lỗi xảy ra", variant: "destructive" })
       }
     } catch (err) {
       console.error("[Auto Use Flow] Error:", err)

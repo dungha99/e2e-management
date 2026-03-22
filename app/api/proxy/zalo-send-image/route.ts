@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { getNextZaloAccount, buildAbitstoreUrl } from "@/lib/zalo-accounts"
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,6 @@ export async function POST(request: Request) {
     })
 
     const {
-      send_from_number,
       send_to_groupid,
       message,
       caption,
@@ -22,24 +22,35 @@ export async function POST(request: Request) {
       action
     } = body
 
-    if (!send_from_number || !send_to_groupid || !message) {
+    if (!message) {
       return NextResponse.json(
-        { error: "Missing required fields: send_from_number, send_to_groupid, message" },
+        { error: "Missing required field: message" },
         { status: 400 }
       )
     }
 
-    const abitstoreUrl = "https://new.abitstore.vn/zalo/sendImageToGroupZalo/2/YenNhi/r4w2uwALscvaQ8d"
+    const account = await getNextZaloAccount()
+    const groupId = send_to_groupid || account.default_group_id
+
+    if (!groupId) {
+      return NextResponse.json(
+        { error: "Missing send_to_groupid and no default group configured" },
+        { status: 400 }
+      )
+    }
+
+    const abitstoreUrl = buildAbitstoreUrl(account)
 
     const payload = {
-      send_from_number,
-      send_to_groupid,
+      send_from_number: account.phone,
+      send_to_groupid: groupId,
       message,
       caption: caption || " ",
       image_url: image_url || [],
       action: action || ""
     }
 
+    console.log("[Zalo Proxy API] Using account:", account.account_name, "phone:", account.phone)
     console.log("[Zalo Proxy API] Forwarding to abitstore:", abitstoreUrl)
     console.log("[Zalo Proxy API] Payload:", JSON.stringify(payload, null, 2))
 

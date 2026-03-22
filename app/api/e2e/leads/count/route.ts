@@ -22,6 +22,7 @@ export async function POST(request: Request) {
           OR l.additional_phone LIKE '%${search}%'
           OR l.name ILIKE '%${search}%'
           OR CONCAT(c.brand, ' ', c.model) ILIKE '%${search}%'
+          OR c.id::text ILIKE '%${search}%'
         )`
       : ""
 
@@ -43,12 +44,20 @@ export async function POST(request: Request) {
       `SELECT
         COUNT(*) FILTER (WHERE has_hot_lead = true) as priority_count,
         COUNT(*) FILTER (WHERE has_hot_lead IS NULL OR has_hot_lead = false) as nurture_count,
+        COUNT(*) FILTER (WHERE is_slow_follow_up = true) as follow_up_count,
         COUNT(*) as total_count
       FROM (
         SELECT
           l.phone,
           c.id as car_id,
-          MAX(CASE WHEN ss.is_hot_lead = true THEN 1 ELSE 0 END) = 1 as has_hot_lead
+          MAX(CASE WHEN ss.is_hot_lead = true THEN 1 ELSE 0 END) = 1 as has_hot_lead,
+          MAX(CASE WHEN ss.intention = 'SLOW' AND EXISTS (
+            SELECT 1 FROM sale_activities sa
+            WHERE sa.lead_id = l.id
+              AND sa.metadata->>'field_name' = 'intentionLead'
+              AND (sa.metadata->>'new_value' = 'SLOW' OR sa.metadata->>'new_value' = 'slow')
+              AND sa.created_at <= NOW() - INTERVAL '4 days'
+          ) THEN 1 ELSE 0 END) = 1 as is_slow_follow_up
         FROM leads l
         LEFT JOIN cars c ON c.lead_id = l.id
           AND (c.updated_at IS NULL OR c.updated_at > NOW() - INTERVAL '2 months')
@@ -68,6 +77,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       priority: parseInt(row?.priority_count || 0),
       nurture: parseInt(row?.nurture_count || 0),
+      followUp: parseInt(row?.follow_up_count || 0),
       total: parseInt(row?.total_count || 0),
     })
   } catch (error) {

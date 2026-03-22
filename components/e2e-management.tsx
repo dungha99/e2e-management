@@ -51,6 +51,8 @@ import { AccountSelector } from "./e2e/layout/AccountSelector"
 import { LeadListSidebar } from "./e2e/layout/LeadListSidebar"
 import { ViewModeToggle } from "./e2e/layout/ViewModeToggle"
 import { CampaignKanbanView } from "./e2e/kanban/CampaignKanbanView"
+import { E2EKPIRibbon } from "./e2e/layout/E2EKPIRibbon"
+import { KPIDetailPanel } from "./e2e/layout/KPIDetailPanel"
 
 // Local interfaces for component-specific types not in shared types
 interface DealerGroup {
@@ -93,7 +95,7 @@ function WorkflowStep({ icon, title, status, isCompleted, onClick }: {
 
 interface E2EManagementProps {
   userId?: string
-  initialTab?: "priority" | "nurture"
+  initialTab?: "priority" | "nurture" | "follow-up"
   initialPage?: number
   initialSearch?: string
   initialSources?: string[]
@@ -200,9 +202,13 @@ export function E2EManagement({
   // Cache busting key for leads list
   const [refreshKey, setRefreshKey] = useState(0)
 
+  // KPI Detail Panel state
+  const [kpiDetailOpen, setKpiDetailOpen] = useState(false)
+  const [kpiDetailMetric, setKpiDetailMetric] = useState<string | null>(null)
+
   // Phase 2: React Query hooks for data fetching (server-side)
   // Read params directly from URL - URL is the single source of truth
-  const activeTab = (searchParams.get("tab") as "priority" | "nurture") || "priority"
+  const activeTab = (searchParams.get("tab") as "priority" | "nurture" | "follow-up") || "priority"
   const currentPage = parseInt(searchParams.get("page") || "1")
   const appliedSearchPhone = searchParams.get("search") || ""
   const sourceFilter = searchParams.get("sources")?.split(",").filter(Boolean) || []
@@ -244,7 +250,7 @@ export function E2EManagement({
     dateTo: dateToParam,
     refreshKey
   })
-  const counts = countsData || { priority: 0, nurture: 0, total: 0 }
+  const counts = countsData || { priority: 0, nurture: 0, followUp: 0, total: 0 }
 
   // Fetch leads with server-side filtering (including date range)
   const {
@@ -407,6 +413,17 @@ export function E2EManagement({
       setBiddingHistory([])
     }
   }, [selectedLead?.car_id])
+
+  // Update page title when lead is selected
+  useEffect(() => {
+    if (selectedLead) {
+      const phone = selectedLead.phone || selectedLead.additional_phone || "N/A"
+      const carInfo = formatCarInfo(selectedLead)
+      document.title = `${phone} - ${carInfo}`
+    } else {
+      document.title = "Vucar - Lead OS"
+    }
+  }, [selectedLead])
 
   // Memoize processed images to avoid re-processing on every render
   const processedImages = useMemo(() => {
@@ -1850,15 +1867,16 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
   // Use counts from backend for tab badges
   const priorityCount = counts.priority
   const nurtureCount = counts.nurture
+  const followUpCount = counts.followUp
 
   // Pagination calculations based on backend counts
-  const currentTabCount = activeTab === "priority" ? priorityCount : nurtureCount
+  const currentTabCount = activeTab === "priority" ? priorityCount : activeTab === "follow-up" ? followUpCount : nurtureCount
   const totalPages = Math.ceil(currentTabCount / ITEMS_PER_PAGE)
 
   // Leads are already filtered and paginated from backend (including date range filter)
   const currentPageLeads = enrichedLeads
 
-  const handleTabChange = (tab: "priority" | "nurture") => {
+  const handleTabChange = (tab: "priority" | "nurture" | "follow-up") => {
     // Phase 2: Update URL only, React Query will automatically refetch
     const params = new URLSearchParams(searchParams.toString())
     params.set("tab", tab)
@@ -2326,6 +2344,23 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         isMobile={isMobile}
       />
 
+      {/* KPI Stats Ribbon — filters from URL params flow into KPI data */}
+      {selectedAccount && (
+        <div className="px-4 pt-3">
+          <E2EKPIRibbon
+            picId={selectedAccount}
+            search={appliedSearchPhone}
+            sources={sourceFilter}
+            dateFrom={dateFromParam}
+            dateTo={dateToParam}
+            onMetricClick={(metric) => {
+              setKpiDetailMetric(metric)
+              setKpiDetailOpen(true)
+            }}
+          />
+        </div>
+      )}
+
       {/* Main Content - Conditional based on view mode */}
       {viewMode === "kanban" ? (
         <div className="p-4 bg-gray-50 h-[calc(100vh-150px)]">
@@ -2351,6 +2386,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
               onTabChange={handleTabChange}
               priorityCount={priorityCount}
               nurtureCount={nurtureCount}
+              followUpCount={followUpCount}
               currentPageLeads={currentPageLeads}
               selectedLead={selectedLead}
               onLeadClick={handleLeadClick}
@@ -2770,6 +2806,21 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         handleCreateThread={handleCreateThread}
         createThreadLoading={createThreadLoading}
       />
+
+
+      {/* KPI Detail Panel */}
+      {selectedAccount && (
+        <KPIDetailPanel
+          open={kpiDetailOpen}
+          onClose={() => setKpiDetailOpen(false)}
+          metric={kpiDetailMetric}
+          picId={selectedAccount}
+          search={appliedSearchPhone}
+          sources={sourceFilter}
+          dateFrom={dateFromParam}
+          dateTo={dateToParam}
+        />
+      )}
 
 
     </div>

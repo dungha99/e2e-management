@@ -22,6 +22,7 @@ import { ExportReportDialog } from "../dialogs/ExportReportDialog"
 import { DateRangePickerWithPresets } from "../common/DateRangePickerWithPresets"
 import { ImageUploadService } from "../common/ImageUploadService"
 import { useAccounts } from "@/contexts/AccountsContext"
+import { FollowUpAction } from "../actions/FollowUpAction"
 
 interface LeadListSidebarProps {
   // Display props
@@ -50,10 +51,11 @@ interface LeadListSidebarProps {
   onDateRangeFilterChange?: (dateRange: DateRange | undefined) => void
 
   // Tabs & counts
-  activeTab: "priority" | "nurture"
-  onTabChange: (tab: "priority" | "nurture") => void
+  activeTab: "priority" | "nurture" | "follow-up"
+  onTabChange: (tab: "priority" | "nurture" | "follow-up") => void
   priorityCount: number
   nurtureCount: number
+  followUpCount?: number
 
   // Leads data
   currentPageLeads: Lead[]
@@ -93,6 +95,7 @@ export function LeadListSidebar({
   onTabChange,
   priorityCount,
   nurtureCount,
+  followUpCount = 0,
   currentPageLeads,
   selectedLead,
   onLeadClick,
@@ -400,6 +403,19 @@ export function LeadListSidebar({
             {nurtureCount}
           </Badge>
         </button>
+        <button
+          onClick={() => onTabChange("follow-up")}
+          className={`flex items-center gap-2 text-sm font-medium pb-2 transition-colors ${activeTab === "follow-up"
+            ? "text-orange-600 border-b-2 border-orange-600"
+            : "text-gray-500 hover:text-gray-700"
+            }`}
+        >
+          <Clock className="h-4 w-4" />
+          Cần follow-up
+          <Badge className={activeTab === "follow-up" ? "bg-orange-600 text-white text-white text-xs" : "bg-gray-200 text-gray-700 text-xs"}>
+            {followUpCount}
+          </Badge>
+        </button>
       </div>
 
       {/* Leads List - Scrollable area with touch scroll */}
@@ -587,8 +603,33 @@ export function LeadListSidebar({
                         </>
                       )}
 
-                      {/* Bot check biển upload button - Always visible */}
-                      <div className="ml-auto" onClick={(e) => e.stopPropagation()}>
+                      <div className="ml-auto flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+
+                        {/* Countdown for SLOW intention */}
+                        {lead.intentionLead === "SLOW" && lead.slow_intention_date && (() => {
+                          const diffTime = new Date().getTime() - new Date(lead.slow_intention_date!).getTime();
+                          const diffDays = Math.floor(Math.abs(diffTime) / (1000 * 60 * 60 * 24));
+                          const daysLeft = 4 - diffDays;
+
+                          return (
+                            <div
+                              className={`flex items-center gap-1 px-1.5 h-6 rounded border text-[10px] font-medium ${daysLeft > 0
+                                ? "bg-blue-50 text-blue-600 border-blue-200"
+                                : daysLeft === 0
+                                  ? "bg-orange-50 text-orange-600 border-orange-200"
+                                  : "bg-red-50 text-red-600 border-red-200"
+                                }`}
+                              title="Thời gian đến hạn follow-up (4 ngày từ khi trạng thái là SLOW)"
+                            >
+                              <Clock className="h-3 w-3" />
+                              {daysLeft > 0 ? `Còn ${daysLeft} ngày` : daysLeft === 0 ? "Hôm nay" : `Quá ${-daysLeft} ngày`}
+                            </div>
+                          );
+                        })()}
+
+                        {activeTab === "follow-up" && (
+                          <FollowUpAction lead={lead} isSidebarVariant />
+                        )}
                         <ImageUploadService
                           lead={lead}
                           senderName={picName}

@@ -14,6 +14,8 @@ import { ExecuteConnectorDialog } from "../dialogs/ExecuteConnectorDialog"
 import { UseFlowWizardDialog, FlowStep } from "../dialogs/UseFlowWizardDialog"
 import { fetchAiInsights } from "@/hooks/use-leads"
 import { AiThinkingChat } from "../common/AiThinkingChat"
+import { SendFirstMessageAction } from "../actions/SendFirstMessageAction"
+import { RenameLeadAction } from "../actions/RenameLeadAction"
 
 // Custom fields configuration for each workflow
 const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] => {
@@ -879,25 +881,16 @@ ${dealerBidsStr}`
 
                 {/* Action Buttons - Send First Message & Rename Lead */}
                 <div className="flex items-center gap-3 mt-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
+                  <SendFirstMessageAction
                     onClick={onSendFirstMessage}
                     disabled={sendingMessage || !selectedLead?.pic_id}
-                    className="text-gray-700 text-xs sm:text-sm"
-                  >
-                    <MessageCircle className="h-3.5 w-3.5 mr-1.5" />
-                    {sendingMessage ? "Đang gửi..." : "Send First Message"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
+                    loading={sendingMessage}
+                  />
+                  <RenameLeadAction
                     onClick={onRenameLead}
                     disabled={renamingLead || !selectedLead?.pic_id}
-                    className="text-gray-700 text-xs sm:text-sm"
-                  >
-                    {renamingLead ? "Đang đổi tên..." : "Đổi tên Lead"}
-                  </Button>
+                    loading={renamingLead}
+                  />
                 </div>
               </div>
             )

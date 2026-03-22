@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
-import { HITLLead, StepKey, Severity, BlockerType, StepProgress, StepStatus, PaginatedLeadsResponse } from "@/components/lead-monitor/types"
+import { HITLLead, StepKey, Severity, BlockerType, StepProgress, StepStatus, PaginatedLeadsResponse, ZaloErrorCategory, ZaloErrorSegment } from "@/components/lead-monitor/types"
 
 export const dynamic = "force-dynamic"
 
@@ -23,6 +23,74 @@ function extractCarImage(additionalImages: any): string | null {
     if (Array.isArray(imgs) && imgs.length > 0 && imgs[0]?.url) return imgs[0].url
   }
   return null
+}
+
+// ── Zalo error categorization ──────────────────────────────────────────────
+function categorizeZaloError(payload: any): { category: ZaloErrorCategory; detail: string } {
+  const akabizError = payload?.akabiz_error ?? ""
+  const reason = payload?.reason ?? ""
+  const error = payload?.error ?? ""
+  const raw = akabizError || reason || error || "Unknown error"
+
+  const lower = raw.toLowerCase()
+
+  if (lower.includes("chặn không nhận tin nhắn từ người lạ"))
+    return { category: "BLOCKED_STRANGER", detail: raw }
+  if (lower.includes("không muốn nhận tin nhắn"))
+    return { category: "DECLINED_MESSAGES", detail: raw }
+  if (lower.includes("no uid found"))
+    return { category: "NO_UID_FOUND", detail: raw }
+  if (lower.includes("contact not found"))
+    return { category: "CONTACT_NOT_FOUND", detail: raw }
+  if (lower.includes("timed out") || lower.includes("timeout"))
+    return { category: "TIMEOUT", detail: raw }
+  if (lower.includes("search failed") || lower.includes("error getting search"))
+    return { category: "SEARCH_FAILED", detail: raw }
+
+  return { category: "OTHER", detail: raw }
+}
+
+async function fetchZaloErrors(carIds: string[]): Promise<Map<string, ZaloErrorSegment[]>> {
+  const map = new Map<string, ZaloErrorSegment[]>()
+  if (carIds.length === 0) return map
+
+  const result = await e2eQuery(`
+    SELECT za.action_type, za.payload, za.created_at, zac.car_id
+    FROM zalo_action za
+    JOIN zalo_account zac ON zac.id = za.zalo_account_id
+    WHERE zac.car_id = ANY($1::uuid[]) AND za.status = 'failed'
+    ORDER BY za.created_at DESC
+  `, [carIds])
+
+  // Group by car_id + category
+  const temp = new Map<string, Map<string, { category: ZaloErrorCategory; action_type: string; count: number; latest_detail: string; latest_at: string }>>()
+
+  for (const row of result.rows) {
+    const carId = row.car_id as string
+    const { category, detail } = categorizeZaloError(row.payload)
+    const key = `${category}:${row.action_type}`
+
+    if (!temp.has(carId)) temp.set(carId, new Map())
+    const carMap = temp.get(carId)!
+
+    if (carMap.has(key)) {
+      carMap.get(key)!.count++
+    } else {
+      carMap.set(key, {
+        category,
+        action_type: row.action_type,
+        count: 1,
+        latest_detail: detail,
+        latest_at: row.created_at,
+      })
+    }
+  }
+
+  temp.forEach((carMap, carId) => {
+    map.set(carId, Array.from(carMap.values()))
+  })
+
+  return map
 }
 
 function formatHours(minutes: number): string {
@@ -202,6 +270,8 @@ async function handleColumnPagination(
       c.id              AS car_id,
       c.brand           AS car_brand,
       c.model           AS car_model,
+      c.variant,
+      c.plate,
       c.year            AS car_year,
       c.mileage         AS car_odo,
       c.location        AS car_location,
@@ -288,17 +358,25 @@ async function handleColumnPagination(
               step.stage = data.stage ?? undefined
             }
           })
-          .catch(() => {})
+          .catch(() => { })
       )
     })
   })
   await Promise.all(conditionFetches)
 
+  // ── 7b. Fetch Zalo errors for zalo_connect step ──────────────────────────
+  const zaloErrorsMap = stepKey === "zalo_connect"
+    ? await fetchZaloErrors(pageCarIds)
+    : new Map<string, ZaloErrorSegment[]>()
+
   // ── 8. Build HITLLeads for page ───────────────────────────────────────────
   function buildCarBlock(car: any) {
     const thumbnail = extractCarImage(car.additional_images)
     return {
-      model: [car.car_brand, car.car_model].filter(Boolean).join(" ") || "Unknown",
+      brand: car.car_brand ?? null,
+      model: car.car_model || "Unknown",
+      variant: car.variant ?? null,
+      plate: car.plate ?? null,
       year: car.car_year ? parseInt(car.car_year) : 0,
       odo: car.car_odo ? parseInt(car.car_odo) : null,
       location: car.car_location ?? null,
@@ -383,6 +461,7 @@ async function handleColumnPagination(
         triggered_at: row.triggered_at,
         steps: stepsMap.get(row.car_id) ?? [],
         time_overdue_minutes: timeOverdue,
+        zalo_errors: zaloErrorsMap.get(row.car_id),
       })
     }
   }
@@ -528,11 +607,17 @@ async function handleLegacyFull(picIdFilter: string | null): Promise<NextRespons
               step.stage = data.stage ?? undefined
             }
           })
-          .catch(() => {})
+          .catch(() => { })
       )
     })
   })
   await Promise.all(conditionFetches)
+
+  // ── Fetch Zalo errors for zalo_connect leads ────────────────────────────
+  const zaloConnectCarIds = slaRows
+    .filter((r: any) => r.step_key === "zalo_connect")
+    .map((r: any) => r.car_id as string)
+  const zaloErrorsMapLegacy = await fetchZaloErrors(zaloConnectCarIds)
 
   function buildCarBlock(car: any) {
     const thumbnail = extractCarImage(car.additional_images)
@@ -587,6 +672,7 @@ async function handleLegacyFull(picIdFilter: string | null): Promise<NextRespons
       triggered_at: isEscalation ? escalation.triggered_at : sla.triggered_at,
       steps: stepsMap.get(sla.car_id) ?? [],
       time_overdue_minutes: timeOverdue,
+      zalo_errors: zaloErrorsMapLegacy.get(sla.car_id),
     })
   }
 

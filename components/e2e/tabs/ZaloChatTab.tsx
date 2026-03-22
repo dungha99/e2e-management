@@ -203,10 +203,11 @@ export function ZaloChatTab({
           </div>
         ) : (
           <div className="space-y-3">
-            {e2eMessages.map((msg: ChatMessage, index: number) => {
-              const isVuCar = msg.uidFrom === "0" || msg.uidFrom === "bot" || msg.uidFrom === "system"
+            {e2eMessages.map((msg: any, index: number) => {
+              const isVuCar = msg.fromMe === true || msg.uidFrom === "0" || msg.uidFrom === "bot" || msg.uidFrom === "system"
+              const content = msg.content || msg.text || msg.body || ""
               const timestamp = msg.timestamp
-                ? new Date(msg.timestamp).toLocaleString("vi-VN")
+                ? (typeof msg.timestamp === 'number' ? new Date(msg.timestamp).toLocaleString("vi-VN") : msg.timestamp)
                 : msg.dateAction || ""
 
               return (
@@ -234,7 +235,7 @@ export function ZaloChatTab({
                       />
                     )}
                     <p className="text-sm whitespace-pre-wrap break-words">
-                      {msg.content}
+                      {content}
                     </p>
                     {msg.type && msg.type !== "text" && (
                       <span className="text-xs opacity-70 mt-1 block">

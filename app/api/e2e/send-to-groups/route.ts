@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server"
-import { getNextZaloAccount, buildAbitstoreUrl } from "@/lib/zalo-accounts"
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { groupIds, message, imageUrls } = body
+    const { groupIds, message, imageUrls, phone } = body
 
     console.log("[Send to Groups API] Received request:", {
       groupIds,
       message: message.substring(0, 100),
       imageCount: imageUrls?.length,
+      phone
     })
 
     if (!groupIds || !Array.isArray(groupIds) || groupIds.length === 0) {
@@ -22,10 +22,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 })
     }
 
-    const account = await getNextZaloAccount()
-    const abitstoreUrl = buildAbitstoreUrl(account)
+    const sendDynamicKey = process.env.ZALO_SEND_DYNAMIC_KEY
 
-    console.log("[Send to Groups API] Using account:", account.account_name, "phone:", account.phone)
+    if (!sendDynamicKey) {
+      return NextResponse.json(
+        { error: "Zalo send API credentials not configured" },
+        { status: 500 }
+      )
+    }
+
+    console.log("[Send to Groups API] Dynamic key loaded:", sendDynamicKey.substring(0, 5) + "...")
 
     const results = []
 
@@ -35,7 +41,7 @@ export async function POST(request: Request) {
       try {
         // Send message with all images in a single request
         const payload = {
-          send_from_number: account.phone,
+          send_from_number: "84965670787",
           send_to_groupid: groupId,
           message: message,
           caption: " ",
@@ -45,7 +51,9 @@ export async function POST(request: Request) {
 
         console.log("[Send to Groups API] Payload:", JSON.stringify(payload, null, 2))
 
-        const response = await fetch(abitstoreUrl, {
+        const response = await fetch(
+          `https://new.abitstore.vn/zalo/sendImageToGroupZalo/6/CaNhanTest/${sendDynamicKey}`,
+          {
             method: "POST",
             headers: {
               "Content-Type": "application/json",

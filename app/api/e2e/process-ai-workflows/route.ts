@@ -460,13 +460,49 @@ MÔ TẢ STATUS:
           console.log(`[Process AI Workflows] Step "${execution.step_name}" → ${connectorSuccess ? 'success' : 'failed'}`)
 
           if (!connectorSuccess) {
-            result.stoppedReason = "step_failed"
-            result.error = errorMessage || undefined
-            // Mark instance as failed on step failure
-            await e2eQuery(
-              `UPDATE workflow_instances SET status = 'failed' WHERE id = $1`,
-              [instance.id]
-            )
+            const currentRetryCount = execution.retry_count || 0
+            const maxRetries = 3
+
+            if (currentRetryCount < maxRetries) {
+              // Retry: reset step to pending, schedule 30 minutes later, increment retry_count
+              const retryNumber = currentRetryCount + 1
+              const delayMinutes = 30
+              console.log(`[Process AI Workflows] Step "${execution.step_name}" failed, scheduling retry ${retryNumber}/${maxRetries} in ${delayMinutes} minutes`)
+              // NOW() returns UTC on Vercel, but scheduled_at is stored as VN time (UTC+7)
+              await e2eQuery(
+                `UPDATE step_executions
+                 SET status = 'pending',
+                     scheduled_at = NOW() + INTERVAL '7 hours 30 minutes',
+                     retry_count = $1,
+                     error_message = $2,
+                     completed_at = NULL
+                 WHERE id = $3`,
+                [retryNumber, errorMessage, execution.id]
+              )
+
+              // Also delay all subsequent pending steps with explicit schedules by the same amount
+              await e2eQuery(
+                `UPDATE step_executions
+                 SET scheduled_at = scheduled_at + INTERVAL '${delayMinutes} minutes'
+                 WHERE instance_id = $1
+                   AND status = 'pending'
+                   AND id != $2
+                   AND scheduled_at IS NOT NULL`,
+                [instance.id, execution.id]
+              )
+
+              result.stoppedReason = "step_retry_scheduled"
+              result.error = `Retry ${retryNumber}/${maxRetries} scheduled in ${delayMinutes} minutes: ${errorMessage}`
+            } else {
+              // Max retries exhausted — mark as permanently failed
+              console.error(`[Process AI Workflows] Step "${execution.step_name}" failed after ${maxRetries} retries`)
+              result.stoppedReason = "step_failed"
+              result.error = errorMessage || undefined
+              await e2eQuery(
+                `UPDATE workflow_instances SET status = 'failed' WHERE id = $1`,
+                [instance.id]
+              )
+            }
             continueLoop = false
             break
           }

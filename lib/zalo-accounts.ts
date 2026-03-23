@@ -7,6 +7,8 @@ export interface ZaloAccount {
   abitstore_id: string
   dynamic_key: string
   default_group_id: string | null
+  get_groups_key: string
+  smownerid: string
 }
 
 /** Pick the least-recently-used active account (round-robin) */
@@ -23,7 +25,7 @@ export async function getNextZaloAccount(): Promise<ZaloAccount> {
       ORDER BY last_used_at ASC NULLS FIRST
       LIMIT 1
     )
-    RETURNING id, phone, account_name, abitstore_id, dynamic_key, default_group_id
+    RETURNING id, phone, account_name, abitstore_id, dynamic_key, default_group_id, get_groups_key, smownerid
   `)
 
   if (rows.length === 0) {

@@ -4,6 +4,23 @@ export type Severity = "NORMAL" | "WARN" | "CRITICAL"
 
 export type StepKey = "zalo_connect" | "thu_thap_thong_tin" | "dat_lich_kiem_dinh" | "dam_phan_1" | "escalation"
 
+export type ZaloErrorCategory =
+  | "BLOCKED_STRANGER"
+  | "DECLINED_MESSAGES"
+  | "NO_UID_FOUND"
+  | "CONTACT_NOT_FOUND"
+  | "TIMEOUT"
+  | "SEARCH_FAILED"
+  | "OTHER"
+
+export interface ZaloErrorSegment {
+  category: ZaloErrorCategory
+  action_type: string        // addFriend | firstMessage | rename
+  count: number
+  latest_detail: string      // raw error message for tooltip
+  latest_at: string          // ISO timestamp
+}
+
 export interface CustomerInfo {
   name: string
   avatar: string | null
@@ -62,6 +79,7 @@ export interface HITLLead {
   steps: StepProgress[]
   time_overdue_minutes?: number // positive = overdue, negative = time remaining
   qualified_status?: string | null // e.g. "STRONG_QUALIFIED", "SLOW", etc.
+  zalo_errors?: ZaloErrorSegment[]
 }
 
 export interface KPISummary {
@@ -88,4 +106,7 @@ export interface PicOption {
   slaBreachCount: number   // leads with condition_end_met=false AND exceeds SLA (each = 1)
   escalationCount: number
   botActiveCount: number   // leads in monitoring queue with bot_status = 'active'
+  undefinedQualifiedCount: number  // leads with ss.qualified = 'UNDEFINED_QUALIFIED'
+  zaloReasonBreakdown: Record<string, number>  // category → #leads (e.g. { BLOCKED_STRANGER: 5 })
+  noZaloActionCount: number  // leads in zalo_connect SLA with zero zalo_action records
 }

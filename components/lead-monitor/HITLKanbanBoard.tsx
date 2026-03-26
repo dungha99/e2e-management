@@ -6,22 +6,24 @@ import { HITLKanbanColumn } from "./HITLKanbanColumn"
 interface HITLKanbanBoardProps {
   picId: string
   searchQuery: string
+  qualifiedFilter: string
   refreshKey: number
   onResolve: (id: string) => void
   onDetail: (id: string) => void
 }
 
-const COLUMNS: { key: StepKey; title: string; dotColor: string }[] = [
-  { key: "zalo_connect",       title: "Kết nối Zalo",       dotColor: "bg-blue-500"   },
-  { key: "thu_thap_thong_tin", title: "Thu thập thông tin", dotColor: "bg-purple-500" },
-  { key: "dat_lich_kiem_dinh", title: "Đặt lịch KĐ",       dotColor: "bg-amber-500"  },
-  { key: "dam_phan_1",         title: "Đàm phán lần 1",     dotColor: "bg-orange-500" },
-  { key: "escalation",         title: "Escalation",         dotColor: "bg-red-500"    },
+const COLUMNS: { key: StepKey; title: string }[] = [
+  { key: "zalo_connect", title: "Kết nối Zalo" },
+  { key: "thu_thap_thong_tin", title: "Thu thập thông tin" },
+  { key: "dat_lich_kiem_dinh", title: "Đặt lịch KĐ" },
+  { key: "dam_phan_1", title: "Đàm phán lần 1" },
+  { key: "escalation", title: "Escalation" },
 ]
 
 export function HITLKanbanBoard({
   picId,
   searchQuery,
+  qualifiedFilter,
   refreshKey,
   onResolve,
   onDetail,
@@ -34,9 +36,9 @@ export function HITLKanbanBoard({
             <HITLKanbanColumn
               stepKey={col.key}
               title={col.title}
-              dotColor={col.dotColor}
               picId={picId}
               searchQuery={searchQuery}
+              qualifiedFilter={qualifiedFilter}
               refreshKey={refreshKey}
               onResolve={onResolve}
               onDetail={onDetail}

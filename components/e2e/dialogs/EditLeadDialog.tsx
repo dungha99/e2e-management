@@ -157,14 +157,14 @@ Giá mong muốn: ${lead.price_customer ? formatPrice(lead.price_customer) : "N/
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  const phone = lead?.phone || lead?.additional_phone || ""
+                  const sku = lead?.sku || ""
                   const picId = lead?.pic_id || ""
-                  if (phone && picId) {
-                    const crmUrl = `https://dashboard.vucar.vn/crm-v2?pic=${picId}&search=${phone}`
+                  if (sku && picId) {
+                    const crmUrl = `https://dashboard.vucar.vn/crm-v2?pic=${picId}&search=${sku}`
                     window.open(crmUrl, '_blank')
                   }
                 }}
-                disabled={!lead?.pic_id || (!lead?.phone && !lead?.additional_phone)}
+                disabled={!lead?.pic_id || !lead?.sku}
                 className="flex items-center gap-2 text-blue-600 border-blue-300 hover:bg-blue-50"
               >
                 <ExternalLink className="h-4 w-4" />

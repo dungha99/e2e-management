@@ -10,7 +10,7 @@ const s3Client = new S3Client({
 });
 
 const BUCKET_NAME = "vucar-ai";
-const WEBHOOK_URL = "https://n8n.vucar.vn/webhook/783efc4b-2acf-4715-ae8d-dcb9393695f0";
+const WEBHOOK_URL = "https://n8nai.vucar.vn/webhook/bot-up-anh-xe";
 
 export const maxDuration = 60; // Set timeout to 60 seconds
 

@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic"
 const N8N_SHOPID_WEBHOOK = "https://n8n.vucar.vn/webhook/f23b1b03-b198-4dc3-a196-d97a5cae8aff"
 const AKABIZ_CHAT_HISTORY_URL = "https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history"
 const AKABIZ_SEND_MESSAGE_URL = "https://crm-vucar-api.vucar.vn/api/v1/akabiz/send-customer-message"
-const N8N_AUTO_CHAT_WEBHOOK = "https://n8n.vucar.vn/webhook/bdb8f9b8-4b12-4a08-9a94-d0406e0d16b0"
+const N8N_AUTO_CHAT_WEBHOOK = "https://n8nai.vucar.vn/webhook/e2e-chat-vucar"
 
 async function parseJsonResponse(res: Response, label: string) {
   const text = await res.text()

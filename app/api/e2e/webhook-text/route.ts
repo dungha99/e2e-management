@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const WEBHOOK_URL = "https://n8n.vucar.vn/webhook/783efc4b-2acf-4715-ae8d-dcb9393695f0";
+const WEBHOOK_URL = "https://n8nai.vucar.vn/webhook/bot-up-anh-xe";
 
 export async function POST(req: NextRequest) {
   try {

@@ -62,7 +62,7 @@ LOGIC STAGE (ưu tiên theo thứ tự từ cao xuống thấp):
 - "failed" nếu: khách từ chối rõ ràng ("thôi không bán nữa", "bán bên khác rồi", "không liên hệ nữa", ...)
 - "inspection" nếu: khách đồng ý lịch kiểm định, hoặc mention "kiểm định", "xem xe", "cho người xuống xem"
 - "negotiation" nếu: khách đã nhắc đến giá, hỏi giá, phản giá, hoặc có signal đàm phán ("giá đó thấp quá", "bên kia trả cao hơn", ...)
-- "contact" nếu: AI/bot đã gửi tin nhắn đầu tiên, khách chưa phản hồi hoặc mới reply lần đầu
+- "contacted" nếu: AI/bot đã gửi tin nhắn đầu tiên, khách chưa phản hồi hoặc mới reply lần đầu
 - "chưa liên hệ được" nếu không rõ ràng
 
 CHỈ trả về JSON object. KHÔNG giải thích, KHÔNG markdown, KHÔNG text thêm.`

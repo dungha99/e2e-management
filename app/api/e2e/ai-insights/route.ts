@@ -115,13 +115,38 @@ export async function POST(request: Request) {
     let insightIdToUpdate = existingInsight?.id
 
     if (!insightIdToUpdate) {
-      // Create new placeholder if none exists
+      // Atomic: only insert if no insight exists for this car (prevents race condition
+      // where concurrent requests both see "no insight" and both trigger webhooks)
       const placeholderResult = await e2eQuery(
-        `INSERT INTO ai_insights (car_id, source_instance_id, ai_insight_summary, created_at) 
-         VALUES ($1, $2, $3, NOW()) 
+        `INSERT INTO ai_insights (car_id, source_instance_id, ai_insight_summary, created_at)
+         SELECT $1, $2, $3::jsonb, NOW()
+         WHERE NOT EXISTS (
+           SELECT 1 FROM ai_insights WHERE car_id = $1
+         )
          RETURNING id`,
         [carId, sourceInstanceId, JSON.stringify({ processing: true })]
       )
+
+      if (placeholderResult.rows.length === 0) {
+        // Another request just created the placeholder — re-check and return
+        const recheckResult = await e2eQuery(
+          `SELECT id, ai_insight_summary, EXTRACT(EPOCH FROM (NOW() - created_at)) as age_seconds
+           FROM ai_insights WHERE car_id = $1 ORDER BY created_at DESC LIMIT 1`,
+          [carId]
+        )
+        const raceWinner = recheckResult.rows[0]
+        if (raceWinner?.ai_insight_summary?.processing === true) {
+          return NextResponse.json({
+            processing: true,
+            message: "AI insights are already being processed.",
+          }, { status: 202 })
+        }
+        // If somehow it's already complete, return it
+        if (raceWinner) {
+          return await returnWithHistory(raceWinner)
+        }
+      }
+
       insightIdToUpdate = placeholderResult.rows[0].id
     }
 

@@ -419,26 +419,13 @@ export function AiThinkingChat({
     }
   }, [animationKey])
 
-  if (isLoading && !insights) {
-    return (
-      <div className="flex items-start gap-3 p-4 bg-indigo-50/50 rounded-xl border border-indigo-100 animate-pulse mt-6">
-        <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
-          <Loader2 className="h-4 w-4 text-indigo-600 animate-spin" />
-        </div>
-        <div className="flex-1 space-y-2">
-          <div className="h-4 bg-indigo-100 rounded w-1/4"></div>
-          <div className="h-3 bg-indigo-100 rounded w-3/4"></div>
-          <div className="h-3 bg-indigo-100 rounded w-1/2"></div>
-        </div>
-      </div>
-    )
-  }
+  // Only hide when there's truly nothing to show and not loading
+  if (!isLoading && (!insights || (!insights.analysis && !insights.history?.length))) return null
 
-  if (!insights || (!insights.analysis && !insights.history?.length)) return null
-
-  const analysis = insights.analysis as any
-  const { targetWorkflowName, history = [] } = insights
-  const isNew = insights.isNew && hasAnimated !== animationKey
+  const analysis = insights?.analysis as any
+  const targetWorkflowName = insights?.targetWorkflowName
+  const history = insights?.history || []
+  const isNew = insights?.isNew && hasAnimated !== animationKey
 
   return (
     <div className="bg-white rounded-lg p-3 sm:p-5 shadow-sm mb-4 flex flex-col gap-4">
@@ -496,6 +483,20 @@ export function AiThinkingChat({
           ref={scrollRef}
           className="max-h-[500px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-indigo-200 scrollbar-track-transparent space-y-6"
         >
+          {/* Loading skeleton when processing with no analysis yet */}
+          {isLoading && !analysis && (
+            <div className="flex items-start gap-3 p-4 bg-indigo-50/50 rounded-xl border border-indigo-100 animate-pulse">
+              <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                <Loader2 className="h-4 w-4 text-indigo-600 animate-spin" />
+              </div>
+              <div className="flex-1 space-y-2">
+                <div className="h-4 bg-indigo-100 rounded w-1/4"></div>
+                <div className="h-3 bg-indigo-100 rounded w-3/4"></div>
+                <div className="h-3 bg-indigo-100 rounded w-1/2"></div>
+              </div>
+            </div>
+          )}
+
           {/* History Loop - Only show when showHistory is true */}
           {showHistory && history.map((item, idx) => {
             const isExpanded = expandedIndices.includes(idx)

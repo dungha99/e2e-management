@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { enqueueMessage } from "@/lib/zalo-queue"
 
 export const dynamic = 'force-dynamic'
 
@@ -6,73 +7,49 @@ export async function POST(request: Request) {
   try {
     const body = await request.json()
 
-    console.log("[Zalo Proxy API] Received request:", {
-      send_from_number: body.send_from_number,
-      send_to_groupid: body.send_to_groupid,
-      message: body.message?.substring(0, 100),
-      imageCount: body.image_url?.length,
-    })
-
     const {
-      send_from_number,
-      send_to_groupid,
+      groupname,
       message,
       caption,
       image_url,
       action
     } = body
 
-    if (!send_from_number || !send_to_groupid || !message) {
+    console.log("[Zalo Proxy API] Received request:", {
+      groupname,
+      message: message?.substring(0, 100),
+      imageCount: image_url?.length,
+    })
+
+    if (!message) {
       return NextResponse.json(
-        { error: "Missing required fields: send_from_number, send_to_groupid, message" },
+        { error: "Missing required field: message" },
         { status: 400 }
       )
     }
 
-    const abitstoreUrl = "https://new.abitstore.vn/zalo/sendImageToGroupZalo/2/YenNhi/r4w2uwALscvaQ8d"
-
-    const payload = {
-      send_from_number,
-      send_to_groupid,
-      message,
-      caption: caption || " ",
-      image_url: image_url || [],
-      action: action || ""
-    }
-
-    console.log("[Zalo Proxy API] Forwarding to abitstore:", abitstoreUrl)
-    console.log("[Zalo Proxy API] Payload:", JSON.stringify(payload, null, 2))
-
-    const response = await fetch(abitstoreUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    })
-
-    console.log("[Zalo Proxy API] Response status:", response.status)
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error("[Zalo Proxy API] Error response:", errorText)
+    if (!groupname) {
       return NextResponse.json(
-        {
-          error: "Failed to send to abitstore",
-          details: errorText,
-          status: response.status
-        },
-        { status: response.status }
+        { error: "Missing required field: groupname" },
+        { status: 400 }
       )
     }
 
-    const responseData = await response.json()
-    console.log("[Zalo Proxy API] Success response:", responseData)
-
-    return NextResponse.json({
-      success: true,
-      data: responseData
+    // Enqueue — group_id will be resolved at send time per account
+    const { queueId } = await enqueueMessage({
+      group_name: groupname,
+      message,
+      caption,
+      image_url,
+      action,
     })
+
+    console.log("[Zalo Proxy API] Message enqueued:", { queueId, groupname })
+
+    return NextResponse.json(
+      { success: true, queued: true, queue_id: queueId, group_name: groupname },
+      { status: 202 }
+    )
 
   } catch (error) {
     console.error("[Zalo Proxy API] Error:", error)

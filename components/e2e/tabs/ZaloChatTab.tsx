@@ -101,7 +101,7 @@ export function ZaloChatTab({
 
       // Step 2: Call E2E webhook
       console.log("[E2E] Calling E2E webhook...")
-      const e2eResponse = await fetch("https://n8n.vucar.vn/webhook/bdb8f9b8-4b12-4a08-9a94-d0406e0d16b0", {
+      const e2eResponse = await fetch("https://n8nai.vucar.vn/webhook/e2e-chat-vucar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

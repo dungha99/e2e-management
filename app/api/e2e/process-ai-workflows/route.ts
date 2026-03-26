@@ -318,16 +318,14 @@ Bạn có quyền truy cập vào:
 # ĐỊNH DẠNG ĐẦU RA (OUTPUT FORMAT)
 Bạn CHỈ được trả về JSON object duy nhất.
 {
-  "messages": ["tin nhắn 1", "tin nhắn 2"],
-  "reasoning": "Tóm tắt lý do tại sao giữ nguyên hoặc sửa đổi tin nhắn (để Planner hiểu lý do)",
-  "status": "APPROVED / REVISED / REVISED_PLAN / EMPTY"
+  "reasoning": "Tóm tắt lý do tại sao giữ nguyên, bỏ qua, hoặc cần lên kế hoạch lại (để Planner hiểu lý do)",
+  "status": "APPROVED / EMPTY / REVISED_PLAN"
 }
 
 MÔ TẢ STATUS:
-- APPROVED: Tin nhắn phù hợp, giữ nguyên.
-- REVISED: Tin nhắn được chỉnh sửa nhỏ nhưng vẫn gửi đi.
+- APPROVED: Tin nhắn phù hợp, giữ nguyên và gửi đi.
 - EMPTY: Không cần gửi tin nhắn lúc này.
-- REVISED_PLAN: *Bối cảnh thực tế KHÔNG khớp với kế hoạch hiện tại.* Ví dụ: khách đã từ chối rõ ràng, hoặc cuộc hội thoại đã vượt qua bước này mà workflow chưa biết. Khi dùng status này, trả messages=[] và điền reasoning đầy đủ gồm: context_summary (tóm tắt ngữ cảnh), actions (các hành động AI nên làm tiếp theo), message_suggestions (gợi ý tin nhắn nếu AI quyết định gửi sau khi re-plan).
+- REVISED_PLAN: *Bối cảnh thực tế KHÔNG khớp với kế hoạch hiện tại.* Ví dụ: khách đã từ chối rõ ràng, hoặc cuộc hội thoại đã vượt qua bước này mà workflow chưa biết. Khi dùng status này, điền reasoning đầy đủ gồm: context_summary (tóm tắt ngữ cảnh), actions (các hành động AI nên làm tiếp theo), message_suggestions (gợi ý tin nhắn nếu AI quyết định gửi sau khi re-plan).
 
 # QUY ĐỊNH BẮT BUỘC
 - KHÔNG giải thích dài dòng ngoài phạm vi JSON.
@@ -348,9 +346,9 @@ MÔ TẢ STATUS:
                     const jsonMatch = geminiResult.match(/\{[\s\S]*\}/)
                     if (jsonMatch) {
                       const parsed = JSON.parse(jsonMatch[0])
-                      if (parsed && Array.isArray(parsed.messages)) {
+                      if (parsed && parsed.status) {
 
-                        // ── LEVEL 2: REVISED_PLAN ─────────────────────────────────────────────
+                        // ── REVISED_PLAN ─────────────────────────────────────────────
                         // Context does not match current workflow plan → trigger evaluate-step,
                         // skip this step entirely (do NOT send messages to customer).
                         if (parsed.status === "REVISED_PLAN") {
@@ -362,7 +360,7 @@ MÔ TẢ STATUS:
                             : {
                               context_summary: typeof parsed.reasoning === "string" ? parsed.reasoning : "Context mismatch detected by script evaluator",
                               actions: parsed.actions || [],
-                              message_suggestions: parsed.messages || [],
+                              message_suggestions: parsed.message_suggestions || [],
                             }
 
                           // Call evaluate-step in background (non-blocking)
@@ -393,23 +391,29 @@ MÔ TẢ STATUS:
                           break
                         }
 
-                        // ── LEVEL 1: APPROVED / REVISED / EMPTY ──────────────────────────────
-                        // Normal path: update messages and continue to send
-                        requestPayload.messages = parsed.messages
-                        execution.request_payload = requestPayload
+                        // ── EMPTY ────────────────────────────────────────────────────
+                        // No messages needed — clear the messages array
+                        if (parsed.status === "EMPTY") {
+                          requestPayload.messages = []
+                          execution.request_payload = requestPayload
 
-                        await e2eQuery(
-                          `UPDATE step_executions SET request_payload = $1 WHERE id = $2`,
-                          [JSON.stringify(requestPayload), execution.id]
-                        )
-                        console.log(`[Process AI Workflows] AI Script Evaluator (Level 1) rewrote messages. Status=${parsed.status}`)
+                          await e2eQuery(
+                            `UPDATE step_executions SET request_payload = $1 WHERE id = $2`,
+                            [JSON.stringify(requestPayload), execution.id]
+                          )
+                          console.log(`[Process AI Workflows] AI Script Evaluator: EMPTY — cleared messages`)
+                        } else {
+                          // ── APPROVED ──────────────────────────────────────────────────
+                          // Messages are fine as-is, no changes needed
+                          console.log(`[Process AI Workflows] AI Script Evaluator: APPROVED — keeping original messages`)
+                        }
 
                         storeAgentOutput({
                           agentName: "Review Messages Scheduled",
                           carId: instance.car_id,
                           sourceInstanceId: instance.id,
                           inputPayload: prompt,
-                          outputPayload: { ...parsed, level: 1 },
+                          outputPayload: { ...parsed, level: parsed.status === "EMPTY" ? 1 : 0 },
                         }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
                       }
                     }
@@ -460,13 +464,49 @@ MÔ TẢ STATUS:
           console.log(`[Process AI Workflows] Step "${execution.step_name}" → ${connectorSuccess ? 'success' : 'failed'}`)
 
           if (!connectorSuccess) {
-            result.stoppedReason = "step_failed"
-            result.error = errorMessage || undefined
-            // Mark instance as failed on step failure
-            await e2eQuery(
-              `UPDATE workflow_instances SET status = 'failed' WHERE id = $1`,
-              [instance.id]
-            )
+            const currentRetryCount = execution.retry_count || 0
+            const maxRetries = 3
+
+            if (currentRetryCount < maxRetries) {
+              // Retry: reset step to pending, schedule 30 minutes later, increment retry_count
+              const retryNumber = currentRetryCount + 1
+              const delayMinutes = 30
+              console.log(`[Process AI Workflows] Step "${execution.step_name}" failed, scheduling retry ${retryNumber}/${maxRetries} in ${delayMinutes} minutes`)
+              // NOW() returns UTC on Vercel, but scheduled_at is stored as VN time (UTC+7)
+              await e2eQuery(
+                `UPDATE step_executions
+                 SET status = 'pending',
+                     scheduled_at = NOW() + INTERVAL '7 hours 30 minutes',
+                     retry_count = $1,
+                     error_message = $2,
+                     completed_at = NULL
+                 WHERE id = $3`,
+                [retryNumber, errorMessage, execution.id]
+              )
+
+              // Also delay all subsequent pending steps with explicit schedules by the same amount
+              await e2eQuery(
+                `UPDATE step_executions
+                 SET scheduled_at = scheduled_at + INTERVAL '${delayMinutes} minutes'
+                 WHERE instance_id = $1
+                   AND status = 'pending'
+                   AND id != $2
+                   AND scheduled_at IS NOT NULL`,
+                [instance.id, execution.id]
+              )
+
+              result.stoppedReason = "step_retry_scheduled"
+              result.error = `Retry ${retryNumber}/${maxRetries} scheduled in ${delayMinutes} minutes: ${errorMessage}`
+            } else {
+              // Max retries exhausted — mark as permanently failed
+              console.error(`[Process AI Workflows] Step "${execution.step_name}" failed after ${maxRetries} retries`)
+              result.stoppedReason = "step_failed"
+              result.error = errorMessage || undefined
+              await e2eQuery(
+                `UPDATE workflow_instances SET status = 'failed' WHERE id = $1`,
+                [instance.id]
+              )
+            }
             continueLoop = false
             break
           }

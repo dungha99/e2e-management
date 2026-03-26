@@ -17,7 +17,9 @@ export const dynamic = "force-dynamic"
  *   lead_id: string,
  *   properties: {
  *     location, brand, model, variant, year, mileage, plate,
- *     qualified, stage, price_customer
+ *     qualified, stage, price_customer, price_vucar_offered,
+ *     negotiation_rounds, had_image,
+ *     info_collected_at, price_vucar_offered_at, inspection_booked_at
  *   }
  * }
  */
@@ -50,7 +52,12 @@ Từ đoạn tóm tắt được cung cấp, hãy trích xuất các thông tin 
   "qualified": "Xem logic qualified bên dưới",
   "stage": "Xem logic stage bên dưới",
   "price_customer": "Giá khách muốn bán (số nguyên VND, VD: nếu khách nói '700tr' thì 700000000, nếu '1,2 tỷ' thì 1200000000). null nếu không có đề cập.",
-  "had_image": "Khách đã gửi hình ảnh chưa (true/false)."
+  "price_vucar_offered": "Mức giá Vucar/AI/Staff đã chào cho khách (số nguyên VND, lấy giá MỚI NHẤT). VD: 'Vucar báo giá 230 triệu' → 230000000. null nếu chưa chào giá.",
+  "negotiation_rounds": "Số lần price_customer thay đổi giá trị. Bắt đầu từ 0, tăng 1 mỗi khi khách thay đổi mức giá yêu cầu (không đếm lần đầu nêu giá).",
+  "had_image": "Khách đã gửi hình ảnh chưa (true/false).",
+  "info_collected_at": "ISO timestamp của thời điểm đầu tiên khách gửi ảnh xe. null nếu chưa gửi ảnh.",
+  "price_vucar_offered_at": "ISO timestamp của thời điểm đầu tiên Vucar/AI/Staff chào giá cho khách. null nếu chưa chào giá.",
+  "inspection_booked_at": "ISO timestamp của thời điểm đầu tiên khách đồng ý hẹn kiểm định có tín hiệu rõ ràng ('đồng ý xem xe', 'hẹn kiểm định lúc X giờ', 'kỹ thuật sẽ đến'). null nếu chỉ 'đang cố gắng hẹn' hoặc chưa hẹn."
 }
 
 LOGIC QUALIFIED:

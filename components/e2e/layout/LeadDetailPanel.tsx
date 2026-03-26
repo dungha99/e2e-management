@@ -33,6 +33,10 @@ import { useToast } from "@/hooks/use-toast"
 import { useWorkflowInstances } from "@/hooks/use-leads"
 import { useDecoySignals } from "@/hooks/use-decoy-signals"
 import { useAccounts } from "@/contexts/AccountsContext"
+import { CallBotAction } from "../actions/CallBotAction"
+import { BookInspectionAction } from "../actions/BookInspectionAction"
+import { FollowUpAction } from "../actions/FollowUpAction"
+import { SendNotificationAction } from "../actions/SendNotificationAction"
 
 interface LeadDetailPanelProps {
   selectedAccount: string | null
@@ -226,181 +230,6 @@ export function LeadDetailPanel({
   // Decoy signals for new reply detection
   const { hasNewReplies, markAsRead } = useDecoySignals()
   const hasNewDecoyReplies = selectedLead ? hasNewReplies(selectedLead.id, selectedLead.total_decoy_messages) : false
-
-  // ZNS notification state
-  interface ZnsTemplate {
-    code: string
-    name: string
-    description?: string
-  }
-  const [znsTemplates, setZnsTemplates] = useState<ZnsTemplate[]>([])
-  const [loadingTemplates, setLoadingTemplates] = useState(false)
-  const [sendingZns, setSendingZns] = useState(false)
-  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
-  const [selectedTemplate, setSelectedTemplate] = useState<ZnsTemplate | null>(null)
-  const [templatesDropdownOpen, setTemplatesDropdownOpen] = useState(false)
-  const [templatesFetched, setTemplatesFetched] = useState(false)
-
-  // Fetch templates when dropdown opens (only once)
-  useEffect(() => {
-    if (templatesDropdownOpen && !templatesFetched && !loadingTemplates) {
-      setLoadingTemplates(true)
-      fetch('/api/e2e/notification-templates')
-        .then(res => res.json())
-        .then(response => {
-          // API returns { success: true, data: [...], count: N }
-          if (response.success && Array.isArray(response.data)) {
-            setZnsTemplates(response.data)
-          } else if (Array.isArray(response)) {
-            // Fallback in case API returns array directly
-            setZnsTemplates(response)
-          }
-          setTemplatesFetched(true)
-        })
-        .catch(err => {
-          console.error('[ZNS Templates] Failed to fetch:', err)
-          toast({
-            title: "Lỗi",
-            description: "Không thể tải danh sách template ZNS",
-            variant: "destructive",
-          })
-          setTemplatesFetched(true) // Mark as fetched even on error to prevent retry spam
-        })
-        .finally(() => setLoadingTemplates(false))
-    }
-  }, [templatesDropdownOpen, templatesFetched, loadingTemplates, toast])
-
-  // Handle template selection - show confirmation
-  const handleTemplateSelect = (template: ZnsTemplate) => {
-    setSelectedTemplate(template)
-    setConfirmDialogOpen(true)
-  }
-
-  // Handle ZNS send confirmation
-  const handleSendZns = async () => {
-    if (!selectedTemplate || !selectedLead) return
-
-    const phone = selectedLead.phone || selectedLead.additional_phone
-    if (!phone) {
-      toast({
-        title: "Lỗi",
-        description: "Không tìm thấy số điện thoại của lead",
-        variant: "destructive",
-      })
-      setConfirmDialogOpen(false)
-      return
-    }
-
-    setSendingZns(true)
-    try {
-      const response = await fetch('/api/e2e/send-notification', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: selectedTemplate.code,
-          phoneNumbers: [phone],
-          leadId: selectedLead.id,
-        }),
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        toast({
-          title: "Thành công",
-          description: `Đã gửi ZNS "${selectedTemplate.name}" thành công`,
-        })
-      } else {
-        throw new Error(data.error || 'Gửi ZNS thất bại')
-      }
-    } catch (error) {
-      console.error('[ZNS Send] Error:', error)
-      toast({
-        title: "Lỗi",
-        description: error instanceof Error ? error.message : "Gửi ZNS thất bại",
-        variant: "destructive",
-      })
-    } finally {
-      setSendingZns(false)
-      setConfirmDialogOpen(false)
-      setSelectedTemplate(null)
-    }
-  }
-
-  // Handle Follow Up
-  const [isFollowUpLoading, setIsFollowUpLoading] = useState(false)
-  const handleFollowUp = async () => {
-    if (!selectedLead) return
-
-    const phone = selectedLead.phone || selectedLead.additional_phone
-    if (!phone) {
-      toast({
-        title: "Lỗi",
-        description: "Không tìm thấy số điện thoại của lead",
-        variant: "destructive",
-      })
-      return
-    }
-
-    setIsFollowUpLoading(true)
-    try {
-      const response = await fetch('https://n8n.vucar.vn/webhook/7c06fc96-f8dc-4c5d-af17-57c2bab57864', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ phone }),
-      })
-
-      if (response.ok) {
-        toast({
-          title: "Thành công",
-          description: "Đã gửi yêu cầu Follow up",
-        })
-
-        // Log activity
-        try {
-          await fetch('/api/e2e/log-activity', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              leadId: selectedLead.id,
-              activityType: 'BOT_FOLLOW_UP_SENT',
-              actorType: 'USER',
-              metadata: {
-                field_name: 'bot_follow_up',
-                new_value: 'Triggered manually',
-                channel: 'SYSTEM'
-              },
-              field: 'bot_follow_up'
-            }),
-          })
-
-          // Refresh activity list if needed
-          if (onWorkflowActivated) {
-            // This might not be the right callback but it triggers a refresh in some parents
-            // For now just logging is enough as per requirement
-          }
-        } catch (logError) {
-          console.error('[Follow Up] Failed to log activity:', logError)
-        }
-
-      } else {
-        throw new Error('Gửi yêu cầu thất bại')
-      }
-    } catch (error) {
-      console.error('[Follow Up] Error:', error)
-      toast({
-        title: "Lỗi",
-        description: "Có lỗi xảy ra khi gửi yêu cầu",
-        variant: "destructive",
-      })
-    } finally {
-      setIsFollowUpLoading(false)
-    }
-  }
 
   // Collect all car images for gallery
   const galleryImages = useMemo(() => {
@@ -602,7 +431,9 @@ export function LeadDetailPanel({
               <div className="flex-1 min-w-0">
                 {/* Name Row - Stacked on mobile */}
                 <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
-                  <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{selectedLead.name}</h2>
+                  <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">
+                    {`${selectedLead.phone || selectedLead.additional_phone || "N/A"} - ${formatCarInfo(selectedLead)}`}
+                  </h2>
                   <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                     <div className="flex items-center gap-1 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md bg-gray-50 border border-gray-200">
                       <Button
@@ -749,112 +580,16 @@ export function LeadDetailPanel({
               </Button>
 
               {/* Secondary Actions - Important actions with colored background */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={callingBot}
-                    className="bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100 hover:border-orange-300 text-xs sm:text-sm"
-                  >
-                    {callingBot ? (
-                      <Loader2 className="h-3.5 sm:h-4 w-3.5 sm:w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <PhoneCall className="h-3.5 sm:h-4 w-3.5 sm:w-4 mr-1.5 sm:mr-2" />
-                        <span className="hidden sm:inline">GỌI BOT</span>
-                        <span className="sm:hidden">Gọi</span>
-                      </>
-                    )}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuItem onClick={() => onCallBot('CHECK_VAR')}>
-                    Check Var (Còn bán không?)
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onCallBot('FIRST_CALL')}>
-                    First Call (Lấy thông tin)
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <CallBotAction onCallBot={onCallBot} loading={callingBot} />
 
               {/* Primary Action - Main CTA with prominent styling */}
-              <Button
-                size="sm"
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm shadow-sm"
-                onClick={onOpenInspection}
-              >
-                <span className="hidden sm:inline">Đặt lịch KD</span>
-                <span className="sm:hidden">Lịch KD</span>
-              </Button>
+              <BookInspectionAction onClick={onOpenInspection} />
 
               {/* Follow Up Button */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleFollowUp}
-                disabled={isFollowUpLoading}
-                className="bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100 hover:border-purple-300 text-xs sm:text-sm"
-              >
-                {isFollowUpLoading ? (
-                  <Loader2 className="h-3.5 sm:h-4 w-3.5 sm:w-4 animate-spin" />
-                ) : (
-                  <>
-                    <Bell className="h-3.5 sm:h-4 w-3.5 sm:w-4 mr-1.5 sm:mr-2" />
-                    <span className="hidden sm:inline">Follow up</span>
-                    <span className="sm:hidden">Follow</span>
-                  </>
-                )}
-              </Button>
+              <FollowUpAction lead={selectedLead} onSuccess={onWorkflowActivated} />
 
               {/* Secondary Action - ZNS Notification Button */}
-              <DropdownMenu open={templatesDropdownOpen} onOpenChange={setTemplatesDropdownOpen}>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={sendingZns}
-                    className="bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100 hover:border-blue-300 text-xs sm:text-sm"
-                  >
-                    {sendingZns ? (
-                      <Loader2 className="h-3.5 sm:h-4 w-3.5 sm:w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Send className="h-3.5 sm:h-4 w-3.5 sm:w-4 mr-1.5 sm:mr-2" />
-                        <span className="hidden sm:inline">Gửi noti</span>
-                        <span className="sm:hidden">Noti</span>
-                      </>
-                    )}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
-                  {loadingTemplates ? (
-                    <div className="flex items-center justify-center p-4">
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      <span className="text-sm text-gray-500">Đang tải...</span>
-                    </div>
-                  ) : znsTemplates.length === 0 ? (
-                    <div className="p-4 text-sm text-gray-500 text-center">
-                      Không có template nào
-                    </div>
-                  ) : (
-                    znsTemplates.map((template) => (
-                      <DropdownMenuItem
-                        key={template.code}
-                        onClick={() => handleTemplateSelect(template)}
-                        className="cursor-pointer"
-                      >
-                        <div className="flex flex-col">
-                          <span className="font-medium">{template.name}</span>
-                          {template.description && (
-                            <span className="text-xs text-gray-500">{template.description}</span>
-                          )}
-                        </div>
-                      </DropdownMenuItem>
-                    ))
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <SendNotificationAction lead={selectedLead} />
             </div>
           </div>
 
@@ -1031,34 +766,6 @@ export function LeadDetailPanel({
           onIndexChange={setSelectedImageIndex}
         />
 
-        {/* ZNS Send Confirmation Dialog */}
-        <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Xác nhận gửi ZNS</AlertDialogTitle>
-              <AlertDialogDescription>
-                Bạn có chắc chắn muốn gửi ZNS <strong>"{selectedTemplate?.name}"</strong> đến số điện thoại <strong>{selectedLead?.phone || selectedLead?.additional_phone}</strong>?
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={sendingZns}>Hủy</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleSendZns}
-                disabled={sendingZns}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                {sendingZns ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Đang gửi...
-                  </>
-                ) : (
-                  'Gửi'
-                )}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </div>
 
       {/* Mobile Bottom Action Bar - App-like navigation */}

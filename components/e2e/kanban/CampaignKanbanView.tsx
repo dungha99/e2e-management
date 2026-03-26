@@ -699,9 +699,9 @@ export function CampaignKanbanView({ picId }: CampaignKanbanViewProps) {
                             >
                                 <div className="flex items-center gap-3">
                                     <div className={`w-3 h-3 rounded-full ${index % 4 === 0 ? "bg-orange-500" :
-                                            index % 4 === 1 ? "bg-blue-500" :
-                                                index % 4 === 2 ? "bg-green-500" :
-                                                    "bg-purple-500"
+                                        index % 4 === 1 ? "bg-blue-500" :
+                                            index % 4 === 2 ? "bg-green-500" :
+                                                "bg-purple-500"
                                         }`} />
                                     <span className="font-medium">{workflow.name}</span>
                                     <span className="text-sm text-gray-500">- {workflow.instances.length} items</span>

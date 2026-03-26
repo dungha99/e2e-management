@@ -7,7 +7,7 @@ import { Menu, User, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface NavigationHeaderProps {
-  currentPage: "dashboard" | "campaigns" | "e2e" | "workflow" | "lead-monitor" | "lead-management" | "ai-performance"
+  currentPage: "dashboard" | "campaigns" | "e2e" | "workflow" | "lead-monitor" | "lead-management" | "ai-performance" | "funnel"
   selectedAccount?: string
   accountSelector?: React.ReactNode
   // legacy — kept for backward compat, unused in new design
@@ -19,6 +19,7 @@ interface NavigationHeaderProps {
 const NAV_ITEMS = [
   { value: "dashboard",        label: "AI Performance",      href: "/" },
   { value: "e2e",              label: "Quản lý E2E",         href: (id: string) => `/e2e/${id}?tab=priority&page=1` },
+  { value: "funnel",           label: "Phân tích Funnel",    href: (id: string) => `/e2e/${id}/funnel` },
   { value: "lead-monitor",     label: "Lead Monitor",        href: "/lead-monitor" },
   { value: "workflow",         label: "Quản lý Workflow",    href: "/workflow-management" },
 ]

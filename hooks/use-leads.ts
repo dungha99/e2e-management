@@ -3,12 +3,13 @@ import { useQuery } from "@tanstack/react-query"
 interface LeadsCounts {
   priority: number
   nurture: number
+  followUp: number
   total: number
 }
 
 interface LeadsParams {
   uid: string
-  tab: "priority" | "nurture"
+  tab: "priority" | "nurture" | "follow-up"
   page: number
   per_page: number
   search?: string

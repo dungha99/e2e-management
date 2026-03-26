@@ -110,6 +110,7 @@ export async function POST(request: Request) {
         price_highest_bid: leadData.price_highest_bid || null,
         stage: leadData.stage || "UNDEFINED",
         first_message_sent,
+        messages_zalo: messagesZalo,
         session_created,
         notes: leadData.notes || null,
         qualified: leadData.qualified || null,

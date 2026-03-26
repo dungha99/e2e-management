@@ -22,7 +22,9 @@ export const dynamic = "force-dynamic"
  *   summary: { text: string, offset: number },
  *   properties: {
  *     location, brand, model, variant, year, mileage, plate,
- *     qualified, stage, price_customer
+ *     qualified, stage, price_customer, price_vucar_offered,
+ *     negotiation_rounds, had_image,
+ *     info_collected_at, price_vucar_offered_at, inspection_booked_at
  *   }
  * }
  */
@@ -127,8 +129,22 @@ Từ đoạn tóm tắt được cung cấp, hãy trích xuất các thông tin 
   "qualified": "Xem logic qualified bên dưới",
   "stage": "Xem logic stage bên dưới",
   "price_customer": "Giá khách muốn bán HIỆN TẠI (số nguyên VND, VD: nếu khách nói '700tr' thì 700000000, nếu '1,2 tỷ' thì 1200000000). Nếu giá đã thay đổi qua đàm phán, lấy giá MỚI NHẤT khách đề nghị. null nếu không có đề cập.",
-  "had_image": "Khách đã gửi hình ảnh chưa (true/false)."
+  "price_vucar_offered": "Mức giá Vucar/AI/Staff đã chào cho khách (số nguyên VND, lấy giá MỚI NHẤT). VD: 'Vucar báo giá 230 triệu' → 230000000. null nếu chưa chào giá.",
+  "negotiation_rounds": "Số lần price_customer thay đổi giá trị (đếm lũy tiến). Bắt đầu từ 0, tăng 1 mỗi khi khách thay đổi mức giá yêu cầu. Nếu có previous_properties, cộng thêm vào giá trị cũ.",
+  "had_image": "Khách đã gửi hình ảnh chưa (true/false).",
+  "info_collected_at": "ISO timestamp của thời điểm đầu tiên khách gửi ảnh xe (had_image = true). Lấy từ timestamp của tin nhắn chứa ảnh đầu tiên. null nếu chưa gửi ảnh. Nếu previous_properties đã có giá trị, giữ nguyên giá trị cũ.",
+  "price_vucar_offered_at": "ISO timestamp của thời điểm đầu tiên Vucar/AI/Staff chào giá cho khách. Lấy từ timestamp của tin nhắn chào giá đầu tiên. null nếu chưa chào giá. Nếu previous_properties đã có giá trị, giữ nguyên giá trị cũ.",
+  "inspection_booked_at": "ISO timestamp của thời điểm đầu tiên khách đồng ý hẹn kiểm định có tín hiệu rõ ràng ('đồng ý xem xe', 'hẹn kiểm định lúc X giờ', 'kỹ thuật sẽ đến'). null nếu chỉ 'đang cố gắng hẹn' hoặc chưa hẹn. Nếu previous_properties đã có giá trị, giữ nguyên giá trị cũ."
 }
+
+LOGIC NEGOTIATION_ROUNDS:
+- Đếm số lần khách THAY ĐỔI mức giá yêu cầu trong cuộc hội thoại (không đếm lần đầu nêu giá).
+- VD: Khách nói "700tr" → sau đó "680tr" → sau đó "650tr" = negotiation_rounds: 2 (2 lần thay đổi).
+- Nếu có previous_properties.negotiation_rounds, cộng thêm số lần thay đổi MỚI trong đoạn chat mới.
+
+LOGIC SLA TIMESTAMPS:
+- info_collected_at, price_vucar_offered_at, inspection_booked_at: CHỈ set lần đầu tiên. Nếu previous_properties đã có giá trị (khác null), LUÔN giữ nguyên giá trị cũ, KHÔNG ghi đè.
+- Nếu previous_properties chưa có giá trị (null) và tóm tắt mới cho thấy sự kiện đã xảy ra, hãy lấy timestamp gần đúng nhất từ nội dung chat.
 
 LOGIC QUALIFIED:
 - Nếu trong tóm tắt có đề cập khách đã gửi ảnh xe → "strong_qualified"

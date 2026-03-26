@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, DollarSign, Play, Zap, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp, Info } from "lucide-react"
+import { CheckCircle, XCircle, DollarSign, Play, Zap, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp, Info } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition, WinCaseHistory, AiInsight, AiInsightHistory } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
@@ -293,6 +293,52 @@ export function WorkflowTrackerTab({
   workflowInstancesData,
   onWorkflowActivated
 }: WorkflowTrackerTabProps) {
+  // Zalo action status (fetched on mount and after each action)
+  const [firstMessageDone, setFirstMessageDone] = useState(false)
+  const [firstMessageFailed, setFirstMessageFailed] = useState(false)
+  const [renameDone, setRenameDone] = useState(false)
+  const prevSendingMessage = useRef(sendingMessage)
+  const prevRenamingLead = useRef(renamingLead)
+
+  const fetchZaloActionStatuses = useCallback(async () => {
+    if (!selectedLead?.car_id) return
+    const carId = encodeURIComponent(selectedLead.car_id)
+    try {
+      const [firstMsg, rename] = await Promise.all([
+        fetch(`/api/akabiz/check-zalo-action?car_id=${carId}&action_type=firstMessage`).then(r => r.json()),
+        fetch(`/api/akabiz/check-zalo-action?car_id=${carId}&action_type=rename`).then(r => r.json()),
+      ])
+      setFirstMessageDone(firstMsg.success === true)
+      setFirstMessageFailed(firstMsg.failed === true)
+      setRenameDone(rename.success === true)
+    } catch {
+      // non-fatal
+    }
+  }, [selectedLead?.car_id])
+
+  // Load on mount / lead change
+  useEffect(() => {
+    setFirstMessageDone(false)
+    setFirstMessageFailed(false)
+    setRenameDone(false)
+    fetchZaloActionStatuses()
+  }, [selectedLead?.car_id])
+
+  // Re-fetch after sendingMessage or renamingLead finishes
+  useEffect(() => {
+    if (prevSendingMessage.current && !sendingMessage) {
+      fetchZaloActionStatuses()
+    }
+    prevSendingMessage.current = sendingMessage
+  }, [sendingMessage])
+
+  useEffect(() => {
+    if (prevRenamingLead.current && !renamingLead) {
+      fetchZaloActionStatuses()
+    }
+    prevRenamingLead.current = renamingLead
+  }, [renamingLead])
+
   // Local state for inline editing
   const [editingBidId, setEditingBidId] = useState<string | null>(null)
   const [editingPrice, setEditingPrice] = useState("")

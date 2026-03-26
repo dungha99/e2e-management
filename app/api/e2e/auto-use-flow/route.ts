@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { storeAgentOutput, getActiveAgentNote } from "@/lib/ai-agent-service"
 import { getAgentTools, executeToolCall } from "@/lib/agent-tools"
+import { searchPicRAG, getLastCustomerMessage, formatRAGExamples } from "@/lib/pic-rag-search"
 
 /**
  * POST /api/e2e/auto-use-flow
@@ -391,7 +392,8 @@ async function callGeminiForParameters(
   picId: string,
   carId: string,
   phoneNumber: string,
-  workerAgentNote?: string | null
+  workerAgentNote?: string | null,
+  ragExamplesContext?: string | null
 ): Promise<any[]> {
   const geminiHost = process.env.GEMINI_HOST || "https://generativelanguage.googleapis.com"
   const geminiApiKey = process.env.GEMINI_API_KEY
@@ -492,10 +494,13 @@ CHỈ trả về MỘT object JSON duy nhất:
 
 CHỈ TRẢ VỀ JSON, KHÔNG GIẢI THÍCH.`
 
+    const ragSection = ragExamplesContext ? `\n=== RAG EXAMPLES (Similar successful conversations from this PIC) ===\nDưới đây là các ví dụ từ những cuộc hội thoại thành công tương tự, hãy tham khảo phong cách và cách tiếp cận:\n${ragExamplesContext}\n` : ""
+
     const userPrompt = `
 ${todayInfo}
 
 ${leadContext}
+${ragSection}
 ${previousStepContext}
 
 === CURRENT STEP TO FILL (Step ${idx + 1} of ${steps.length}) ===
@@ -650,10 +655,34 @@ export async function POST(request: Request) {
     )
     const phoneNumber = phoneResult.rows[0]?.phone || phoneResult.rows[0]?.additional_phone || ""
 
-    // --- 3. Load connector schemas ---
-    const stepSchemas = await Promise.all(
-      extractedSteps.map(step => loadConnectorSchema(step.connectorId))
-    )
+    // --- 3. Load connector schemas + RAG examples in parallel ---
+    const [stepSchemas, ragExamplesContext] = await Promise.all([
+      Promise.all(extractedSteps.map(step => loadConnectorSchema(step.connectorId))),
+      (async () => {
+        try {
+          const messagesResult = await vucarV2Query(
+            `SELECT ss.messages_zalo FROM cars c
+             LEFT JOIN sale_status ss ON ss.car_id = c.id
+             WHERE c.id = $1 LIMIT 1`,
+            [carId]
+          )
+          const messagesZalo = messagesResult.rows[0]?.messages_zalo
+          const lastCustomerMsg = getLastCustomerMessage(messagesZalo)
+          if (!lastCustomerMsg) {
+            console.log("[Auto Use Flow] No customer message found for RAG")
+            return null
+          }
+          console.log(`[Auto Use Flow] RAG query with last customer message: "${lastCustomerMsg.slice(0, 100)}"`)
+          const ragResults = await searchPicRAG(picId || null, lastCustomerMsg, 5)
+          const formatted = formatRAGExamples(ragResults)
+          console.log(`[Auto Use Flow] RAG returned ${ragResults.length} examples`)
+          return formatted || null
+        } catch (err) {
+          console.error("[Auto Use Flow] RAG search failed (non-blocking):", err)
+          return null
+        }
+      })(),
+    ])
 
     // --- 4. Call Gemini to decide parameters ---
     const workerAgentNote = await getActiveAgentNote("Worker (Parameter/Rule)")
@@ -664,7 +693,8 @@ export async function POST(request: Request) {
       picId,
       carId,
       phoneNumber,
-      workerAgentNote
+      workerAgentNote,
+      ragExamplesContext
     )
 
     console.log(`[Auto Use Flow] Gemini decided parameters for ${geminiResults.length} steps`)

@@ -10,14 +10,16 @@ export async function GET(request: Request) {
         const dateFrom = searchParams.get("dateFrom") // e.g. 2026-03-01
         const dateTo = searchParams.get("dateTo")     // e.g. 2026-03-31
 
-        if (!picId) {
-            return NextResponse.json({ error: "pic_id is required" }, { status: 400 })
-        }
-
         // --- Build base conditions for CRM Db ---
-        const crmConditions = [`l.pic_id = $1`]
-        const crmParams: any[] = [picId]
-        let paramIdx = 2
+        const crmConditions: string[] = []
+        const crmParams: any[] = []
+        let paramIdx = 1
+
+        if (picId && picId !== 'all') {
+            crmConditions.push(`l.pic_id = $${paramIdx}`)
+            crmParams.push(picId)
+            paramIdx++
+        }
 
         if (dateFrom) {
             crmConditions.push(`l.created_at >= $${paramIdx}::timestamp`)
@@ -33,142 +35,302 @@ export async function GET(request: Request) {
 
         // 1. Tổng leads
         const totalLeadsRes = await vucarV2Query(`
-      SELECT COUNT(DISTINCT l.id) AS cnt
-      FROM leads l
-      WHERE ${crmWhere}
-    `, crmParams)
+            SELECT COUNT(DISTINCT l.phone) AS cnt
+            FROM leads l
+            WHERE ${crmWhere}
+        `, crmParams)
         const totalLeads = parseInt(totalLeadsRes.rows[0]?.cnt || "0", 10)
 
         // 2a. Đã có hình (STRONG_QUALIFIED)
         const hasImageRes = await vucarV2Query(`
-      SELECT COUNT(DISTINCT l.id) AS cnt
-      FROM leads l
-      LEFT JOIN cars c ON c.lead_id = l.id
-      LEFT JOIN sale_status ss ON ss.car_id = c.id
-      WHERE ${crmWhere}
-        AND ss.qualified = 'STRONG_QUALIFIED'
-    `, crmParams)
+            SELECT COUNT(DISTINCT l.phone) AS cnt
+            FROM leads l
+            LEFT JOIN cars c ON c.lead_id = l.id
+            LEFT JOIN sale_status ss ON ss.car_id = c.id
+            WHERE ${crmWhere}
+              AND ss.qualified::text = 'STRONG_QUALIFIED'
+        `, crmParams)
         const hasImageCount = parseInt(hasImageRes.rows[0]?.cnt || "0", 10)
 
-        // 2b. Chưa có hình (or NULL) -> We also need their phones for cross-checking
+        // 2b. Chưa có hình (or NULL) -> Get their phones and message stats
         const noImagePhonesRes = await vucarV2Query(`
-      SELECT DISTINCT l.phone
-      FROM leads l
-      LEFT JOIN cars c ON c.lead_id = l.id
-      LEFT JOIN sale_status ss ON ss.car_id = c.id
-      WHERE ${crmWhere}
-        AND (ss.qualified != 'STRONG_QUALIFIED' OR ss.qualified IS NULL)
-        AND l.phone IS NOT NULL
-    `, crmParams)
+            SELECT DISTINCT l.phone,
+                   MAX(CASE 
+                     WHEN ss.messages_zalo IS NOT NULL 
+                      AND ss.messages_zalo != 'null'::jsonb 
+                      AND jsonb_array_length(ss.messages_zalo) > 0 
+                     THEN 1 ELSE 0 
+                   END) AS has_messages_zalo,
+                   SUM(CASE WHEN ss.messages_zalo IS NOT NULL THEN (
+                     SELECT COUNT(*) FROM jsonb_array_elements(ss.messages_zalo) m
+                     WHERE m->>'uidFrom' = '0'
+                   ) ELSE 0 END) AS msgs_from_sale,
+                   SUM(CASE WHEN ss.messages_zalo IS NOT NULL THEN (
+                     SELECT COUNT(*) FROM jsonb_array_elements(ss.messages_zalo) m
+                     WHERE m->>'uidFrom' != '0'
+                   ) ELSE 0 END) AS msgs_from_customer,
+                   COALESCE(
+                     MAX(CASE WHEN ss.messages_zalo IS NOT NULL AND jsonb_array_length(ss.messages_zalo) > 0
+                       THEN (
+                         SELECT MAX((m->>'dateAction')::timestamptz)
+                         FROM jsonb_array_elements(ss.messages_zalo) m
+                         WHERE m->>'dateAction' IS NOT NULL AND m->>'dateAction' != ''
+                       )
+                     END),
+                     MAX(l.created_at)
+                   ) AS last_msg_at,
+                   COALESCE(
+                     MAX(CASE WHEN ss.messages_zalo IS NOT NULL AND jsonb_array_length(ss.messages_zalo) > 0
+                       THEN (
+                         SELECT MAX((m->>'dateAction')::timestamptz)
+                         FROM jsonb_array_elements(ss.messages_zalo) m
+                         WHERE m->>'uidFrom' = '0'
+                           AND m->>'dateAction' IS NOT NULL AND m->>'dateAction' != ''
+                       )
+                     END),
+                     MAX(l.created_at)
+                   ) AS last_sale_msg_at
+            FROM leads l
+            LEFT JOIN cars c ON c.lead_id = l.id
+            LEFT JOIN sale_status ss ON ss.car_id = c.id
+            WHERE ${crmWhere}
+              AND (ss.qualified::text != 'STRONG_QUALIFIED' OR ss.qualified IS NULL)
+              AND l.phone IS NOT NULL
+            GROUP BY l.phone
+        `, crmParams)
 
-        // Some leads might not have a phone, but the count of leads without image is:
-        // Actually, to perfectly match the UI count:
         const noImageCountRes = await vucarV2Query(`
-      SELECT COUNT(DISTINCT l.id) AS cnt
-      FROM leads l
-      LEFT JOIN cars c ON c.lead_id = l.id
-      LEFT JOIN sale_status ss ON ss.car_id = c.id
-      WHERE ${crmWhere}
-        AND (ss.qualified != 'STRONG_QUALIFIED' OR ss.qualified IS NULL)
-    `, crmParams)
+            SELECT COUNT(DISTINCT l.phone) AS cnt
+            FROM leads l
+            LEFT JOIN cars c ON c.lead_id = l.id
+            LEFT JOIN sale_status ss ON ss.car_id = c.id
+            WHERE ${crmWhere}
+              AND (ss.qualified != 'STRONG_QUALIFIED' OR ss.qualified IS NULL)
+        `, crmParams)
         const noImageCount = parseInt(noImageCountRes.rows[0]?.cnt || "0", 10)
 
-        const chuaCoHinhPhones = noImagePhonesRes.rows.map((r: any) => r.phone).filter(Boolean)
+        const chuaCoHinhPhoneRows = noImagePhonesRes.rows
+        const chuaCoHinhPhones = chuaCoHinhPhoneRows.map((r: any) => r.phone).filter(Boolean)
 
         // 3. Zalo Action logic (Cross-DB)
-        let zaloSuccessCount = 0
-        let zaloNeverCount = 0
+        let zaloSuccessAutoCount = 0
+        let zaloSuccessAutoHot = 0
+        let zaloSuccessAutoWarn = 0
+        let zaloSuccessAutoMedium = 0
+        let zaloSuccessAutoFresh = 0
+        let zaloSuccessAutoHotRename = 0
+        let zaloSuccessAutoWarnRename = 0
+        let zaloSuccessAutoMediumRename = 0
+        let zaloSuccessAutoFreshRename = 0
+
+        let zaloSuccessManualCount = 0
+        let zaloSuccessManualHot = 0
+        let zaloSuccessManualWarn = 0
+        let zaloSuccessManualMedium = 0
+        let zaloSuccessManualFresh = 0
+        let zaloSuccessManualHotRename = 0
+        let zaloSuccessManualWarnRename = 0
+        let zaloSuccessManualMediumRename = 0
+        let zaloSuccessManualFreshRename = 0
+
         let zaloFailedCount = 0
         let zaloNoUidCount = 0
         let zaloTimeoutCount = 0
+        
+        let zaloNeverCount = 0
+        let zaloNeverSaleOnly = 0
+        let zaloNeverNoInteraction = 0
+        let zaloNeverRenameSuccess = 0
+        let zaloNeverRenameFailed = 0
+        let zaloNeverRenameNone = 0
+        
+        let maxDaysWaitingReply = 0
+        let maxDaysSinceActivity = 0
 
         if (chuaCoHinhPhones.length > 0) {
-            // Build conditions for E2E Db
-            const e2eConditions = [`action_type = 'firstMessage'`]
-            const e2eParams: any[] = []
-            let e2eParamIdx = 1
+            // 3a. firstMessage actions
+            const fmActionsRes = await e2eQuery(`
+                SELECT
+                  COALESCE(payload->>'phone', payload->>'customer_phone') AS phone,
+                  MAX(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS has_success,
+                  MIN(CASE WHEN status = 'success' THEN created_at END) AS first_success_at,
+                  MAX(CASE WHEN status = 'failed'  THEN 1 ELSE 0 END) AS has_failed,
+                  STRING_AGG(
+                    DISTINCT CASE WHEN status = 'failed'
+                      THEN COALESCE(payload->>'akabiz_error', payload->>'reason', payload->>'error')
+                    END,
+                    ' | '
+                  ) AS fail_reasons
+                FROM zalo_action
+                WHERE action_type = 'firstMessage'
+                  AND created_at >= $1::timestamp AND created_at <= $2::timestamp
+                  AND COALESCE(payload->>'phone', payload->>'customer_phone') = ANY($3::text[])
+                GROUP BY COALESCE(payload->>'phone', payload->>'customer_phone')
+            `, [`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`, chuaCoHinhPhones])
 
-            if (dateFrom) {
-                e2eConditions.push(`created_at >= $${e2eParamIdx}::timestamp`)
-                e2eParams.push(`${dateFrom} 00:00:00`)
-                e2eParamIdx++
-            }
-            if (dateTo) {
-                e2eConditions.push(`created_at <= $${e2eParamIdx}::timestamp`)
-                e2eParams.push(`${dateTo} 23:59:59`)
-                e2eParamIdx++
-            }
+            const fmStatusMap = new Map(fmActionsRes.rows.map((r: any) => [r.phone, r]))
 
-            e2eConditions.push(`COALESCE(payload->>'phone', payload->>'customer_phone') = ANY($${e2eParamIdx}::text[])`)
-            e2eParams.push(chuaCoHinhPhones)
+            // 3b. rename actions
+            const renameActionsRes = await e2eQuery(`
+                SELECT
+                  COALESCE(payload->>'phone', payload->>'customer_phone') AS phone,
+                  MAX(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS has_success,
+                  MAX(CASE WHEN status = 'failed'  THEN 1 ELSE 0 END) AS has_failed
+                FROM zalo_action
+                WHERE action_type = 'rename'
+                  AND created_at >= $1::timestamp AND created_at <= $2::timestamp
+                  AND COALESCE(payload->>'phone', payload->>'customer_phone') = ANY($3::text[])
+                GROUP BY COALESCE(payload->>'phone', payload->>'customer_phone')
+            `, [`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`, chuaCoHinhPhones])
 
-            const e2eWhere = e2eConditions.join(" AND ")
+            const renameStatusMap = new Map(renameActionsRes.rows.map((r: any) => [r.phone, r]))
 
-            const zaloStatusRes = await e2eQuery(`
-        SELECT
-          COALESCE(payload->>'phone', payload->>'customer_phone') AS phone,
-          MAX(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS has_success,
-          MAX(CASE WHEN status = 'failed'  THEN 1 ELSE 0 END) AS has_failed,
-          STRING_AGG(
-            DISTINCT CASE WHEN status = 'failed'
-              THEN COALESCE(payload->>'akabiz_error', payload->>'reason', payload->>'error')
-            END,
-            ' | '
-          ) AS fail_reasons
-        FROM zalo_action
-        WHERE ${e2eWhere}
-        GROUP BY COALESCE(payload->>'phone', payload->>'customer_phone')
-      `, e2eParams)
+            // 4. Calculate metrics
+            for (const row of chuaCoHinhPhoneRows) {
+                const phone = row.phone
+                const hasMZ = row.has_messages_zalo === 1
+                const nSale = parseInt(row.msgs_from_sale || "0", 10)
+                const nCust = parseInt(row.msgs_from_customer || "0", 10)
+                const lastMsgAt = row.last_msg_at ? new Date(row.last_msg_at).getTime() : 0
+                const lastSaleMsgAt = row.last_sale_msg_at ? new Date(row.last_sale_msg_at).getTime() : 0
+                
+                const fmStatus = fmStatusMap.get(phone) as any
 
-            const phoneToStatus = new Map(zaloStatusRes.rows.map((r: any) => [r.phone, r]))
+                // SUCCESS: Auto Success OR Manual Two-way
+                const isAutoSuccess = fmStatus?.has_success === 1
+                const isManualTwoWay = hasMZ && nSale > 0 && nCust > 0
 
-            for (const phone of chuaCoHinhPhones) {
-                const status = phoneToStatus.get(phone)
-                if (!status) {
-                    zaloNeverCount++
-                } else if (status.has_success === 1) {
-                    zaloSuccessCount++
-                } else if (status.has_failed === 1 && status.has_success === 0) {
-                    zaloFailedCount++
+                if (isAutoSuccess || isManualTwoWay) {
+                    const isRenameSuccess = renameStatusMap.get(phone)?.has_success === 1
+                    let establishedAt = 0
+                    if (isAutoSuccess && fmStatus.first_success_at) {
+                        establishedAt = new Date(fmStatus.first_success_at).getTime()
+                    } else if (isManualTwoWay && lastMsgAt) {
+                        establishedAt = lastMsgAt
+                    }
 
-                    // Sub-reasons breakdown exactly like requirement
-                    const reasons = (status.fail_reasons || "").toLowerCase()
-                    if (reasons.includes("bạn chưa thể gửi") || reasons.includes("xin lỗi! hiện tại")) {
-                        // Lỗi 1: Chặn tin nhắn
-                        zaloNoUidCount++ // Repurposing this variable for Lỗi 1: Chặn tin nhắn to minimize frontend prop changes initially, or better yet, we rename them. Let's return the new properties too.
-                    } else if (reasons.includes("no uid found") || reasons.includes("request timed out") || reasons.includes("connection reset") || reasons.includes("no staff found")) {
-                        // Lỗi 2: No uid / lỗi hệ thống
-                        zaloTimeoutCount++ // Repurposing this for Lỗi 2
+                    if (isAutoSuccess) {
+                        zaloSuccessAutoCount++
+                        if (establishedAt) {
+                            const days = (Date.now() - establishedAt) / 86400000
+                            if (days > 7) {
+                                zaloSuccessAutoHot++
+                                if (isRenameSuccess) zaloSuccessAutoHotRename++
+                            } else if (days > 4) {
+                                zaloSuccessAutoWarn++
+                                if (isRenameSuccess) zaloSuccessAutoWarnRename++
+                            } else if (days > 2) {
+                                zaloSuccessAutoMedium++
+                                if (isRenameSuccess) zaloSuccessAutoMediumRename++
+                            } else {
+                                zaloSuccessAutoFresh++
+                                if (isRenameSuccess) zaloSuccessAutoFreshRename++
+                            }
+                        }
                     } else {
-                        // Default fallback to lỗi hệ thống
+                        zaloSuccessManualCount++
+                        if (establishedAt) {
+                            const days = (Date.now() - establishedAt) / 86400000
+                            if (days > 7) {
+                                zaloSuccessManualHot++
+                                if (isRenameSuccess) zaloSuccessManualHotRename++
+                            } else if (days > 4) {
+                                zaloSuccessManualWarn++
+                                if (isRenameSuccess) zaloSuccessManualWarnRename++
+                            } else if (days > 2) {
+                                zaloSuccessManualMedium++
+                                if (isRenameSuccess) zaloSuccessManualMediumRename++
+                            } else {
+                                zaloSuccessManualFresh++
+                                if (isRenameSuccess) zaloSuccessManualFreshRename++
+                            }
+                        }
+                    }
+                }
+ else if (fmStatus?.has_failed === 1) {
+                    zaloFailedCount++
+                    const reasons = (fmStatus.fail_reasons || "").toLowerCase()
+                    if (reasons.includes("bạn chưa thể gửi") || reasons.includes("xin lỗi! hiện tại")) {
+                        zaloNoUidCount++
+                    } else {
                         zaloTimeoutCount++
                     }
                 } else {
                     zaloNeverCount++
+                    if (nSale > 0) {
+                        // 3c-iii: Sale nhắn, khách chưa reply
+                        zaloNeverSaleOnly++
+                        if (lastSaleMsgAt) {
+                            const days = (Date.now() - lastSaleMsgAt) / 86400000
+                            if (days > maxDaysWaitingReply) maxDaysWaitingReply = days
+                        }
+                    } else {
+                        // 3c-iv: Chưa có tương tác
+                        zaloNeverNoInteraction++
+                        if (lastMsgAt) {
+                            const days = (Date.now() - lastMsgAt) / 86400000
+                            if (days > maxDaysSinceActivity) maxDaysSinceActivity = days
+                        }
+
+                        // Rename pins
+                        const renStatus = renameStatusMap.get(phone) as any
+                        if (!renStatus) {
+                            zaloNeverRenameNone++
+                        } else if (renStatus.has_success === 1) {
+                            zaloNeverRenameSuccess++
+                        } else {
+                            zaloNeverRenameFailed++
+                        }
+                    }
                 }
             }
         } else {
-            zaloNeverCount = noImageCount // if no phones at all, they all never connected
+            zaloNeverCount = noImageCount
+            zaloNeverNoInteraction = noImageCount
+            zaloNeverRenameNone = noImageCount
         }
 
         return NextResponse.json({
             totalLeads,
             hasImageCount,
             noImageCount,
-            zaloSuccessCount,      // 3a. firstMessage success
-            zaloFailedCount,       // 3b. firstMessage failed
-            zaloNeverCount,        // 3c. Chưa gửi firstMessage
-            zaloBlockedCount: zaloNoUidCount,       // Lỗi 1: Chặn tin nhắn
-            zaloSystemErrorCount: zaloTimeoutCount, // Lỗi 2: No uid / lỗi hệ thống
-            // Keep the old ones backward compatible during rollout
-            zaloNoUidCount,
-            zaloTimeoutCount,
+            zaloSuccessCount: zaloSuccessAutoCount + zaloSuccessManualCount,
+            
+            zaloSuccessAutoCount,
+            zaloSuccessAutoHot,
+            zaloSuccessAutoWarn,
+            zaloSuccessAutoMedium,
+            zaloSuccessAutoFresh,
+            zaloSuccessAutoHotRename,
+            zaloSuccessAutoWarnRename,
+            zaloSuccessAutoMediumRename,
+            zaloSuccessAutoFreshRename,
+
+            zaloSuccessManualCount,
+            zaloSuccessManualHot,
+            zaloSuccessManualWarn,
+            zaloSuccessManualMedium,
+            zaloSuccessManualFresh,
+            zaloSuccessManualHotRename,
+            zaloSuccessManualWarnRename,
+            zaloSuccessManualMediumRename,
+            zaloSuccessManualFreshRename,
+
+            zaloFailedCount,
+            zaloNeverCount,
+            zaloNeverSaleOnly,
+            zaloNeverNoInteraction,
+            zaloNeverRenameSuccess,
+            zaloNeverRenameFailed,
+            zaloNeverRenameNone,
+            zaloNeverRenameReserve: zaloNeverRenameFailed + zaloNeverRenameNone,
+            maxDaysWaitingReply: Math.round(maxDaysWaitingReply * 10) / 10,
+            maxDaysSinceActivity: Math.round(maxDaysSinceActivity * 10) / 10,
+            zaloBlockedCount: zaloNoUidCount,
+            zaloSystemErrorCount: zaloTimeoutCount
         })
     } catch (error) {
         console.error("[Funnel Stats API] Error:", error)
-        return NextResponse.json(
-            { error: "Failed to fetch funnel stats", details: error instanceof Error ? error.message : String(error) },
-            { status: 500 }
-        )
+        return NextResponse.json({ error: "Failed to fetch funnel stats" }, { status: 500 })
     }
 }

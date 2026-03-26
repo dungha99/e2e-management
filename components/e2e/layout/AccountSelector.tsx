@@ -41,7 +41,7 @@ export function AccountSelector({
     }
   }, [isMobile])
 
-  const selectedAccountName = ACCOUNTS.find((acc) => acc.uid === selectedAccount)?.name || "Chọn tài khoản..."
+  const selectedAccountName = selectedAccount === 'all' ? "Tất cả PIC (ALL)" : (ACCOUNTS.find((acc) => acc.uid === selectedAccount)?.name || "Chọn tài khoản...")
 
   // Account selector dropdown component
   const accountSelectorDropdown = (
@@ -68,6 +68,23 @@ export function AccountSelector({
             <CommandList>
               <CommandEmpty>Không tìm thấy tài khoản.</CommandEmpty>
               <CommandGroup>
+                <CommandItem
+                  key="all"
+                  value="Tất cả PIC (ALL)"
+                  onSelect={() => {
+                    onAccountChange('all')
+                    setOpen(false)
+                  }}
+                >
+                  <Check
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      selectedAccount === 'all' ? "opacity-100" : "opacity-0"
+                    )}
+                  />
+                  <User className="mr-2 h-4 w-4" />
+                  Tất cả PIC (ALL)
+                </CommandItem>
                 {ACCOUNTS.map((account) => (
                   <CommandItem
                     key={account.uid}
@@ -141,6 +158,23 @@ export function AccountSelector({
                   <CommandList>
                     <CommandEmpty>Không tìm thấy tài khoản.</CommandEmpty>
                     <CommandGroup>
+                      <CommandItem
+                        key="all"
+                        value="Tất cả PIC (ALL)"
+                        onSelect={() => {
+                          onAccountChange('all')
+                          setOpen(false)
+                        }}
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            selectedAccount === 'all' ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        <User className="mr-2 h-4 w-4" />
+                        Tất cả PIC (ALL)
+                      </CommandItem>
                       {ACCOUNTS.map((account) => (
                         <CommandItem
                           key={account.uid}

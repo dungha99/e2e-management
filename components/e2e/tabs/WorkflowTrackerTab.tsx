@@ -297,12 +297,14 @@ export function WorkflowTrackerTab({
   const [firstMessageDone, setFirstMessageDone] = useState(false)
   const [firstMessageFailed, setFirstMessageFailed] = useState(false)
   const [renameDone, setRenameDone] = useState(false)
+  const [loadingZaloStatus, setLoadingZaloStatus] = useState(false)
   const prevSendingMessage = useRef(sendingMessage)
   const prevRenamingLead = useRef(renamingLead)
 
   const fetchZaloActionStatuses = useCallback(async () => {
     if (!selectedLead?.car_id) return
     const carId = encodeURIComponent(selectedLead.car_id)
+    setLoadingZaloStatus(true)
     try {
       const [firstMsg, rename] = await Promise.all([
         fetch(`/api/akabiz/check-zalo-action?car_id=${carId}&action_type=firstMessage`).then(r => r.json()),
@@ -313,6 +315,8 @@ export function WorkflowTrackerTab({
       setRenameDone(rename.success === true)
     } catch {
       // non-fatal
+    } finally {
+      setLoadingZaloStatus(false)
     }
   }, [selectedLead?.car_id])
 
@@ -1224,17 +1228,46 @@ ${dealerBidsStr}`
                 )}
 
                 {/* Action Buttons - Send First Message & Rename Lead */}
-                <div className="flex items-center gap-3 mt-4">
-                  <SendFirstMessageAction
-                    onClick={onSendFirstMessage}
-                    disabled={sendingMessage || !selectedLead?.pic_id}
-                    loading={sendingMessage}
-                  />
-                  <RenameLeadAction
-                    onClick={onRenameLead}
-                    disabled={renamingLead || !selectedLead?.pic_id}
-                    loading={renamingLead}
-                  />
+                <div className="flex items-center gap-3 mt-4 flex-wrap">
+                  <div className="flex flex-col items-start gap-1">
+                    <SendFirstMessageAction
+                      onClick={onSendFirstMessage}
+                      disabled={sendingMessage || !selectedLead?.pic_id}
+                      loading={sendingMessage}
+                    />
+                    {firstMessageDone && (
+                      <span className="flex items-center gap-1 text-xs text-emerald-600">
+                        <CheckCircle className="h-3 w-3" /> Đã gửi thành công
+                      </span>
+                    )}
+                    {!firstMessageDone && firstMessageFailed && (
+                      <span className="flex items-center gap-1 text-xs text-red-500">
+                        <XCircle className="h-3 w-3" /> Gửi thất bại
+                      </span>
+                    )}
+                    {!loadingZaloStatus && !firstMessageDone && !firstMessageFailed && (
+                      <span className="flex items-center gap-1 text-xs text-gray-400">
+                        <X className="h-3 w-3" /> Chưa thực hiện
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-start gap-1">
+                    <RenameLeadAction
+                      onClick={onRenameLead}
+                      disabled={renamingLead || !selectedLead?.pic_id}
+                      loading={renamingLead}
+                    />
+                    {renameDone && (
+                      <span className="flex items-center gap-1 text-xs text-emerald-600">
+                        <CheckCircle className="h-3 w-3" /> Đã đổi tên thành công
+                      </span>
+                    )}
+                    {!loadingZaloStatus && !renameDone && (
+                      <span className="flex items-center gap-1 text-xs text-gray-400">
+                        <X className="h-3 w-3" /> Chưa thực hiện
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             )

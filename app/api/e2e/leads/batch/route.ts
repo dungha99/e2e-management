@@ -22,8 +22,8 @@ export async function POST(request: Request) {
     }
 
     // Validate tab parameter
-    if (!["priority", "nurture"].includes(tab)) {
-      return NextResponse.json({ error: "Invalid tab parameter. Must be 'priority' or 'nurture'" }, { status: 400 })
+    if (!["priority", "nurture", "follow-up"].includes(tab)) {
+      return NextResponse.json({ error: "Invalid tab parameter. Must be 'priority', 'nurture', or 'follow-up'" }, { status: 400 })
     }
 
     const offset = (page - 1) * per_page
@@ -64,9 +64,21 @@ async function fetchBatchData(
   dateTo: string | null = null
 ) {
   // Build WHERE condition based on tab
-  const tabCondition = tab === "priority"
-    ? "AND ss.is_hot_lead = true"
-    : "AND (ss.is_hot_lead IS NULL OR ss.is_hot_lead = false)"
+  let tabCondition = ""
+  if (tab === "priority") {
+    tabCondition = "AND ss.is_hot_lead = true"
+  } else if (tab === "follow-up") {
+    tabCondition = `AND ss.intention = 'SLOW' 
+      AND EXISTS (
+        SELECT 1 FROM sale_activities sa
+        WHERE sa.lead_id = l.id
+          AND sa.metadata->>'field_name' = 'intentionLead'
+          AND (sa.metadata->>'new_value' = 'SLOW' OR sa.metadata->>'new_value' = 'slow')
+          AND sa.created_at <= NOW() - INTERVAL '4 days'
+      )`
+  } else {
+    tabCondition = "AND (ss.is_hot_lead IS NULL OR ss.is_hot_lead = false)"
+  }
 
   // Build search condition for phone, lead name, and car display name (brand + model)
   const searchCondition = search
@@ -75,6 +87,7 @@ async function fetchBatchData(
         OR l.additional_phone LIKE '%${search}%'
         OR l.name ILIKE '%${search}%'
         OR CONCAT(c.brand, ' ', c.model) ILIKE '%${search}%'
+        OR c.id::text ILIKE '%${search}%'
       )`
     : ""
 
@@ -181,7 +194,7 @@ async function fetchBatchData(
 
   // Run CRM enrichment queries in parallel (fast queries only)
   // Dealer biddings moved to separate endpoint for progressive loading
-  const [decoyThreadsResult, sessionsResult, latestCampaignsResult, lastActivityResult, inspectionResult] = await Promise.all([
+  const [decoyThreadsResult, sessionsResult, latestCampaignsResult, lastActivityResult, inspectionResult, slowIntentionResult] = await Promise.all([
     // Query 1: Decoy thread counts + total user messages (CRM - fast)
     // Also count messages where sender='user' to detect new customer replies
     leadIds.length > 0 && phones.length > 0
@@ -293,12 +306,34 @@ async function fetchBatchData(
         return { rows: [] }
       })
       : Promise.resolve({ rows: [] }),
+
+    // Query 6: Latest SLOW intention date per lead
+    leadIds.length > 0
+      ? vucarV2Query(
+        `SELECT
+            lead_id,
+            MAX(created_at) as slow_intention_date
+          FROM sale_activities
+          WHERE lead_id = ANY($1::uuid[])
+            AND metadata->>'field_name' = 'intentionLead'
+            AND (metadata->>'new_value' = 'SLOW' OR metadata->>'new_value' = 'slow')
+          GROUP BY lead_id`,
+        [leadIds]
+      ).catch((err) => {
+        console.warn('[E2E Batch API] Could not query slow intention date:', err.message)
+        return { rows: [] }
+      })
+      : Promise.resolve({ rows: [] }),
   ])
 
   // Process results into lookup maps
 
   const decoyThreadCounts = Object.fromEntries(
     decoyThreadsResult.rows.map((row) => [row.lead_id, parseInt(row.thread_count) || 0])
+  )
+
+  const slowIntentionDates = Object.fromEntries(
+    slowIntentionResult.rows.map((row) => [row.lead_id, row.slow_intention_date])
   )
 
   // Map total user messages count (for new reply detection)
@@ -443,6 +478,7 @@ async function fetchBatchData(
       last_activity_at: lastActivityTimes[lead.lead_id] || null,
       // Inspection schedule from INSPECTION_COMPLETED activity
       inspection_schedule: inspectionSchedules[lead.lead_id] || null,
+      slow_intention_date: slowIntentionDates[lead.lead_id] || null,
     }
   })
 

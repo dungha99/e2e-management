@@ -84,6 +84,7 @@ export interface Lead {
   qualified?: string | null;
   intentionLead?: string | null;
   negotiationAbility?: string | null;
+  slow_intention_date?: string | null;
   latest_campaign?: LatestCampaignInfo | null;
   last_activity_at?: string | null; // ISO timestamp of most recent sale activity
   inspection_schedule?: InspectionSchedule | null; // Parsed from INSPECTION_COMPLETED activity

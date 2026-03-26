@@ -119,6 +119,7 @@ export async function GET(
             negotiationAbility: leadData.negotiation_ability || null,
             has_enough_images,
             first_message_sent,
+            messages_zalo: messagesZalo,
             session_created,
             is_primary,
             workflow2_is_active,

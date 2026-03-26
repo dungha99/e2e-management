@@ -9,9 +9,9 @@ import { useColumnLeads } from "./useColumnLeads"
 interface HITLKanbanColumnProps {
   stepKey: StepKey
   title: string
-  dotColor: string
   picId: string
   searchQuery: string
+  qualifiedFilter: string
   refreshKey: number
   onResolve: (id: string) => void
   onDetail: (id: string) => void
@@ -20,9 +20,9 @@ interface HITLKanbanColumnProps {
 export function HITLKanbanColumn({
   stepKey,
   title,
-  dotColor,
   picId,
   searchQuery,
+  qualifiedFilter,
   refreshKey,
   onResolve,
   onDetail,
@@ -31,18 +31,29 @@ export function HITLKanbanColumn({
     useColumnLeads(stepKey, picId, refreshKey)
 
   // Client-side search filter applied on top of loaded pages
-  const filtered = searchQuery
+  const searched = searchQuery
     ? items.filter((lead) => {
-        const q = searchQuery.toLowerCase()
-        return (
-          lead.customer.name.toLowerCase().includes(q) ||
-          (lead.customer.phone && lead.customer.phone.includes(q)) ||
-          lead.car.model.toLowerCase().includes(q)
-        )
-      })
+      const q = searchQuery.toLowerCase()
+      return (
+        lead.customer.name.toLowerCase().includes(q) ||
+        (lead.customer.phone && lead.customer.phone.includes(q)) ||
+        lead.car.model.toLowerCase().includes(q) ||
+        lead.car_id.toLowerCase().includes(q)
+      )
+    })
     : items
 
-  const criticalCount = filtered.filter((l) => l.trigger.severity === "CRITICAL").length
+  const filtered = (qualifiedFilter === "all"
+    ? searched
+    : searched.filter((lead) => {
+      const status = (lead.qualified_status || "UNDEFINED").toUpperCase()
+      if (qualifiedFilter === "strong") return status.includes("STRONG")
+      if (qualifiedFilter === "weak") return status.includes("WEAK")
+      if (qualifiedFilter === "undefined") return status.includes("UNDEFINED")
+      return true
+    }))
+
+  const slaBreachedCount = filtered.filter((l) => (l.time_overdue_minutes ?? 0) > 0).length
   const hasOverdue = filtered.some((l) => (l.time_overdue_minutes ?? 0) > 0)
 
   // IntersectionObserver sentinel — keeps a stable ref to loadMore
@@ -73,16 +84,14 @@ export function HITLKanbanColumn({
     <div className="flex flex-col flex-shrink-0 w-[320px] min-w-[320px] px-3 h-full min-h-0">
 
       {/* Column Header — fixed */}
-      <div className="flex items-center gap-2 mb-3 shrink-0 px-1">
-        <span className={`w-2 h-2 rounded-full shrink-0 ${hasOverdue ? "bg-red-500" : dotColor}`} />
+      <div className="flex items-center gap-1.5 mb-3 shrink-0 px-1">
         <h3 className="font-semibold text-gray-700 text-sm leading-tight">{title}</h3>
 
+        {/* Badge: <#SLA_breached> <#total> */}
         <div className="ml-auto flex items-center gap-1">
-          {criticalCount > 0 && (
-            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-100 text-red-600 text-[11px] font-bold">
-              {criticalCount}
-            </span>
-          )}
+          <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-100 text-red-600 text-[11px] font-bold">
+            {slaBreachedCount}
+          </span>
           <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-gray-100 text-gray-500 text-[11px] font-bold">
             {filtered.length}
           </span>

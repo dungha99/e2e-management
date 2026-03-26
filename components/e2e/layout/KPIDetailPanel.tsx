@@ -9,7 +9,7 @@ import { SendFirstMessageAction } from "@/components/e2e/actions/SendFirstMessag
 import { ViewZaloChatAction } from "@/components/e2e/actions/ViewZaloChatAction"
 import { FollowUpAction } from "@/components/e2e/actions/FollowUpAction"
 import { EditLeadDialog } from "@/components/e2e/dialogs/EditLeadDialog"
-import { formatPriceForEdit } from "@/components/e2e/utils"
+import { formatPriceForEdit, parseShorthandPrice } from "@/components/e2e/utils"
 import { Bell, ShieldCheck, Edit3 } from "lucide-react"
 
 
@@ -226,14 +226,24 @@ export function KPIDetailPanel({ open, onClose, metric, picId, search, sources, 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          car_id: selectedLeadForEdit.car_id,
+          carId: selectedLeadForEdit.car_id,
+          leadId: selectedLeadForEdit.id,
           stage: editedStage,
-          price_customer: editedPriceCustomer,
-          price_highest_bid: editedPriceHighestBid,
+          price_customer: parseShorthandPrice(editedPriceCustomer),
+          price_highest_bid: parseShorthandPrice(editedPriceHighestBid),
           qualified: editedQualified,
           intentionLead: editedIntentionLead,
           negotiationAbility: editedNegotiationAbility,
           notes: editedNotes,
+          previousValues: {
+            stage: selectedLeadForEdit.stage,
+            price_customer: selectedLeadForEdit.price_customer,
+            price_highest_bid: selectedLeadForEdit.price_highest_bid,
+            qualified: selectedLeadForEdit.qualified,
+            intentionLead: selectedLeadForEdit.intentionLead,
+            negotiationAbility: selectedLeadForEdit.negotiationAbility,
+            notes: selectedLeadForEdit.notes,
+          }
         }),
       })
 

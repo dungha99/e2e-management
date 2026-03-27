@@ -33,9 +33,10 @@ interface LeadFunnelBreakdownProps {
   picId?: string
   dateFrom?: string | null
   dateTo?: string | null
+  qualified?: string | null
 }
 
-export function LeadFunnelBreakdown({ data, loading, onMetricClick, picId, dateFrom, dateTo }: LeadFunnelBreakdownProps) {
+export function LeadFunnelBreakdown({ data, loading, onMetricClick, picId, dateFrom, dateTo, qualified }: LeadFunnelBreakdownProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const [followUpLeads, setFollowUpLeads] = useState<any[]>([])
   const [metrics, setMetrics] = useState({ totalFollowed: 0, totalNotFollowed: 0 })
@@ -65,6 +66,7 @@ export function LeadFunnelBreakdown({ data, loading, onMetricClick, picId, dateF
       const params = new URLSearchParams({ pic_id: picId })
       if (dateFrom) params.set("dateFrom", dateFrom)
       if (dateTo) params.set("dateTo", dateTo)
+      if (qualified) params.set("qualified", qualified)
 
       const res = await fetch(`/api/e2e/funnel-followup-leads?${params.toString()}`)
       const json = await res.json()
@@ -81,7 +83,7 @@ export function LeadFunnelBreakdown({ data, loading, onMetricClick, picId, dateF
     if (isExpanded) {
       fetchFollowUpLeads()
     }
-  }, [picId, dateFrom, dateTo, isExpanded])
+  }, [picId, dateFrom, dateTo, qualified, isExpanded])
 
   const handleEditLead = (lead: any) => {
     setSelectedLeadForEdit(lead)
@@ -132,17 +134,17 @@ export function LeadFunnelBreakdown({ data, loading, onMetricClick, picId, dateF
   // Grouping & Sorting Logic
   const groupedLeads = useMemo(() => {
     const groups: Record<string, any[]> = {}
-    
+
     // Group 1: Not Followed
     const notFollowed = followUpLeads.filter(l => !l.followUpSent)
-    
+
     // Apply sorting to notFollowed
     if (sortOrder) {
       notFollowed.sort((a, b) => {
         return sortOrder === 'asc' ? a.daysSince - b.daysSince : b.daysSince - a.daysSince
       })
     }
-    
+
     if (notFollowed.length > 0) groups["Chưa Follow Up"] = notFollowed
 
     // Group 2: Followed (by date)
@@ -152,7 +154,7 @@ export function LeadFunnelBreakdown({ data, loading, onMetricClick, picId, dateF
       const dateB = new Date(b.lastFollowUpAt).getTime()
       return dateB - dateA // Always sort groups by date desc
     })
-    
+
     followed.forEach(lead => {
       const date = new Date(lead.lastFollowUpAt).toLocaleDateString("vi-VN")
       if (!groups[date]) groups[date] = []
@@ -194,6 +196,8 @@ export function LeadFunnelBreakdown({ data, loading, onMetricClick, picId, dateF
 
   const totalLeads = Number(data.totalLeads) || 0;
   const hasImageCount = Number(data.hasImageCount) || 0;
+  const hasImageWithAdditional = Number(data.hasImageWithAdditional) || 0;
+  const hasImageWithoutAdditional = Number(data.hasImageWithoutAdditional) || 0;
   const noImageCount = Number(data.noImageCount) || 0;
   const zaloSuccessCount = Number(data.zaloSuccessCount) || 0;
   const zaloSuccessAutoCount = Number(data.zaloSuccessAutoCount) || 0;
@@ -250,798 +254,854 @@ export function LeadFunnelBreakdown({ data, loading, onMetricClick, picId, dateF
 
   return (
     <>
-      <div className="w-full mx-auto bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col items-center mt-2">
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between text-sm font-bold text-gray-800 mb-2 border-b pb-2 hover:bg-gray-50 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <span>Phân tích Lead Funnel (Tổng quan)</span>
-        </div>
-        {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
-      </button>
+      {/* Comparison View Bar */}
+      {data?.qualificationBreakdown && (
+        <div className="w-full bg-white p-5 rounded-2xl border border-gray-100 shadow-sm overflow-x-auto no-scrollbar scrollbar-hide mb-6 mt-2 flex items-center justify-center">
+          <div className="flex items-center gap-10 divide-x divide-gray-100">
+            {/* Total */}
+            <div className="flex flex-col items-center">
+              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-2">Total Leads</span>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-2xl font-black text-gray-900 leading-none">{Number(data.qualificationBreakdown.total).toLocaleString()}</span>
+                <span className="text-[10px] font-bold text-gray-400">leads</span>
+              </div>
+            </div>
 
-      {isExpanded && (
-        <Tabs defaultValue="v2" className="w-full">
-          <div className="flex justify-center mb-6">
-            <TabsList className="bg-gray-100 p-1 h-10 rounded-xl">
-              <TabsTrigger value="v1" className="px-8 rounded-lg data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm transition-all text-gray-500 font-bold">
-                Version 1
-              </TabsTrigger>
-              <TabsTrigger value="v2" className="px-8 rounded-lg data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm transition-all text-gray-500 font-bold flex items-center gap-2">
-                Version 2
-                <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter">New</span>
-              </TabsTrigger>
-            </TabsList>
+            {/* Qualified */}
+            <div className="flex flex-col items-center pl-10">
+              <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest leading-none mb-2">Qualified</span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-black text-gray-900 leading-none">{Number(data.qualificationBreakdown.qualified).toLocaleString()}</span>
+                <span className="text-[11px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full ring-1 ring-emerald-100/50">
+                  {data.qualificationBreakdown.total > 0 ? Math.round((data.qualificationBreakdown.qualified / data.qualificationBreakdown.total) * 100) : 0}%
+                </span>
+              </div>
+            </div>
+
+            {/* Undefined */}
+            <div className="flex flex-col items-center pl-10">
+              <span className="text-[11px] font-bold text-amber-600 uppercase tracking-widest leading-none mb-2">Undefined</span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-black text-gray-900 leading-none">{Number(data.qualificationBreakdown.undefined_qualified).toLocaleString()}</span>
+                <span className="text-[11px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full ring-1 ring-amber-100/50">
+                  {data.qualificationBreakdown.total > 0 ? Math.round((data.qualificationBreakdown.undefined_qualified / data.qualificationBreakdown.total) * 100) : 0}%
+                </span>
+              </div>
+            </div>
+
+            {/* Non-Qualified */}
+            <div className="flex flex-col items-center pl-10">
+              <span className="text-[11px] font-bold text-rose-600 uppercase tracking-widest leading-none mb-2">Non-Qualified</span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-black text-gray-900 leading-none">{Number(data.qualificationBreakdown.non_qualified).toLocaleString()}</span>
+                <span className="text-[11px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full ring-1 ring-rose-100/50">
+                  {data.qualificationBreakdown.total > 0 ? Math.round((data.qualificationBreakdown.non_qualified / data.qualificationBreakdown.total) * 100) : 0}%
+                </span>
+              </div>
+            </div>
           </div>
+        </div>
+      )}
+      <div className="w-full mx-auto bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col items-center mt-2">
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="w-full flex items-center justify-between text-sm font-bold text-gray-800 mb-2 border-b pb-2 hover:bg-gray-50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <span>Phân tích Lead Funnel (Tổng quan)</span>
+          </div>
+          {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+        </button>
 
-          <style dangerouslySetInnerHTML={{
-            __html: `
+        {isExpanded && (
+          <Tabs defaultValue="v2" className="w-full">
+            <div className="flex justify-center mb-6">
+              <TabsList className="bg-gray-100 p-1 h-10 rounded-xl">
+                <TabsTrigger value="v1" className="px-8 rounded-lg data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm transition-all text-gray-500 font-bold">
+                  Version 1
+                </TabsTrigger>
+                <TabsTrigger value="v2" className="px-8 rounded-lg data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm transition-all text-gray-500 font-bold flex items-center gap-2">
+                  Version 2
+                  <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter">New</span>
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            <style dangerouslySetInnerHTML={{
+              __html: `
           .tree-line-v {position: absolute; top: 100%; left: 50%; width: 2px; height: 24px; background-color: #e5e7eb; transform: translateX(-50%); }
           `}} />
 
-          {/* VERSION 1: SIMPLIFIED VIEW */}
-          <TabsContent value="v1">
-            <div className="flex flex-col items-center w-full max-w-4xl relative mt-4 mx-auto pb-8">
-              {/* Tier 1 */}
-              <div className="relative flex flex-col items-center mb-6">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button onClick={() => onMetricClick?.("FUNNEL_TOTAL_LEADS")} className="bg-gray-50 border border-gray-200 rounded-lg px-6 py-2 min-w-[180px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform translate-y-2">
-                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">1. Nhận lead</div>
-                      <div className="text-xl font-black text-gray-700">{totalLeads}</div>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">Tổng số lead được phân bổ trong khoảng thời gian đã chọn</TooltipContent>
-                </Tooltip>
-                <div className="tree-line-v mt-2"></div>
+            {/* VERSION 1: SIMPLIFIED VIEW */}
+            <TabsContent value="v1">
+              <div className="flex flex-col items-center w-full max-w-4xl relative mt-4 mx-auto pb-8">
+                {/* Tier 1 */}
+                <div className="relative flex flex-col items-center mb-6">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button onClick={() => onMetricClick?.("FUNNEL_TOTAL_LEADS")} className="bg-gray-50 border border-gray-200 rounded-lg px-6 py-2 min-w-[180px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform translate-y-2">
+                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">1. Nhận lead</div>
+                        <div className="text-xl font-black text-gray-700">{totalLeads}</div>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">Tổng số lead được phân bổ trong khoảng thời gian đã chọn</TooltipContent>
+                  </Tooltip>
+                  <div className="tree-line-v mt-2"></div>
+                </div>
+
+                {/* Tier 2 */}
+                <div className="relative flex justify-center gap-12 mb-6 w-full pt-8">
+                  <div className="absolute top-0 left-1/2 w-1/2 max-w-[240px] h-[2px] bg-gray-200 -translate-x-1/2"></div>
+
+                  <div className="relative flex flex-col items-center">
+                    <div className="absolute top-0 left-1/2 w-[2px] h-8 bg-gray-200 -translate-x-1/2 -mt-8"></div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button onClick={() => onMetricClick?.("FUNNEL_HAS_IMAGE")} className="bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-2 min-w-[160px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform">
+                          <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-1">2a. Đã có hình</div>
+                          <div className="text-lg font-black text-emerald-700">{hasImageCount} <span className="text-xs font-medium opacity-60">({sPctHasImage}%)</span></div>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">Leads đã có đủ hình ảnh xe và đạt trạng thái Strong Qualified</TooltipContent>
+                    </Tooltip>
+                  </div>
+
+                  <div className="relative flex flex-col items-center">
+                    <div className="absolute top-0 left-1/2 w-[2px] h-8 bg-gray-200 -translate-x-1/2 -mt-8"></div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button onClick={() => onMetricClick?.("FUNNEL_NO_IMAGE")} className="bg-orange-50 border border-orange-100 rounded-lg px-4 py-2 min-w-[160px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform">
+                          <div className="text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1">2b. Chưa có hình</div>
+                          <div className="text-lg font-black text-orange-700">{noImageCount} <span className="text-xs font-medium opacity-60">({sPctNoImage}%)</span></div>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">Leads chưa có hình hoặc hình ảnh chưa đạt yêu cầu (Weak/Undefined)</TooltipContent>
+                    </Tooltip>
+                    <div className="tree-line-v mt-0"></div>
+                  </div>
+                </div>
+
+                {/* Tier 3 */}
+                <div className="relative flex justify-end gap-4 mb-6 w-full pt-8 pr-[1.5%]">
+                  <div className="absolute top-0 right-[15%] w-[45%] h-[2px] bg-gray-200"></div>
+
+                  <div className="relative flex flex-col items-center">
+                    <div className="absolute top-0 left-1/2 w-[2px] h-8 bg-gray-200 -translate-x-1/2 -mt-8"></div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button onClick={() => onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS")} className="bg-blue-50 border border-blue-100 rounded-lg px-2 py-3 min-w-[130px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform">
+                          <div className="text-[9px] font-bold text-blue-600 uppercase tracking-wider mb-0.5">3a. Success</div>
+                          <div className="text-base font-black text-blue-700">{zaloSuccessCount} <span className="text-[10px] font-medium opacity-60">({sPctZaloSuccess}%)</span></div>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">Gửi tin nhắn First Message Zalo thành công (Gồm cả Auto và Manual)</TooltipContent>
+                    </Tooltip>
+                  </div>
+
+                  <div className="relative flex flex-col items-center">
+                    <div className="absolute top-0 left-1/2 w-[2px] h-8 bg-gray-200 -translate-x-1/2 -mt-8"></div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button onClick={() => onMetricClick?.("FUNNEL_FIRST_MESSAGE_FAILED")} className="bg-red-50 border border-red-100 rounded-lg px-2 py-3 min-w-[130px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform">
+                          <div className="text-[9px] font-bold text-red-600 uppercase tracking-wider mb-0.5">3b. Failed</div>
+                          <div className="text-base font-black text-red-700">{zaloFailedCount} <span className="text-[10px] font-medium opacity-60">({sPctZaloFailed}%)</span></div>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">Gửi tin nhắn First Message thất bại do lỗi hệ thống hoặc bị khách chặn</TooltipContent>
+                    </Tooltip>
+                  </div>
+
+                  <div className="relative flex flex-col items-center">
+                    <div className="absolute top-0 left-1/2 w-[2px] h-8 bg-gray-200 -translate-x-1/2 -mt-8"></div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button onClick={() => onMetricClick?.("FUNNEL_NEVER_FIRST_MESSAGE")} className="bg-gray-100 border border-gray-200 rounded-lg px-2 py-3 min-w-[130px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform">
+                          <div className="text-[9px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">3c. Chưa gửi</div>
+                          <div className="text-base font-black text-gray-600">{zaloNeverCount} <span className="text-[10px] font-medium opacity-60">({sPctZaloNever}%)</span></div>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">Leads chưa được gửi tin nhắn First Message hoặc chưa có tương tác</TooltipContent>
+                    </Tooltip>
+                  </div>
+                </div>
               </div>
+            </TabsContent>
 
-              {/* Tier 2 */}
-              <div className="relative flex justify-center gap-12 mb-6 w-full pt-8">
-                <div className="absolute top-0 left-1/2 w-1/2 max-w-[240px] h-[2px] bg-gray-200 -translate-x-1/2"></div>
-                
-                <div className="relative flex flex-col items-center">
-                  <div className="absolute top-0 left-1/2 w-[2px] h-8 bg-gray-200 -translate-x-1/2 -mt-8"></div>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button onClick={() => onMetricClick?.("FUNNEL_HAS_IMAGE")} className="bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-2 min-w-[160px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform">
-                        <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-1">2a. Đã có hình</div>
-                        <div className="text-lg font-black text-emerald-700">{hasImageCount} <span className="text-xs font-medium opacity-60">({sPctHasImage}%)</span></div>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Leads đã có đủ hình ảnh xe và đạt trạng thái Strong Qualified</TooltipContent>
-                  </Tooltip>
-                </div>
-
-                <div className="relative flex flex-col items-center">
-                  <div className="absolute top-0 left-1/2 w-[2px] h-8 bg-gray-200 -translate-x-1/2 -mt-8"></div>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button onClick={() => onMetricClick?.("FUNNEL_NO_IMAGE")} className="bg-orange-50 border border-orange-100 rounded-lg px-4 py-2 min-w-[160px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform">
-                        <div className="text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1">2b. Chưa có hình</div>
-                        <div className="text-lg font-black text-orange-700">{noImageCount} <span className="text-xs font-medium opacity-60">({sPctNoImage}%)</span></div>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Leads chưa có hình hoặc hình ảnh chưa đạt yêu cầu (Weak/Undefined)</TooltipContent>
-                  </Tooltip>
-                  <div className="tree-line-v mt-0"></div>
-                </div>
-              </div>
-
-              {/* Tier 3 */}
-              <div className="relative flex justify-end gap-4 mb-6 w-full pt-8 pr-[1.5%]">
-                <div className="absolute top-0 right-[15%] w-[45%] h-[2px] bg-gray-200"></div>
-
-                <div className="relative flex flex-col items-center">
-                  <div className="absolute top-0 left-1/2 w-[2px] h-8 bg-gray-200 -translate-x-1/2 -mt-8"></div>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button onClick={() => onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS")} className="bg-blue-50 border border-blue-100 rounded-lg px-2 py-3 min-w-[130px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform">
-                        <div className="text-[9px] font-bold text-blue-600 uppercase tracking-wider mb-0.5">3a. Success</div>
-                        <div className="text-base font-black text-blue-700">{zaloSuccessCount} <span className="text-[10px] font-medium opacity-60">({sPctZaloSuccess}%)</span></div>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Gửi tin nhắn First Message Zalo thành công (Gồm cả Auto và Manual)</TooltipContent>
-                  </Tooltip>
-                </div>
-
-                <div className="relative flex flex-col items-center">
-                  <div className="absolute top-0 left-1/2 w-[2px] h-8 bg-gray-200 -translate-x-1/2 -mt-8"></div>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button onClick={() => onMetricClick?.("FUNNEL_FIRST_MESSAGE_FAILED")} className="bg-red-50 border border-red-100 rounded-lg px-2 py-3 min-w-[130px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform">
-                        <div className="text-[9px] font-bold text-red-600 uppercase tracking-wider mb-0.5">3b. Failed</div>
-                        <div className="text-base font-black text-red-700">{zaloFailedCount} <span className="text-[10px] font-medium opacity-60">({sPctZaloFailed}%)</span></div>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Gửi tin nhắn First Message thất bại do lỗi hệ thống hoặc bị khách chặn</TooltipContent>
-                  </Tooltip>
-                </div>
-
-                <div className="relative flex flex-col items-center">
-                  <div className="absolute top-0 left-1/2 w-[2px] h-8 bg-gray-200 -translate-x-1/2 -mt-8"></div>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button onClick={() => onMetricClick?.("FUNNEL_NEVER_FIRST_MESSAGE")} className="bg-gray-100 border border-gray-200 rounded-lg px-2 py-3 min-w-[130px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform">
-                        <div className="text-[9px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">3c. Chưa gửi</div>
-                        <div className="text-base font-black text-gray-600">{zaloNeverCount} <span className="text-[10px] font-medium opacity-60">({sPctZaloNever}%)</span></div>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Leads chưa được gửi tin nhắn First Message hoặc chưa có tương tác</TooltipContent>
-                  </Tooltip>
-                </div>
-              </div>
-            </div>
-          </TabsContent>
-
-          {/* VERSION 2: DETAILED VIEW */}
-          <TabsContent value="v2">
-            <div className="flex flex-col items-center w-full max-w-4xl relative mt-4 mx-auto pb-12">
-              {/* Tier 1 */}
-              <div className="relative flex flex-col items-center mb-6">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={() => onMetricClick?.("FUNNEL_TOTAL_LEADS")}
-                      className="bg-gray-100 border border-gray-200 rounded-lg px-6 py-2 min-w-[180px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer"
-                    >
-                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">1. Nhận lead</div>
-                      <div className="text-xl font-black text-gray-800">{totalLeads}</div>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" className="max-w-[280px] space-y-1.5 p-3">
-                    <p className="font-bold text-sm border-b pb-1 mb-1">1. Nhận lead</p>
-                    <p className="text-xs text-gray-500 leading-relaxed">Tổng số lead được phân bổ cho PIC trong khoảng thời gian đã chọn. Đây là cơ sở để tính tỷ lệ chuyển đổi cho các bước sau.</p>
-                    <div className="bg-gray-50 rounded p-1.5 mt-1 border text-[10px] font-mono text-gray-400">
-                      COUNT(DISTINCT l.phone) FROM leads l
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-                <div className="tree-line-v"></div>
-              </div>
-
-              {/* Tier 2 */}
-              <div className="relative flex justify-center gap-8 mb-6 w-full pt-6">
-                <div className="absolute top-0 left-1/2 w-1/2 max-w-[200px] h-[2px] bg-gray-200 -translate-x-1/2"></div>
-                <div className="relative flex flex-col items-center">
-                  <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
+            {/* VERSION 2: DETAILED VIEW */}
+            <TabsContent value="v2">
+              <div className="flex flex-col items-center w-full max-w-4xl relative mt-4 mx-auto pb-12">
+                {/* Tier 1 */}
+                <div className="relative flex flex-col items-center mb-6">
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
-                        onClick={() => onMetricClick?.("FUNNEL_HAS_IMAGE")}
-                        className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2 min-w-[160px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer"
+                        onClick={() => onMetricClick?.("FUNNEL_TOTAL_LEADS")}
+                        className="bg-gray-100 border border-gray-200 rounded-lg px-6 py-2 min-w-[180px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer"
                       >
-                        <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-1">2a. Đã có hình</div>
-                        <div className="text-lg font-black text-emerald-700">{hasImageCount} <span className="text-xs font-medium opacity-70">({sPctHasImage}%)</span></div>
+                        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">1. Nhận lead</div>
+                        <div className="text-xl font-black text-gray-800">{totalLeads}</div>
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="right" className="max-w-[280px] space-y-1.5 p-3">
-                      <p className="font-bold text-sm text-emerald-600 border-b border-emerald-100 pb-1 mb-1">2a. Đã có hình</p>
-                      <p className="text-xs text-gray-500 leading-relaxed">Leads đã được xác nhận cung cấp đầy đủ hình ảnh xe (Ngoại thất, Nội thất, Giấy tờ). Đã sẵn sàng để thẩm định/định giá.</p>
-                      <div className="bg-emerald-50/50 rounded p-1.5 mt-1 border border-emerald-100 text-[10px] font-mono text-emerald-600/70">
-                        ss.qualified = 'STRONG_QUALIFIED'
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <div className="relative flex flex-col items-center">
-                  <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={() => onMetricClick?.("FUNNEL_NO_IMAGE")}
-                        className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-2 min-w-[160px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer"
-                      >
-                        <div className="text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1">2b. Chưa có hình</div>
-                        <div className="text-lg font-black text-orange-700">{noImageCount} <span className="text-xs font-medium opacity-70">({sPctNoImage}%)</span></div>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="max-w-[280px] space-y-1.5 p-3">
-                      <p className="font-bold text-sm text-orange-600 border-b border-orange-100 pb-1 mb-1">2b. Chưa có hình</p>
-                      <p className="text-xs text-gray-500 leading-relaxed">Leads chưa gửi đủ hình ảnh, hình ảnh mờ hoặc chưa đạt tiêu chuẩn thẩm định. Cần tiếp tục đôn đốc (follow up) để lấy hình.</p>
-                      <div className="bg-orange-50/50 rounded p-1.5 mt-1 border border-orange-100 text-[10px] font-mono text-orange-600/70">
-                        ss.qualified != 'STRONG_QUALIFIED'
+                      <p className="font-bold text-sm border-b pb-1 mb-1">1. Nhận lead</p>
+                      <p className="text-xs text-gray-500 leading-relaxed">Tổng số lead được phân bổ cho PIC trong khoảng thời gian đã chọn. Đây là cơ sở để tính tỷ lệ chuyển đổi cho các bước sau.</p>
+                      <div className="bg-gray-50 rounded p-1.5 mt-1 border text-[10px] font-mono text-gray-400">
+                        COUNT(DISTINCT l.phone) FROM leads l
                       </div>
                     </TooltipContent>
                   </Tooltip>
                   <div className="tree-line-v"></div>
                 </div>
-              </div>
 
-              {/* Tier 3 */}
-              <div className="relative flex justify-end gap-3 mb-6 w-full pt-6 pr-[2%]">
-                <div className="absolute top-0 right-[15%] w-[45%] h-[2px] bg-gray-200"></div>
-                <div className="relative flex flex-col items-center">
-                  <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
-                  
-                  {/* 3a. Success (Parent) */}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={() => onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS")}
-                        className="bg-blue-600 border border-blue-700 rounded-lg px-2 py-2 min-w-[130px] text-center shadow-md relative z-10 hover:scale-105 transition-transform cursor-pointer"
-                      >
-                        <div className="text-[9px] font-bold text-white uppercase tracking-wider mb-0.5">3a. 1st success</div>
-                        <div className="text-base font-black text-white">{zaloSuccessCount} <span className="text-[10px] font-medium opacity-80">({sPctZaloSuccess}%)</span></div>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="max-w-[280px] space-y-1.5 p-3">
-                      <p className="font-bold text-sm text-blue-600 border-b border-blue-100 pb-1 mb-1">3a. 1st Success</p>
-                      <p className="text-xs text-gray-500 leading-relaxed">Gửi tin nhắn chào mừng (First Message) thành công. Bao gồm cả tin nhắn tự động từ hệ thống và tin nhắn thủ công từ Sale có phản hồi.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  <div className="tree-line-v !h-5 !bg-gray-300"></div>
-
-                  <div className="relative flex items-start gap-4 pt-5 mt-0.5">
-                    {/* Horizontal link line */}
-                    <div className="absolute top-0 left-1/2 w-[calc(100%-140px)] h-[2px] bg-gray-300 -translate-x-1/2"></div>
-                    
-                    {/* 3a-I: Automation */}
-                    <div className="flex flex-col items-center">
-                      <div className="absolute top-0 left-1/2 w-[2px] h-5 bg-gray-300 -translate-x-1/2 -mt-5"></div>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            onClick={() => onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_AUTO")}
-                            className="bg-blue-50 border border-blue-200 rounded-lg px-2 py-2 min-w-[130px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer"
-                          >
-                            <div className="text-[9px] font-bold text-blue-600 uppercase tracking-wider mb-0.5">3a-I. Automation</div>
-                            <div className="text-base font-black text-blue-700">{zaloSuccessAutoCount} <span className="text-[10px] font-medium opacity-70">({sPctZaloAuto}%)</span></div>
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="right" className="max-w-[280px] space-y-1.5 p-3">
-                          <p className="font-bold text-sm text-blue-600 border-b border-blue-100 pb-1 mb-1">3a-I. Automation</p>
-                          <p className="text-xs text-gray-500 leading-relaxed">Hệ thống tự động gửi First Message thành công qua Zalo Official Account.</p>
-                        </TooltipContent>
-                      </Tooltip>
-                      <div className="flex flex-col gap-1 mt-2 w-full">
-                        <div className="flex gap-1 justify-center">
-                          <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_AUTO_HOT"); }} className="bg-red-50 border border-red-100 hover:bg-red-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Rất lâu (>7 ngày)">
-                            <div className="text-[7px] font-bold text-red-500 uppercase tracking-tighter group-hover:text-red-700">&gt;7d</div>
-                            <div className="text-[10px] font-black text-red-700">{zaloSuccessAutoHot ?? 0}</div>
-                            {zaloSuccessAutoHotRename > 0 && (
-                              <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
-                                {zaloSuccessAutoHotRename}
-                              </div>
-                            )}
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_AUTO_WARN"); }} className="bg-orange-50 border border-orange-100 hover:bg-orange-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Lâu (4-7 ngày)">
-                            <div className="text-[7px] font-bold text-orange-500 uppercase tracking-tighter group-hover:text-orange-700">4-7d</div>
-                            <div className="text-[10px] font-black text-orange-700">{zaloSuccessAutoWarn ?? 0}</div>
-                            {zaloSuccessAutoWarnRename > 0 && (
-                              <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
-                                {zaloSuccessAutoWarnRename}
-                              </div>
-                            )}
-                          </button>
+                {/* Tier 2 */}
+                <div className="relative flex justify-center gap-8 mb-6 w-full pt-6">
+                  <div className="absolute top-0 left-1/2 w-1/2 max-w-[200px] h-[2px] bg-gray-200 -translate-x-1/2"></div>
+                  <div className="relative flex flex-col items-center">
+                    <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => onMetricClick?.("FUNNEL_HAS_IMAGE")}
+                          className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2 min-w-[160px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer"
+                        >
+                          <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-1">2a. Đã có hình</div>
+                          <div className="text-lg font-black text-emerald-700">{hasImageCount} <span className="text-xs font-medium opacity-70">({sPctHasImage}%)</span></div>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-[280px] space-y-1.5 p-3">
+                        <p className="font-bold text-sm text-emerald-600 border-b border-emerald-100 pb-1 mb-1">2a. Đã có hình</p>
+                        <p className="text-xs text-gray-500 leading-relaxed">Leads đã được xác nhận cung cấp đầy đủ hình ảnh xe (Ngoại thất, Nội thất, Giấy tờ). Đã sẵn sàng để thẩm định/định giá.</p>
+                        <div className="bg-emerald-50/50 rounded p-1.5 mt-1 border border-emerald-100 text-[10px] font-mono text-emerald-600/70">
+                          ss.qualified = 'STRONG_QUALIFIED'
                         </div>
-                        <div className="flex gap-1 justify-center">
-                          <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_AUTO_MEDIUM"); }} className="bg-amber-50 border border-amber-100 hover:bg-amber-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Trung bình (2-4 ngày)">
-                            <div className="text-[7px] font-bold text-amber-500 uppercase tracking-tighter group-hover:text-amber-700">2-4d</div>
-                            <div className="text-[10px] font-black text-amber-700">{zaloSuccessAutoMedium ?? 0}</div>
-                            {zaloSuccessAutoMediumRename > 0 && (
-                              <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
-                                {zaloSuccessAutoMediumRename}
-                              </div>
-                            )}
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_AUTO_FRESH"); }} className="bg-blue-50 border border-blue-100 hover:bg-blue-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Mới (0-2 ngày)">
-                            <div className="text-[7px] font-bold text-blue-500 uppercase tracking-tighter group-hover:text-blue-700">0-2d</div>
-                            <div className="text-[10px] font-black text-blue-700">{zaloSuccessAutoFresh ?? 0}</div>
-                            {zaloSuccessAutoFreshRename > 0 && (
-                              <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
-                                {zaloSuccessAutoFreshRename}
-                              </div>
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 3a-II: Manual */}
-                    <div className="flex flex-col items-center">
-                      <div className="absolute top-0 left-1/2 w-[2px] h-5 bg-gray-300 -translate-x-1/2 -mt-5"></div>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            onClick={() => onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_MANUAL")}
-                            className="bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-2 min-w-[130px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer"
-                          >
-                            <div className="text-[9px] font-bold text-indigo-600 uppercase tracking-wider mb-0.5">3a-II. Manual</div>
-                            <div className="text-base font-black text-indigo-700">{zaloSuccessManualCount} <span className="text-[10px] font-medium opacity-70">({sPctZaloManual}%)</span></div>
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="right" className="max-w-[280px] space-y-1.5 p-3">
-                          <p className="font-bold text-sm text-indigo-600 border-b border-indigo-100 pb-1 mb-1">3a-II. Manual</p>
-                          <p className="text-xs text-gray-500 leading-relaxed">Sale tự nhắn tin qua Zalo cá nhân và đã có tương tác từ hai phía (khách hàng có phản hồi).</p>
-                        </TooltipContent>
-                      </Tooltip>
-                      <div className="flex flex-col gap-1 mt-2 w-full">
-                        <div className="flex gap-1 justify-center">
-                          <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_MANUAL_HOT"); }} className="bg-red-50 border border-red-100 hover:bg-red-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Rất lâu (>7 ngày)">
-                            <div className="text-[7px] font-bold text-red-500 uppercase tracking-tighter group-hover:text-red-700">&gt;7d</div>
-                            <div className="text-[10px] font-black text-red-700">{zaloSuccessManualHot ?? 0}</div>
-                            {zaloSuccessManualHotRename > 0 && (
-                              <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
-                                {zaloSuccessManualHotRename}
-                              </div>
-                            )}
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_MANUAL_WARN"); }} className="bg-orange-50 border border-orange-100 hover:bg-orange-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Lâu (4-7 ngày)">
-                            <div className="text-[7px] font-bold text-orange-500 uppercase tracking-tighter group-hover:text-orange-700">4-7d</div>
-                            <div className="text-[10px] font-black text-orange-700">{zaloSuccessManualWarn ?? 0}</div>
-                            {zaloSuccessManualWarnRename > 0 && (
-                              <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
-                                {zaloSuccessManualWarnRename}
-                              </div>
-                            )}
-                          </button>
-                        </div>
-                        <div className="flex gap-1 justify-center">
-                          <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_MANUAL_MEDIUM"); }} className="bg-amber-50 border border-amber-100 hover:bg-amber-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Trung bình (2-4 ngày)">
-                            <div className="text-[7px] font-bold text-amber-500 uppercase tracking-tighter group-hover:text-amber-700">2-4d</div>
-                            <div className="text-[10px] font-black text-amber-700">{zaloSuccessManualMedium ?? 0}</div>
-                            {zaloSuccessManualMediumRename > 0 && (
-                              <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
-                                {zaloSuccessManualMediumRename}
-                              </div>
-                            )}
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_MANUAL_FRESH"); }} className="bg-blue-50 border border-blue-100 hover:bg-blue-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Mới (0-2 ngày)">
-                            <div className="text-[7px] font-bold text-blue-500 uppercase tracking-tighter group-hover:text-blue-700">0-2d</div>
-                            <div className="text-[10px] font-black text-blue-700">{zaloSuccessManualFresh ?? 0}</div>
-                            {zaloSuccessManualFreshRename > 0 && (
-                              <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
-                                {zaloSuccessManualFreshRename}
-                              </div>
-                            )}
-                          </button>
-                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                    <div className="flex flex-col gap-1 mt-2 w-full">
+                      <div className="flex gap-1 justify-center">
+                        <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_HAS_IMAGE_WITH_ADDITIONAL"); }} className="bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 rounded px-1.5 py-1 flex-1 transition-colors group" title="Có ảnh bổ sung (additional_images)">
+                          <div className="text-[7px] font-bold text-emerald-500 uppercase tracking-tighter group-hover:text-emerald-700">2a-I. Có ảnh</div>
+                          <div className="text-[10px] font-black text-emerald-700">{hasImageWithAdditional}</div>
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_HAS_IMAGE_WITHOUT_ADDITIONAL"); }} className="bg-amber-50 border border-amber-100 hover:bg-amber-100 rounded px-1.5 py-1 flex-1 transition-colors group" title="Chưa có ảnh bổ sung">
+                          <div className="text-[7px] font-bold text-amber-500 uppercase tracking-tighter group-hover:text-amber-700">2a-II. Chưa</div>
+                          <div className="text-[10px] font-black text-amber-700">{hasImageWithoutAdditional}</div>
+                        </button>
                       </div>
                     </div>
                   </div>
-                </div>
-
-                <div className="relative flex flex-col items-center">
-                  <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={() => onMetricClick?.("FUNNEL_FIRST_MESSAGE_FAILED")}
-                        className="bg-red-50 border border-red-200 rounded-lg px-2 py-2 min-w-[130px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer"
-                      >
-                        <div className="text-[9px] font-bold text-red-600 uppercase tracking-wider mb-0.5">3b. Failed</div>
-                        <div className="text-base font-black text-red-700">{zaloFailedCount} <span className="text-[10px] font-medium opacity-70">({sPctZaloFailed}%)</span></div>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="max-w-[280px] space-y-1.5 p-3">
-                      <p className="font-bold text-sm text-red-600 border-b border-red-100 pb-1 mb-1">3b. Failed</p>
-                      <p className="text-xs text-gray-500 leading-relaxed">Yêu cầu gửi First Message bị thất bại. Cần kiểm tra nguyên nhân (bị chặn hoặc lỗi hệ thống) để có hướng xử lý thủ công.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  <div className="tree-line-v"></div>
-                </div>
-
-                <div className="relative flex flex-col items-center">
-                  <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={() => onMetricClick?.("FUNNEL_NEVER_FIRST_MESSAGE")}
-                        className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-2 min-w-[130px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer"
-                      >
-                        <div className="text-[9px] font-bold text-gray-600 uppercase tracking-wider mb-0.5">3c. Chưa gửi</div>
-                        <div className="text-base font-black text-gray-700">{zaloNeverCount} <span className="text-[10px] font-medium opacity-70">({pctZaloNever}%)</span></div>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="max-w-[280px] space-y-1.5 p-3">
-                      <p className="font-bold text-sm text-gray-600 border-b border-gray-100 pb-1 mb-1">3c. Chưa gửi</p>
-                      <p className="text-xs text-gray-500 leading-relaxed">Leads chưa được hệ thống gửi tin nhắn hoặc chưa có bất kỳ tương tác Zalo nào từ Sale.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  <div className="flex flex-col gap-1 mt-2 w-full">
-                    <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_NEVER_FIRST_MESSAGE_SALE_ONLY"); }} className="bg-amber-50 border border-amber-100 hover:bg-amber-100 rounded px-1.5 py-1 flex justify-between items-center transition-colors group" title="Sale đã nhắn, đang chờ khách phản hồi">
-                      <div className="flex flex-col items-start translate-y-[1px]">
-                        <div className="text-[7px] font-bold text-amber-500 uppercase tracking-tighter group-hover:text-amber-700">3c-iii. Sale nhắn</div>
-                        {maxDaysWaitingReply > 0 && <div className="text-[6px] text-amber-400 font-medium">{maxDaysWaitingReply}d</div>}
-                      </div>
-                      <div className="text-[10px] font-black text-amber-700">{zaloNeverSaleOnly ?? 0}</div>
-                    </button>
-                    <div className="bg-gray-50/50 border border-gray-100 rounded-lg p-1.5 flex flex-col gap-1.5">
-                      <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_NEVER_FIRST_MESSAGE_NO_INTERACTION"); }} className="flex justify-between items-center group px-1" title="Chưa có bất kỳ tương tác nào">
-                        <div className="flex flex-col items-start text-left">
-                          <div className="text-[7px] font-bold text-gray-500 uppercase tracking-tighter group-hover:text-gray-700">3c-iv. Trắng</div>
-                          {maxDaysSinceActivity > 0 && <div className="text-[6px] text-gray-400 font-medium tracking-tight">Act: {maxDaysSinceActivity}d</div>}
+                  <div className="relative flex flex-col items-center">
+                    <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => onMetricClick?.("FUNNEL_NO_IMAGE")}
+                          className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-2 min-w-[160px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer"
+                        >
+                          <div className="text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1">2b. Chưa có hình</div>
+                          <div className="text-lg font-black text-orange-700">{noImageCount} <span className="text-xs font-medium opacity-70">({sPctNoImage}%)</span></div>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-[280px] space-y-1.5 p-3">
+                        <p className="font-bold text-sm text-orange-600 border-b border-orange-100 pb-1 mb-1">2b. Chưa có hình</p>
+                        <p className="text-xs text-gray-500 leading-relaxed">Leads chưa gửi đủ hình ảnh, hình ảnh mờ hoặc chưa đạt tiêu chuẩn thẩm định. Cần tiếp tục đôn đốc (follow up) để lấy hình.</p>
+                        <div className="bg-orange-50/50 rounded p-1.5 mt-1 border border-orange-100 text-[10px] font-mono text-orange-600/70">
+                          ss.qualified != 'STRONG_QUALIFIED'
                         </div>
-                        <div className="text-[10px] font-black text-gray-700">{zaloNeverNoInteraction ?? 0}</div>
-                      </button>
-                      <div className="grid grid-cols-2 gap-1">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_RENAME_SUCCESS"); }} className="bg-white border border-emerald-100 hover:bg-emerald-50 rounded px-1 py-1 flex flex-col items-center justify-center transition-colors group">
-                              <div className="text-[7px] font-bold text-emerald-500 uppercase group-hover:text-emerald-700">Đã đổi tên</div>
-                              <div className="text-[10px] font-black text-emerald-700">{zaloNeverRenameSuccess ?? 0}</div>
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">Leads đã được đổi tên thành công trong hệ thống Zalo</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_RENAME_RESERVE"); }} className="bg-white border border-gray-100 hover:bg-gray-100 rounded px-1 py-1 flex flex-col items-center justify-center transition-colors group">
-                              <div className="text-[7px] font-bold text-gray-400 uppercase group-hover:text-gray-600">Còn lại</div>
-                              <div className="text-[10px] font-black text-gray-600">{zaloNeverRenameReserve}</div>
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">Các leads chưa đổi tên hoặc đổi tên thất bại</TooltipContent>
-                        </Tooltip>
-                      </div>
-                    </div>
+                      </TooltipContent>
+                    </Tooltip>
+                    <div className="tree-line-v"></div>
                   </div>
                 </div>
-              </div>
 
-              {/* Tier 4 */}
-              <div className="relative flex justify-end gap-3 w-full pt-6 pr-[12%]">
-                <div className="absolute top-0 right-[15%] w-[18%] h-[2px] bg-red-100"></div>
-                <div className="relative flex flex-col items-center">
-                  <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-red-100 -translate-x-1/2 -mt-6"></div>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button onClick={() => onMetricClick?.("FUNNEL_BLOCKED_MESSAGE")} className="bg-rose-50 border border-rose-100 rounded-lg px-2 py-1.5 min-w-[110px] text-center relative z-10 hover:scale-105 transition-transform cursor-pointer">
-                        <div className="text-[9px] font-bold text-rose-500 uppercase tracking-wider mb-0.5">Lỗi: Chặn TN</div>
-                        <div className="text-sm font-black text-rose-600">{zaloBlockedCount || 0}</div>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="max-w-[200px]">
-                      <p className="text-xs leading-relaxed">Khách hàng cài đặt chặn tin nhắn từ người lạ hoặc số điện thoại không sử dụng Zalo.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <div className="relative flex flex-col items-center">
-                  <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-red-100 -translate-x-1/2 -mt-6"></div>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button onClick={() => onMetricClick?.("FUNNEL_SYSTEM_ERROR")} className="bg-rose-50 border border-rose-100 rounded-lg px-2 py-1.5 min-w-[110px] text-center relative z-10 hover:scale-105 transition-transform cursor-pointer">
-                        <div className="text-[9px] font-bold text-rose-500 uppercase tracking-wider mb-0.5">Lỗi: No UID/HT</div>
-                        <div className="text-sm font-black text-rose-600">{zaloSystemErrorCount || 0}</div>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="max-w-[200px]">
-                      <p className="text-xs leading-relaxed">Lỗi kỹ thuật từ hệ thống gửi tin hoặc số điện thoại không thể định danh UID Zalo.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-              </div>
-            </div>
-          </TabsContent>
-        </Tabs>
-      )}
-    </div>
+                {/* Tier 3 */}
+                <div className="relative flex justify-end gap-3 mb-6 w-full pt-6 pr-[2%]">
+                  <div className="absolute top-0 right-[15%] w-[45%] h-[2px] bg-gray-200"></div>
+                  <div className="relative flex flex-col items-center">
+                    <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
 
-    {isExpanded && (
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden p-6 mt-8 space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-50 rounded-xl">
-              <Bell className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <h3 className="text-lg font-black text-gray-900 leading-none">Follow up để xin hình ảnh</h3>
-              <p className="text-xs text-gray-400 font-medium mt-1">Leads 3A & 3C cần được follow up sau 1 ngày stall</p>
-            </div>
-          </div>
+                    {/* 3a. Success (Parent) */}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS")}
+                          className="bg-blue-600 border border-blue-700 rounded-lg px-2 py-2 min-w-[130px] text-center shadow-md relative z-10 hover:scale-105 transition-transform cursor-pointer"
+                        >
+                          <div className="text-[9px] font-bold text-white uppercase tracking-wider mb-0.5">3a. 1st success</div>
+                          <div className="text-base font-black text-white">{zaloSuccessCount} <span className="text-[10px] font-medium opacity-80">({sPctZaloSuccess}%)</span></div>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-[280px] space-y-1.5 p-3">
+                        <p className="font-bold text-sm text-blue-600 border-b border-blue-100 pb-1 mb-1">3a. 1st Success</p>
+                        <p className="text-xs text-gray-500 leading-relaxed">Gửi tin nhắn chào mừng (First Message) thành công. Bao gồm cả tin nhắn tự động từ hệ thống và tin nhắn thủ công từ Sale có phản hồi.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <div className="tree-line-v !h-5 !bg-gray-300"></div>
 
-          <div className="flex items-center gap-4 bg-gray-50/80 p-1.5 rounded-2xl border border-gray-100">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl shadow-sm border border-gray-100">
-              <div className="flex flex-col">
-                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider leading-none mb-1">Đã Followed</span>
-                <span className="text-sm font-black text-emerald-600 leading-none">{metrics.totalFollowed}</span>
-              </div>
-              <CheckCircle className="w-4 h-4 text-emerald-500" />
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl shadow-sm border border-gray-100">
-              <div className="flex flex-col">
-                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider leading-none mb-1">Chưa Followed</span>
-                <span className="text-sm font-black text-orange-500 leading-none">{metrics.totalNotFollowed}</span>
-              </div>
-              <Activity className="w-4 h-4 text-orange-400" />
-            </div>
-          </div>
-        </div>
+                    <div className="relative flex items-start gap-4 pt-5 mt-0.5">
+                      {/* Horizontal link line */}
+                      <div className="absolute top-0 left-1/2 w-[calc(100%-140px)] h-[2px] bg-gray-300 -translate-x-1/2"></div>
 
-        <Tabs defaultValue="not-followed" className="w-full">
-          <TabsList className="bg-gray-100/80 p-1 rounded-xl h-11 border border-gray-200/50">
-            <TabsTrigger 
-              value="not-followed" 
-              className="rounded-lg px-6 text-xs font-bold data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm transition-all"
-            >
-              <div className="flex items-center gap-2">
-                <Clock className="w-3.5 h-3.5" />
-                Chưa Follow Up
-                <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-md text-[10px] font-black">{metrics.totalNotFollowed}</span>
-              </div>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="followed" 
-              className="rounded-lg px-6 text-xs font-bold data-[state=active]:bg-white data-[state=active]:text-emerald-600 data-[state=active]:shadow-sm transition-all"
-            >
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-3.5 h-3.5" />
-                Đã Follow Up
-                <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-md text-[10px] font-black">{metrics.totalFollowed}</span>
-              </div>
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="not-followed" className="mt-4 outline-none">
-            {loadingFollowUp ? (
-              <div className="py-20 flex flex-col items-center justify-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                <div className="h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                <p className="text-sm text-gray-400 font-medium">Đang tải danh sách...</p>
-              </div>
-            ) : !groupedLeads["Chưa Follow Up"] ? (
-              <div className="py-20 flex flex-col items-center justify-center bg-gray-50 rounded-xl border border-dashed border-gray-200 grayscale opacity-60">
-                <Bell className="h-12 w-12 text-gray-300 mb-4" />
-                <p className="text-sm text-gray-400 font-medium italic">Không có lead nào cần follow up</p>
-              </div>
-            ) : (
-              <div className="border rounded-2xl overflow-hidden shadow-sm border-gray-100">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50/80 border-b">
-                    <tr>
-                      <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 border-b-2 border-transparent">Khách hàng & Xe</th>
-                      <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 border-b-2 border-transparent uppercase tracking-wider">Phân loại</th>
-                      <th 
-                        className="text-left px-4 py-2.5 text-[10px] font-bold text-blue-600 border-b-2 border-blue-200 uppercase tracking-wider cursor-pointer hover:bg-blue-50 transition-colors"
-                        onClick={toggleSort}
-                      >
-                        <div className="flex items-center gap-1">
-                          Hoạt động
-                          {sortOrder === 'asc' ? <ArrowUp className="w-2.5 h-2.5" /> : sortOrder === 'desc' ? <ArrowDown className="w-2.5 h-2.5" /> : <ArrowUpDown className="w-2.5 h-2.5" />}
-                        </div>
-                      </th>
-                      <th className="text-center px-4 py-2.5 text-[10px] font-bold text-gray-400 border-b-2 border-transparent uppercase tracking-wider">Status</th>
-                      <th className="text-right px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {groupedLeads["Chưa Follow Up"].map((lead) => (
-                      <tr key={lead.car_id} className="group hover:bg-blue-50/40 transition-all duration-200">
-                        <td className="px-4 py-3 align-top min-w-[240px]">
-                          <div className="space-y-1.5">
-                            <div className="flex items-center gap-2">
-                              <span className="font-black text-gray-900 leading-none">{lead.phone}</span>
-                              <span className="text-[10px] text-gray-400 font-medium truncate max-w-[100px]">— {lead.name}</span>
-                              {lead.qualified && (
-                                <span className={`text-[8px] font-black px-1 py-0.5 rounded border uppercase tracking-tighter ${
-                                  QUALIFIED_CONFIG[lead.qualified]?.className || "text-gray-500 bg-gray-50 border-gray-200"
-                                }`}>
-                                  {QUALIFIED_CONFIG[lead.qualified]?.label || lead.qualified}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-3 text-[10px] text-gray-500 font-medium bg-gray-50 w-fit px-2 py-0.5 rounded border border-gray-100 shadow-sm">
-                              <span className="flex items-center gap-1"><Car className="w-2.5 h-2.5" /> {lead.brand} {lead.model} {lead.year}</span>
-                              <span className="flex items-center gap-1"><MapPin className="w-2.5 h-2.5" /> {lead.location}</span>
-                              <span className="flex items-center gap-1"><Clock className="w-2.5 h-2.5" /> {lead.mileage?.toLocaleString()} km</span>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 align-top">
-                          <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black border tracking-tight ${
-                            lead.is3A ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-amber-50 text-amber-600 border-amber-100"
-                          }`}>
-                            {lead.category}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 align-top font-black text-gray-700 text-xs">
-                          {lead.daysSince} ngày
-                        </td>
-                        <td className="px-4 py-3 align-top text-center">
-                          <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-black bg-gray-100 text-gray-400 border border-gray-200 italic">
-                            Not Sent
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 align-top text-right">
-                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <ViewZaloChatAction carId={lead.car_id} customerName={lead.name} iconOnly />
-                                </TooltipTrigger>
-                                <TooltipContent><p className="text-[10px]">Xem chat Zalo</p></TooltipContent>
-                              </Tooltip>
-
-                              <FollowUpAction 
-                                lead={{
-                                  ...lead,
-                                  id: lead.id,
-                                  phone: lead.phone
-                                } as any} 
-                                isSidebarVariant 
-                                className="scale-90"
-                                onSuccess={fetchFollowUpLeads}
-                              />
-
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button 
-                                    onClick={() => handleEditLead(lead)}
-                                    className="p-1.5 hover:bg-white hover:text-indigo-600 rounded-lg text-gray-400 transition-all border border-transparent hover:border-indigo-100 hover:shadow-sm"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent><p className="text-[10px]">Chỉnh sửa lead</p></TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="followed" className="mt-4 outline-none">
-            {loadingFollowUp ? (
-              <div className="py-20 flex flex-col items-center justify-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                <div className="h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                <p className="text-sm text-gray-400 font-medium">Đang tải danh sách...</p>
-              </div>
-            ) : Object.keys(groupedLeads).filter(k => k !== "Chưa Follow Up").length === 0 ? (
-              <div className="py-20 flex flex-col items-center justify-center bg-gray-50 rounded-xl border border-dashed border-gray-200 grayscale opacity-60">
-                <Bell className="h-12 w-12 text-gray-300 mb-4" />
-                <p className="text-sm text-gray-400 font-medium italic">Chưa có lead nào được follow up</p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {Object.entries(groupedLeads).filter(([k]) => k !== "Chưa Follow Up").map(([date, leads]) => (
-                  <div key={date} className="space-y-3">
-                    <div className="flex items-center gap-2 px-2">
-                       <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-1.5">
-                        <CheckCircle className="w-3 h-3" /> Đã gửi ngày {date}
-                      </h4>
-                      <div className="h-px flex-1 bg-gradient-to-r from-emerald-100 to-transparent"></div>
-                    </div>
-                    <div className="border rounded-2xl overflow-hidden shadow-sm border-gray-100">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50/80 border-b">
-                          <tr>
-                            <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 border-b-2 border-transparent">Khách hàng & Xe</th>
-                            <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 border-b-2 border-transparent uppercase tracking-wider">Phân loại</th>
-                            <th 
-                              className="text-left px-4 py-2.5 text-[10px] font-bold text-blue-600 border-b-2 border-blue-200 uppercase tracking-wider cursor-pointer hover:bg-blue-50 transition-colors"
-                              onClick={toggleSort}
+                      {/* 3a-I: Automation */}
+                      <div className="flex flex-col items-center">
+                        <div className="absolute top-0 left-1/2 w-[2px] h-5 bg-gray-300 -translate-x-1/2 -mt-5"></div>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_AUTO")}
+                              className="bg-blue-50 border border-blue-200 rounded-lg px-2 py-2 min-w-[130px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer"
                             >
-                              <div className="flex items-center gap-1">
-                                Hoạt động
-                                {sortOrder === 'asc' ? <ArrowUp className="w-2.5 h-2.5" /> : sortOrder === 'desc' ? <ArrowDown className="w-2.5 h-2.5" /> : <ArrowUpDown className="w-2.5 h-2.5" />}
-                              </div>
-                            </th>
-                            <th className="text-center px-4 py-2.5 text-[10px] font-bold text-gray-400 border-b-2 border-transparent uppercase tracking-wider">Status</th>
-                            <th className="text-right px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-50">
-                          {leads.map((lead) => (
-                            <tr key={lead.car_id} className="group hover:bg-emerald-50/40 transition-all duration-200">
-                              <td className="px-4 py-3 align-top min-w-[240px]">
-                                <div className="space-y-1.5">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-black text-gray-900 leading-none">{lead.phone}</span>
-                                    <span className="text-[10px] text-gray-400 font-medium truncate max-w-[100px]">— {lead.name}</span>
-                                    {lead.qualified && (
-                                      <span className={`text-[8px] font-black px-1 py-0.5 rounded border uppercase tracking-tighter ${
-                                        QUALIFIED_CONFIG[lead.qualified]?.className || "text-gray-500 bg-gray-50 border-gray-200"
-                                      }`}>
-                                        {QUALIFIED_CONFIG[lead.qualified]?.label || lead.qualified}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-3 text-[10px] text-gray-500 font-medium bg-gray-50 w-fit px-2 py-0.5 rounded border border-gray-100 shadow-sm">
-                                    <span className="flex items-center gap-1"><Car className="w-2.5 h-2.5" /> {lead.brand} {lead.model} {lead.year}</span>
-                                    <span className="flex items-center gap-1"><MapPin className="w-2.5 h-2.5" /> {lead.location}</span>
-                                    <span className="flex items-center gap-1"><Clock className="w-2.5 h-2.5" /> {lead.mileage?.toLocaleString()} km</span>
-                                  </div>
+                              <div className="text-[9px] font-bold text-blue-600 uppercase tracking-wider mb-0.5">3a-I. Automation</div>
+                              <div className="text-base font-black text-blue-700">{zaloSuccessAutoCount} <span className="text-[10px] font-medium opacity-70">({sPctZaloAuto}%)</span></div>
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="max-w-[280px] space-y-1.5 p-3">
+                            <p className="font-bold text-sm text-blue-600 border-b border-blue-100 pb-1 mb-1">3a-I. Automation</p>
+                            <p className="text-xs text-gray-500 leading-relaxed">Hệ thống tự động gửi First Message thành công qua Zalo Official Account.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                        <div className="flex flex-col gap-1 mt-2 w-full">
+                          <div className="flex gap-1 justify-center">
+                            <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_AUTO_HOT"); }} className="bg-red-50 border border-red-100 hover:bg-red-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Rất lâu (>7 ngày)">
+                              <div className="text-[7px] font-bold text-red-500 uppercase tracking-tighter group-hover:text-red-700">&gt;7d</div>
+                              <div className="text-[10px] font-black text-red-700">{zaloSuccessAutoHot ?? 0}</div>
+                              {zaloSuccessAutoHotRename > 0 && (
+                                <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
+                                  {zaloSuccessAutoHotRename}
                                 </div>
-                              </td>
-                              <td className="px-4 py-3 align-top">
-                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black border tracking-tight ${
-                                  lead.is3A ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-amber-50 text-amber-600 border-amber-100"
-                                }`}>
-                                  {lead.category}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 align-top font-black text-gray-700 text-xs">
-                                {lead.daysSince} ngày
-                              </td>
-                              <td className="px-4 py-3 align-top text-center">
-                                <div className="flex flex-col items-center">
-                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 rounded-full">
-                                    <CheckCircle className="w-2 h-2" /> Followed
-                                  </span>
-                                  <span className="text-[8px] text-gray-400 mt-0.5">{new Date(lead.lastFollowUpAt).toLocaleTimeString("vi-VN", { hour: '2-digit', minute: '2-digit' })}</span>
+                              )}
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_AUTO_WARN"); }} className="bg-orange-50 border border-orange-100 hover:bg-orange-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Lâu (4-7 ngày)">
+                              <div className="text-[7px] font-bold text-orange-500 uppercase tracking-tighter group-hover:text-orange-700">4-7d</div>
+                              <div className="text-[10px] font-black text-orange-700">{zaloSuccessAutoWarn ?? 0}</div>
+                              {zaloSuccessAutoWarnRename > 0 && (
+                                <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
+                                  {zaloSuccessAutoWarnRename}
                                 </div>
-                              </td>
-                              <td className="px-4 py-3 align-top text-right">
-                                <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <ViewZaloChatAction carId={lead.car_id} customerName={lead.name} iconOnly />
-                                      </TooltipTrigger>
-                                      <TooltipContent side="top" align="center"><p className="text-[10px]">Xem chat Zalo</p></TooltipContent>
-                                    </Tooltip>
+                              )}
+                            </button>
+                          </div>
+                          <div className="flex gap-1 justify-center">
+                            <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_AUTO_MEDIUM"); }} className="bg-amber-50 border border-amber-100 hover:bg-amber-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Trung bình (2-4 ngày)">
+                              <div className="text-[7px] font-bold text-amber-500 uppercase tracking-tighter group-hover:text-amber-700">2-4d</div>
+                              <div className="text-[10px] font-black text-amber-700">{zaloSuccessAutoMedium ?? 0}</div>
+                              {zaloSuccessAutoMediumRename > 0 && (
+                                <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
+                                  {zaloSuccessAutoMediumRename}
+                                </div>
+                              )}
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_AUTO_FRESH"); }} className="bg-blue-50 border border-blue-100 hover:bg-blue-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Mới (0-2 ngày)">
+                              <div className="text-[7px] font-bold text-blue-500 uppercase tracking-tighter group-hover:text-blue-700">0-2d</div>
+                              <div className="text-[10px] font-black text-blue-700">{zaloSuccessAutoFresh ?? 0}</div>
+                              {zaloSuccessAutoFreshRename > 0 && (
+                                <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
+                                  {zaloSuccessAutoFreshRename}
+                                </div>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
 
-                                    <FollowUpAction 
-                                      lead={{
-                                        ...lead,
-                                        id: lead.id,
-                                        phone: lead.phone
-                                      } as any} 
-                                      isSidebarVariant 
-                                      className="scale-90"
-                                      onSuccess={fetchFollowUpLeads}
-                                    />
-
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <button 
-                                          onClick={() => handleEditLead(lead)}
-                                          className="p-1.5 hover:bg-white hover:text-indigo-600 rounded-lg text-gray-400 transition-all border border-transparent hover:border-indigo-100 hover:shadow-sm"
-                                        >
-                                          <Edit3 className="w-3.5 h-3.5" />
-                                        </button>
-                                      </TooltipTrigger>
-                                      <TooltipContent><p className="text-[10px]">Chỉnh sửa lead</p></TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
+                      {/* 3a-II: Manual */}
+                      <div className="flex flex-col items-center">
+                        <div className="absolute top-0 left-1/2 w-[2px] h-5 bg-gray-300 -translate-x-1/2 -mt-5"></div>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_MANUAL")}
+                              className="bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-2 min-w-[130px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer"
+                            >
+                              <div className="text-[9px] font-bold text-indigo-600 uppercase tracking-wider mb-0.5">3a-II. Manual</div>
+                              <div className="text-base font-black text-indigo-700">{zaloSuccessManualCount} <span className="text-[10px] font-medium opacity-70">({sPctZaloManual}%)</span></div>
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="max-w-[280px] space-y-1.5 p-3">
+                            <p className="font-bold text-sm text-indigo-600 border-b border-indigo-100 pb-1 mb-1">3a-II. Manual</p>
+                            <p className="text-xs text-gray-500 leading-relaxed">Sale tự nhắn tin qua Zalo cá nhân và đã có tương tác từ hai phía (khách hàng có phản hồi).</p>
+                          </TooltipContent>
+                        </Tooltip>
+                        <div className="flex flex-col gap-1 mt-2 w-full">
+                          <div className="flex gap-1 justify-center">
+                            <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_MANUAL_HOT"); }} className="bg-red-50 border border-red-100 hover:bg-red-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Rất lâu (>7 ngày)">
+                              <div className="text-[7px] font-bold text-red-500 uppercase tracking-tighter group-hover:text-red-700">&gt;7d</div>
+                              <div className="text-[10px] font-black text-red-700">{zaloSuccessManualHot ?? 0}</div>
+                              {zaloSuccessManualHotRename > 0 && (
+                                <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
+                                  {zaloSuccessManualHotRename}
                                 </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                              )}
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_MANUAL_WARN"); }} className="bg-orange-50 border border-orange-100 hover:bg-orange-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Lâu (4-7 ngày)">
+                              <div className="text-[7px] font-bold text-orange-500 uppercase tracking-tighter group-hover:text-orange-700">4-7d</div>
+                              <div className="text-[10px] font-black text-orange-700">{zaloSuccessManualWarn ?? 0}</div>
+                              {zaloSuccessManualWarnRename > 0 && (
+                                <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
+                                  {zaloSuccessManualWarnRename}
+                                </div>
+                              )}
+                            </button>
+                          </div>
+                          <div className="flex gap-1 justify-center">
+                            <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_MANUAL_MEDIUM"); }} className="bg-amber-50 border border-amber-100 hover:bg-amber-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Trung bình (2-4 ngày)">
+                              <div className="text-[7px] font-bold text-amber-500 uppercase tracking-tighter group-hover:text-amber-700">2-4d</div>
+                              <div className="text-[10px] font-black text-amber-700">{zaloSuccessManualMedium ?? 0}</div>
+                              {zaloSuccessManualMediumRename > 0 && (
+                                <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
+                                  {zaloSuccessManualMediumRename}
+                                </div>
+                              )}
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_FIRST_MESSAGE_SUCCESS_MANUAL_FRESH"); }} className="bg-blue-50 border border-blue-100 hover:bg-blue-100 rounded px-1.5 py-1 flex-1 transition-colors group relative" title="Mới (0-2 ngày)">
+                              <div className="text-[7px] font-bold text-blue-500 uppercase tracking-tighter group-hover:text-blue-700">0-2d</div>
+                              <div className="text-[10px] font-black text-blue-700">{zaloSuccessManualFresh ?? 0}</div>
+                              {zaloSuccessManualFreshRename > 0 && (
+                                <div className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[7px] min-w-[12px] h-3 px-0.5 rounded-full flex items-center justify-center font-bold border border-white hover:bg-emerald-600 transition-colors">
+                                  {zaloSuccessManualFreshRename}
+                                </div>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
 
-        {/* Shared Dialogs */}
-        <EditLeadDialog
-          open={editDialogOpen}
-          onOpenChange={setEditDialogOpen}
-          lead={selectedLeadForEdit}
-          editMode={editMode}
-          setEditMode={setEditMode}
-          editedPriceCustomer={editedPriceCustomer}
-          setEditedPriceCustomer={setEditedPriceCustomer}
-          editedPriceHighestBid={editedPriceHighestBid}
-          setEditedPriceHighestBid={setEditedPriceHighestBid}
-          editedStage={editedStage}
-          setEditedStage={setEditedStage}
-          editedQualified={editedQualified}
-          setEditedQualified={setEditedQualified}
-          editedIntentionLead={editedIntentionLead}
-          setEditedIntentionLead={setEditedIntentionLead}
-          editedNegotiationAbility={editedNegotiationAbility}
-          setEditedNegotiationAbility={setEditedNegotiationAbility}
-          editedNotes={editedNotes}
-          setEditedNotes={setEditedNotes}
-          processedImages={[]} 
-          onSave={handleSaveLead}
-          saving={saving}
-          getStageStyle={() => ""} 
-        />
+                  <div className="relative flex flex-col items-center">
+                    <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => onMetricClick?.("FUNNEL_FIRST_MESSAGE_FAILED")}
+                          className="bg-red-50 border border-red-200 rounded-lg px-2 py-2 min-w-[130px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer"
+                        >
+                          <div className="text-[9px] font-bold text-red-600 uppercase tracking-wider mb-0.5">3b. Failed</div>
+                          <div className="text-base font-black text-red-700">{zaloFailedCount} <span className="text-[10px] font-medium opacity-70">({sPctZaloFailed}%)</span></div>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-[280px] space-y-1.5 p-3">
+                        <p className="font-bold text-sm text-red-600 border-b border-red-100 pb-1 mb-1">3b. Failed</p>
+                        <p className="text-xs text-gray-500 leading-relaxed">Yêu cầu gửi First Message bị thất bại. Cần kiểm tra nguyên nhân (bị chặn hoặc lỗi hệ thống) để có hướng xử lý thủ công.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <div className="tree-line-v"></div>
+                  </div>
+
+                  <div className="relative flex flex-col items-center">
+                    <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => onMetricClick?.("FUNNEL_NEVER_FIRST_MESSAGE")}
+                          className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-2 min-w-[130px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer"
+                        >
+                          <div className="text-[9px] font-bold text-gray-600 uppercase tracking-wider mb-0.5">3c. Chưa gửi</div>
+                          <div className="text-base font-black text-gray-700">{zaloNeverCount} <span className="text-[10px] font-medium opacity-70">({pctZaloNever}%)</span></div>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-[280px] space-y-1.5 p-3">
+                        <p className="font-bold text-sm text-gray-600 border-b border-gray-100 pb-1 mb-1">3c. Chưa gửi</p>
+                        <p className="text-xs text-gray-500 leading-relaxed">Leads chưa được hệ thống gửi tin nhắn hoặc chưa có bất kỳ tương tác Zalo nào từ Sale.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <div className="flex flex-col gap-1 mt-2 w-full">
+                      <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_NEVER_FIRST_MESSAGE_SALE_ONLY"); }} className="bg-amber-50 border border-amber-100 hover:bg-amber-100 rounded px-1.5 py-1 flex justify-between items-center transition-colors group" title="Sale đã nhắn, đang chờ khách phản hồi">
+                        <div className="flex flex-col items-start translate-y-[1px]">
+                          <div className="text-[7px] font-bold text-amber-500 uppercase tracking-tighter group-hover:text-amber-700">3c-iii. Sale nhắn</div>
+                          {maxDaysWaitingReply > 0 && <div className="text-[6px] text-amber-400 font-medium">{maxDaysWaitingReply}d</div>}
+                        </div>
+                        <div className="text-[10px] font-black text-amber-700">{zaloNeverSaleOnly ?? 0}</div>
+                      </button>
+                      <div className="bg-gray-50/50 border border-gray-100 rounded-lg p-1.5 flex flex-col gap-1.5">
+                        <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_NEVER_FIRST_MESSAGE_NO_INTERACTION"); }} className="flex justify-between items-center group px-1" title="Chưa có bất kỳ tương tác nào">
+                          <div className="flex flex-col items-start text-left">
+                            <div className="text-[7px] font-bold text-gray-500 uppercase tracking-tighter group-hover:text-gray-700">3c-iv. Trắng</div>
+                            {maxDaysSinceActivity > 0 && <div className="text-[6px] text-gray-400 font-medium tracking-tight">Act: {maxDaysSinceActivity}d</div>}
+                          </div>
+                          <div className="text-[10px] font-black text-gray-700">{zaloNeverNoInteraction ?? 0}</div>
+                        </button>
+                        <div className="grid grid-cols-2 gap-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_RENAME_SUCCESS"); }} className="bg-white border border-emerald-100 hover:bg-emerald-50 rounded px-1 py-1 flex flex-col items-center justify-center transition-colors group">
+                                <div className="text-[7px] font-bold text-emerald-500 uppercase group-hover:text-emerald-700">Đã đổi tên</div>
+                                <div className="text-[10px] font-black text-emerald-700">{zaloNeverRenameSuccess ?? 0}</div>
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">Leads đã được đổi tên thành công trong hệ thống Zalo</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_RENAME_RESERVE"); }} className="bg-white border border-gray-100 hover:bg-gray-100 rounded px-1 py-1 flex flex-col items-center justify-center transition-colors group">
+                                <div className="text-[7px] font-bold text-gray-400 uppercase group-hover:text-gray-600">Còn lại</div>
+                                <div className="text-[10px] font-black text-gray-600">{zaloNeverRenameReserve}</div>
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">Các leads chưa đổi tên hoặc đổi tên thất bại</TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tier 4 */}
+                <div className="relative flex justify-end gap-3 w-full pt-6 pr-[12%]">
+                  <div className="absolute top-0 right-[15%] w-[18%] h-[2px] bg-red-100"></div>
+                  <div className="relative flex flex-col items-center">
+                    <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-red-100 -translate-x-1/2 -mt-6"></div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button onClick={() => onMetricClick?.("FUNNEL_BLOCKED_MESSAGE")} className="bg-rose-50 border border-rose-100 rounded-lg px-2 py-1.5 min-w-[110px] text-center relative z-10 hover:scale-105 transition-transform cursor-pointer">
+                          <div className="text-[9px] font-bold text-rose-500 uppercase tracking-wider mb-0.5">Lỗi: Chặn TN</div>
+                          <div className="text-sm font-black text-rose-600">{zaloBlockedCount || 0}</div>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-[200px]">
+                        <p className="text-xs leading-relaxed">Khách hàng cài đặt chặn tin nhắn từ người lạ hoặc số điện thoại không sử dụng Zalo.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <div className="relative flex flex-col items-center">
+                    <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-red-100 -translate-x-1/2 -mt-6"></div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button onClick={() => onMetricClick?.("FUNNEL_SYSTEM_ERROR")} className="bg-rose-50 border border-rose-100 rounded-lg px-2 py-1.5 min-w-[110px] text-center relative z-10 hover:scale-105 transition-transform cursor-pointer">
+                          <div className="text-[9px] font-bold text-rose-500 uppercase tracking-wider mb-0.5">Lỗi: No UID/HT</div>
+                          <div className="text-sm font-black text-rose-600">{zaloSystemErrorCount || 0}</div>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-[200px]">
+                        <p className="text-xs leading-relaxed">Lỗi kỹ thuật từ hệ thống gửi tin hoặc số điện thoại không thể định danh UID Zalo.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
+        )}
       </div>
-    )}
-  </>
-)
+
+      {isExpanded && (
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden p-6 mt-8 space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-blue-50 rounded-xl">
+                <Bell className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-gray-900 leading-none">Follow up để xin hình ảnh</h3>
+                <p className="text-xs text-gray-400 font-medium mt-1">Leads 3A & 3C cần được follow up sau 1 ngày stall</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 bg-gray-50/80 p-1.5 rounded-2xl border border-gray-100">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl shadow-sm border border-gray-100">
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider leading-none mb-1">Đã Followed</span>
+                  <span className="text-sm font-black text-emerald-600 leading-none">{metrics.totalFollowed}</span>
+                </div>
+                <CheckCircle className="w-4 h-4 text-emerald-500" />
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl shadow-sm border border-gray-100">
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider leading-none mb-1">Chưa Followed</span>
+                  <span className="text-sm font-black text-orange-500 leading-none">{metrics.totalNotFollowed}</span>
+                </div>
+                <Activity className="w-4 h-4 text-orange-400" />
+              </div>
+            </div>
+          </div>
+
+          <Tabs defaultValue="not-followed" className="w-full">
+            <TabsList className="bg-gray-100/80 p-1 rounded-xl h-11 border border-gray-200/50">
+              <TabsTrigger
+                value="not-followed"
+                className="rounded-lg px-6 text-xs font-bold data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm transition-all"
+              >
+                <div className="flex items-center gap-2">
+                  <Clock className="w-3.5 h-3.5" />
+                  Chưa Follow Up
+                  <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-md text-[10px] font-black">{metrics.totalNotFollowed}</span>
+                </div>
+              </TabsTrigger>
+              <TabsTrigger
+                value="followed"
+                className="rounded-lg px-6 text-xs font-bold data-[state=active]:bg-white data-[state=active]:text-emerald-600 data-[state=active]:shadow-sm transition-all"
+              >
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-3.5 h-3.5" />
+                  Đã Follow Up
+                  <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-md text-[10px] font-black">{metrics.totalFollowed}</span>
+                </div>
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="not-followed" className="mt-4 outline-none">
+              {loadingFollowUp ? (
+                <div className="py-20 flex flex-col items-center justify-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                  <div className="h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                  <p className="text-sm text-gray-400 font-medium">Đang tải danh sách...</p>
+                </div>
+              ) : !groupedLeads["Chưa Follow Up"] ? (
+                <div className="py-20 flex flex-col items-center justify-center bg-gray-50 rounded-xl border border-dashed border-gray-200 grayscale opacity-60">
+                  <Bell className="h-12 w-12 text-gray-300 mb-4" />
+                  <p className="text-sm text-gray-400 font-medium italic">Không có lead nào cần follow up</p>
+                </div>
+              ) : (
+                <div className="border rounded-2xl overflow-hidden shadow-sm border-gray-100">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50/80 border-b">
+                      <tr>
+                        <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 border-b-2 border-transparent">Khách hàng & Xe</th>
+                        <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 border-b-2 border-transparent uppercase tracking-wider">Phân loại</th>
+                        <th
+                          className="text-left px-4 py-2.5 text-[10px] font-bold text-blue-600 border-b-2 border-blue-200 uppercase tracking-wider cursor-pointer hover:bg-blue-50 transition-colors"
+                          onClick={toggleSort}
+                        >
+                          <div className="flex items-center gap-1">
+                            Hoạt động
+                            {sortOrder === 'asc' ? <ArrowUp className="w-2.5 h-2.5" /> : sortOrder === 'desc' ? <ArrowDown className="w-2.5 h-2.5" /> : <ArrowUpDown className="w-2.5 h-2.5" />}
+                          </div>
+                        </th>
+                        <th className="text-center px-4 py-2.5 text-[10px] font-bold text-gray-400 border-b-2 border-transparent uppercase tracking-wider">Status</th>
+                        <th className="text-right px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {groupedLeads["Chưa Follow Up"].map((lead) => (
+                        <tr key={lead.car_id} className="group hover:bg-blue-50/40 transition-all duration-200">
+                          <td className="px-4 py-3 align-top min-w-[240px]">
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-gray-900 leading-none">{lead.phone}</span>
+                                <span className="text-[10px] text-gray-400 font-medium truncate max-w-[100px]">— {lead.name}</span>
+                                {lead.qualified && (
+                                  <span className={`text-[8px] font-black px-1 py-0.5 rounded border uppercase tracking-tighter ${QUALIFIED_CONFIG[lead.qualified]?.className || "text-gray-500 bg-gray-50 border-gray-200"
+                                    }`}>
+                                    {QUALIFIED_CONFIG[lead.qualified]?.label || lead.qualified}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 text-[10px] text-gray-500 font-medium bg-gray-50 w-fit px-2 py-0.5 rounded border border-gray-100 shadow-sm">
+                                <span className="flex items-center gap-1"><Car className="w-2.5 h-2.5" /> {lead.brand} {lead.model} {lead.year}</span>
+                                <span className="flex items-center gap-1"><MapPin className="w-2.5 h-2.5" /> {lead.location}</span>
+                                <span className="flex items-center gap-1"><Clock className="w-2.5 h-2.5" /> {lead.mileage?.toLocaleString()} km</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black border tracking-tight ${lead.is3A ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-amber-50 text-amber-600 border-amber-100"
+                              }`}>
+                              {lead.category}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 align-top font-black text-gray-700 text-xs">
+                            {lead.daysSince} ngày
+                          </td>
+                          <td className="px-4 py-3 align-top text-center">
+                            <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-black bg-gray-100 text-gray-400 border border-gray-200 italic">
+                              Not Sent
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 align-top text-right">
+                            <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <ViewZaloChatAction carId={lead.car_id} customerName={lead.name} iconOnly />
+                                  </TooltipTrigger>
+                                  <TooltipContent><p className="text-[10px]">Xem chat Zalo</p></TooltipContent>
+                                </Tooltip>
+
+                                <FollowUpAction
+                                  lead={{
+                                    ...lead,
+                                    id: lead.id,
+                                    phone: lead.phone
+                                  } as any}
+                                  isSidebarVariant
+                                  className="scale-90"
+                                  onSuccess={fetchFollowUpLeads}
+                                />
+
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      onClick={() => handleEditLead(lead)}
+                                      className="p-1.5 hover:bg-white hover:text-indigo-600 rounded-lg text-gray-400 transition-all border border-transparent hover:border-indigo-100 hover:shadow-sm"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent><p className="text-[10px]">Chỉnh sửa lead</p></TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="followed" className="mt-4 outline-none">
+              {loadingFollowUp ? (
+                <div className="py-20 flex flex-col items-center justify-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                  <div className="h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                  <p className="text-sm text-gray-400 font-medium">Đang tải danh sách...</p>
+                </div>
+              ) : Object.keys(groupedLeads).filter(k => k !== "Chưa Follow Up").length === 0 ? (
+                <div className="py-20 flex flex-col items-center justify-center bg-gray-50 rounded-xl border border-dashed border-gray-200 grayscale opacity-60">
+                  <Bell className="h-12 w-12 text-gray-300 mb-4" />
+                  <p className="text-sm text-gray-400 font-medium italic">Chưa có lead nào được follow up</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {Object.entries(groupedLeads).filter(([k]) => k !== "Chưa Follow Up").map(([date, leads]) => (
+                    <div key={date} className="space-y-3">
+                      <div className="flex items-center gap-2 px-2">
+                        <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-1.5">
+                          <CheckCircle className="w-3 h-3" /> Đã gửi ngày {date}
+                        </h4>
+                        <div className="h-px flex-1 bg-gradient-to-r from-emerald-100 to-transparent"></div>
+                      </div>
+                      <div className="border rounded-2xl overflow-hidden shadow-sm border-gray-100">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50/80 border-b">
+                            <tr>
+                              <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 border-b-2 border-transparent">Khách hàng & Xe</th>
+                              <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 border-b-2 border-transparent uppercase tracking-wider">Phân loại</th>
+                              <th
+                                className="text-left px-4 py-2.5 text-[10px] font-bold text-blue-600 border-b-2 border-blue-200 uppercase tracking-wider cursor-pointer hover:bg-blue-50 transition-colors"
+                                onClick={toggleSort}
+                              >
+                                <div className="flex items-center gap-1">
+                                  Hoạt động
+                                  {sortOrder === 'asc' ? <ArrowUp className="w-2.5 h-2.5" /> : sortOrder === 'desc' ? <ArrowDown className="w-2.5 h-2.5" /> : <ArrowUpDown className="w-2.5 h-2.5" />}
+                                </div>
+                              </th>
+                              <th className="text-center px-4 py-2.5 text-[10px] font-bold text-gray-400 border-b-2 border-transparent uppercase tracking-wider">Status</th>
+                              <th className="text-right px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {leads.map((lead) => (
+                              <tr key={lead.car_id} className="group hover:bg-emerald-50/40 transition-all duration-200">
+                                <td className="px-4 py-3 align-top min-w-[240px]">
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-black text-gray-900 leading-none">{lead.phone}</span>
+                                      <span className="text-[10px] text-gray-400 font-medium truncate max-w-[100px]">— {lead.name}</span>
+                                      {lead.qualified && (
+                                        <span className={`text-[8px] font-black px-1 py-0.5 rounded border uppercase tracking-tighter ${QUALIFIED_CONFIG[lead.qualified]?.className || "text-gray-500 bg-gray-50 border-gray-200"
+                                          }`}>
+                                          {QUALIFIED_CONFIG[lead.qualified]?.label || lead.qualified}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-3 text-[10px] text-gray-500 font-medium bg-gray-50 w-fit px-2 py-0.5 rounded border border-gray-100 shadow-sm">
+                                      <span className="flex items-center gap-1"><Car className="w-2.5 h-2.5" /> {lead.brand} {lead.model} {lead.year}</span>
+                                      <span className="flex items-center gap-1"><MapPin className="w-2.5 h-2.5" /> {lead.location}</span>
+                                      <span className="flex items-center gap-1"><Clock className="w-2.5 h-2.5" /> {lead.mileage?.toLocaleString()} km</span>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 align-top">
+                                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black border tracking-tight ${lead.is3A ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-amber-50 text-amber-600 border-amber-100"
+                                    }`}>
+                                    {lead.category}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 align-top font-black text-gray-700 text-xs">
+                                  {lead.daysSince} ngày
+                                </td>
+                                <td className="px-4 py-3 align-top text-center">
+                                  <div className="flex flex-col items-center">
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 rounded-full">
+                                      <CheckCircle className="w-2 h-2" /> Followed
+                                    </span>
+                                    <span className="text-[8px] text-gray-400 mt-0.5">{new Date(lead.lastFollowUpAt).toLocaleTimeString("vi-VN", { hour: '2-digit', minute: '2-digit' })}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 align-top text-right">
+                                  <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <ViewZaloChatAction carId={lead.car_id} customerName={lead.name} iconOnly />
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" align="center"><p className="text-[10px]">Xem chat Zalo</p></TooltipContent>
+                                      </Tooltip>
+
+                                      <FollowUpAction
+                                        lead={{
+                                          ...lead,
+                                          id: lead.id,
+                                          phone: lead.phone
+                                        } as any}
+                                        isSidebarVariant
+                                        className="scale-90"
+                                        onSuccess={fetchFollowUpLeads}
+                                      />
+
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            onClick={() => handleEditLead(lead)}
+                                            className="p-1.5 hover:bg-white hover:text-indigo-600 rounded-lg text-gray-400 transition-all border border-transparent hover:border-indigo-100 hover:shadow-sm"
+                                          >
+                                            <Edit3 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent><p className="text-[10px]">Chỉnh sửa lead</p></TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+
+          {/* Shared Dialogs */}
+          <EditLeadDialog
+            open={editDialogOpen}
+            onOpenChange={setEditDialogOpen}
+            lead={selectedLeadForEdit}
+            editMode={editMode}
+            setEditMode={setEditMode}
+            editedPriceCustomer={editedPriceCustomer}
+            setEditedPriceCustomer={setEditedPriceCustomer}
+            editedPriceHighestBid={editedPriceHighestBid}
+            setEditedPriceHighestBid={setEditedPriceHighestBid}
+            editedStage={editedStage}
+            setEditedStage={setEditedStage}
+            editedQualified={editedQualified}
+            setEditedQualified={setEditedQualified}
+            editedIntentionLead={editedIntentionLead}
+            setEditedIntentionLead={setEditedIntentionLead}
+            editedNegotiationAbility={editedNegotiationAbility}
+            setEditedNegotiationAbility={setEditedNegotiationAbility}
+            editedNotes={editedNotes}
+            setEditedNotes={setEditedNotes}
+            processedImages={[]}
+            onSave={handleSaveLead}
+            saving={saving}
+            getStageStyle={() => ""}
+          />
+        </div>
+      )}
+    </>
+  )
 }

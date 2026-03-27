@@ -31,7 +31,14 @@ export async function GET(request: Request) {
       crmParams.push(`${dateTo} 23:59:59`)
       paramIdx++
     }
-    const crmWhere = crmConditions.join(" AND ")
+    const qFilter = searchParams.get("qualified")
+    if (qFilter) {
+      crmConditions.push(`ss.qualified::text = ANY($${paramIdx}::text[])`)
+      crmParams.push(qFilter.split(","))
+      paramIdx++
+    }
+
+    const crmWhere = crmConditions.length > 0 ? crmConditions.join(" AND ") : "1=1"
 
     // 1. Get leads in "2b. Chưa có hình" (No STRONG_QUALIFIED)
     const crmRes = await vucarV2Query(`
@@ -71,7 +78,7 @@ export async function GET(request: Request) {
       FROM leads l
       LEFT JOIN cars c ON c.lead_id = l.id
       LEFT JOIN sale_status ss ON ss.car_id = c.id
-      WHERE ${crmWhere || '1=1'} AND (ss.qualified != 'STRONG_QUALIFIED' OR ss.qualified IS NULL)
+      WHERE ${crmWhere} AND (ss.qualified != 'STRONG_QUALIFIED' OR ss.qualified IS NULL)
         AND l.phone IS NOT NULL
       GROUP BY l.phone, l.id, l.additional_phone, l.name, c.id, c.brand, c.model, c.year, c.created_at, c.location, c.mileage, ss.notes, ss.qualified
       ORDER BY l.phone, l.created_at DESC

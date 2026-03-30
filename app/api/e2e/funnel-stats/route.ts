@@ -13,6 +13,41 @@ export async function GET(request: Request) {
         const startTs = dateFrom ? `${dateFrom} 00:00:00` : "2000-01-01 00:00:00"
         const endTs = dateTo ? `${dateTo} 23:59:59` : "2100-01-01 23:59:59"
 
+        // --- Build base conditions for qualification distribution (ignoring qFilter) ---
+        const baseCrmConditions: string[] = []
+        const baseCrmParams: any[] = []
+        let baseParamIdx = 1
+
+        if (picId && picId !== 'all') {
+            baseCrmConditions.push(`l.pic_id = $${baseParamIdx}`)
+            baseCrmParams.push(picId)
+            baseParamIdx++
+        }
+        if (dateFrom) {
+            baseCrmConditions.push(`l.created_at >= $${baseParamIdx}::timestamp`)
+            baseCrmParams.push(`${dateFrom} 00:00:00`)
+            baseParamIdx++
+        }
+        if (dateTo) {
+            baseCrmConditions.push(`l.created_at <= $${baseParamIdx}::timestamp`)
+            baseCrmParams.push(`${dateTo} 23:59:59`)
+            baseParamIdx++
+        }
+        const baseCrmWhere = baseCrmConditions.length > 0 ? baseCrmConditions.join(" AND ") : "1=1"
+
+        const qDistributionRes = await vucarV2Query(`
+            SELECT 
+                COUNT(DISTINCT l.phone) as total,
+                COUNT(DISTINCT l.phone) FILTER (WHERE ss.qualified::text IN ('STRONG_QUALIFIED', 'WEAK_QUALIFIED', 'QUALIFIED', 'SLOW', 'WEAK')) as qualified,
+                COUNT(DISTINCT l.phone) FILTER (WHERE ss.qualified::text = 'NON_QUALIFIED') as non_qualified,
+                COUNT(DISTINCT l.phone) FILTER (WHERE ss.qualified::text = 'UNDEFINED_QUALIFIED' OR ss.qualified IS NULL) as undefined_qualified
+            FROM leads l
+            LEFT JOIN cars c ON c.lead_id = l.id
+            LEFT JOIN sale_status ss ON ss.car_id = c.id
+            WHERE ${baseCrmWhere}
+        `, baseCrmParams)
+        const qualificationBreakdown = qDistributionRes.rows[0]
+
         // --- Build base conditions for CRM Db ---
         const crmConditions: string[] = []
         const crmParams: any[] = []
@@ -34,26 +69,52 @@ export async function GET(request: Request) {
             crmParams.push(`${dateTo} 23:59:59`)
             paramIdx++
         }
-        const crmWhere = crmConditions.join(" AND ")
+        const qFilter = searchParams.get("qualified")
+        if (qFilter) {
+            crmConditions.push(`ss.qualified::text = ANY($${paramIdx}::text[])`)
+            crmParams.push(qFilter.split(","))
+            paramIdx++
+        }
+
+        const crmWhere = crmConditions.length > 0 ? crmConditions.join(" AND ") : "1=1"
 
         // 1. Tổng leads
         const totalLeadsRes = await vucarV2Query(`
             SELECT COUNT(DISTINCT l.phone) AS cnt
             FROM leads l
+            LEFT JOIN cars c ON c.lead_id = l.id
+            LEFT JOIN sale_status ss ON ss.car_id = c.id
             WHERE ${crmWhere}
         `, crmParams)
         const totalLeads = parseInt(totalLeadsRes.rows[0]?.cnt || "0", 10)
 
         // 2a. Đã có hình (STRONG_QUALIFIED)
         const hasImageRes = await vucarV2Query(`
-            SELECT COUNT(DISTINCT l.phone) AS cnt
-            FROM leads l
-            LEFT JOIN cars c ON c.lead_id = l.id
-            LEFT JOIN sale_status ss ON ss.car_id = c.id
-            WHERE ${crmWhere}
-              AND ss.qualified::text = 'STRONG_QUALIFIED'
+            WITH phone_images AS (
+              SELECT l.phone,
+                MAX(CASE 
+                  WHEN c.additional_images IS NOT NULL 
+                    AND c.additional_images::text != 'null' 
+                    AND c.additional_images::text != '{}' 
+                    AND c.additional_images::text != ''
+                  THEN 1 ELSE 0 
+                END) AS has_additional
+              FROM leads l
+              LEFT JOIN cars c ON c.lead_id = l.id
+              LEFT JOIN sale_status ss ON ss.car_id = c.id
+              WHERE ${crmWhere}
+                AND ss.qualified::text = 'STRONG_QUALIFIED'
+              GROUP BY l.phone
+            )
+            SELECT 
+              COUNT(*) AS cnt,
+              COUNT(*) FILTER (WHERE has_additional = 1) AS with_additional,
+              COUNT(*) FILTER (WHERE has_additional = 0) AS without_additional
+            FROM phone_images
         `, crmParams)
         const hasImageCount = parseInt(hasImageRes.rows[0]?.cnt || "0", 10)
+        const hasImageWithAdditional = parseInt(hasImageRes.rows[0]?.with_additional || "0", 10)
+        const hasImageWithoutAdditional = parseInt(hasImageRes.rows[0]?.without_additional || "0", 10)
 
         // 2b. Chưa có hình (or NULL) -> Get their phones and message stats
         const noImagePhonesRes = await vucarV2Query(`
@@ -293,9 +354,19 @@ export async function GET(request: Request) {
             zaloNeverRenameNone = noImageCount
         }
 
+        // Get available qualification values
+        const qValuesRes = await vucarV2Query(`
+          SELECT DISTINCT qualified FROM sale_status WHERE qualified IS NOT NULL ORDER BY qualified
+        `, [])
+        const qualifiedValues = qValuesRes.rows.map((r: any) => r.qualified)
+
         return NextResponse.json({
+            qualificationBreakdown,
+            qualifiedValues,
             totalLeads,
             hasImageCount,
+            hasImageWithAdditional,
+            hasImageWithoutAdditional,
             noImageCount,
             zaloSuccessCount: zaloSuccessAutoCount + zaloSuccessManualCount,
             

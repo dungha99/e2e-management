@@ -70,10 +70,43 @@ export async function GET(request: Request) {
     const crmWhere = crmConditions.length > 0 ? crmConditions.join(" AND ") : "1=1"
 
     // ── 1. Tiers 1 & 2 (Total, Has Image, No Image) ──────────────────────────
-    if (metric === 'FUNNEL_TOTAL_LEADS' || metric === 'FUNNEL_HAS_IMAGE' || metric === 'FUNNEL_NO_IMAGE') {
+    if (metric === 'FUNNEL_TOTAL_LEADS' || metric === 'FUNNEL_HAS_IMAGE' || metric === 'FUNNEL_HAS_IMAGE_WITH_ADDITIONAL' || metric === 'FUNNEL_HAS_IMAGE_WITHOUT_ADDITIONAL' || metric === 'FUNNEL_NO_IMAGE') {
       let extraWhere = "";
       if (metric === 'FUNNEL_HAS_IMAGE') extraWhere = " AND ss.qualified::text = 'STRONG_QUALIFIED'";
       if (metric === 'FUNNEL_NO_IMAGE') extraWhere = " AND (ss.qualified::text != 'STRONG_QUALIFIED' OR ss.qualified IS NULL)";
+
+      // For 2A sub-metrics, first find phones per-phone aggregation, then filter detail query
+      let phoneFilter: string[] | null = null;
+      if (metric === 'FUNNEL_HAS_IMAGE_WITH_ADDITIONAL' || metric === 'FUNNEL_HAS_IMAGE_WITHOUT_ADDITIONAL') {
+        extraWhere = " AND ss.qualified::text = 'STRONG_QUALIFIED'";
+        const hasAdditionalFlag = metric === 'FUNNEL_HAS_IMAGE_WITH_ADDITIONAL' ? 1 : 0;
+        const phoneAggRes = await vucarV2Query(`
+          SELECT phone FROM (
+            SELECT l.phone,
+              MAX(CASE 
+                WHEN c.additional_images IS NOT NULL 
+                  AND c.additional_images::text != 'null' 
+                  AND c.additional_images::text != '{}' 
+                  AND c.additional_images::text != ''
+                THEN 1 ELSE 0 
+              END) AS has_additional
+            FROM leads l
+            LEFT JOIN cars c ON c.lead_id = l.id
+            LEFT JOIN sale_status ss ON ss.car_id = c.id
+            WHERE ${filterWhere} AND ss.qualified::text = 'STRONG_QUALIFIED'
+            GROUP BY l.phone
+          ) sub WHERE has_additional = $${idx}
+        `, [...params, hasAdditionalFlag])
+        phoneFilter = phoneAggRes.rows.map((r: any) => r.phone).filter(Boolean);
+        if (phoneFilter.length === 0) return NextResponse.json({ leads: [], qualifiedValues });
+      }
+
+      let phoneWhere = "";
+      const queryParams = [...params];
+      if (phoneFilter) {
+        phoneWhere = ` AND l.phone = ANY($${idx + 1}::text[])`;
+        queryParams.push(phoneFilter);
+      }
 
       const result = await vucarV2Query(`
         SELECT DISTINCT ON (l.phone)
@@ -83,10 +116,10 @@ export async function GET(request: Request) {
         FROM leads l
         LEFT JOIN cars c ON c.lead_id = l.id
         LEFT JOIN sale_status ss ON ss.car_id = c.id
-        WHERE ${filterWhere} ${extraWhere}
+        WHERE ${filterWhere} ${extraWhere} ${phoneWhere}
         ORDER BY l.phone, l.created_at DESC
         LIMIT 500
-      `, params)
+      `, queryParams)
 
       const leads = result.rows;
       const phones = [...new Set(leads.map((r: any) => r.phone).filter(Boolean))];
@@ -123,6 +156,7 @@ export async function GET(request: Request) {
     }
 
     // ── 2. Tier 3 Zalo (v2 Restructure) ──────────────────────────────────────
+    // Uses the SAME per-phone aggregation as funnel-stats to ensure counts match
     const zaloMetricPrefixes = [
       'FUNNEL_FIRST_MESSAGE_SUCCESS', 
       'FUNNEL_NEVER_FIRST_MESSAGE', 
@@ -133,12 +167,9 @@ export async function GET(request: Request) {
     ];
 
     if (zaloMetricPrefixes.some(p => metric.startsWith(p))) {
-      // Get leads who don't have a STRONG_QUALIFIED image status
-      const crmRes = await vucarV2Query(`
-        SELECT DISTINCT ON (l.phone)
-               l.id AS id, l.phone, l.additional_phone, l.name, c.id AS car_id,
-               c.brand, c.model, c.year, c.created_at AS car_created_at,
-               c.location, c.mileage, ss.notes, ss.qualified,
+      // Step 1: Aggregate messages per PHONE (same as funnel-stats GROUP BY l.phone)
+      const phoneAggRes = await vucarV2Query(`
+        SELECT DISTINCT l.phone,
                MAX(CASE 
                  WHEN ss.messages_zalo IS NOT NULL 
                   AND ss.messages_zalo != 'null'::jsonb 
@@ -153,37 +184,42 @@ export async function GET(request: Request) {
                  SELECT COUNT(*) FROM jsonb_array_elements(ss.messages_zalo) m
                  WHERE m->>'uidFrom' != '0'
                ) ELSE 0 END) AS msgs_from_customer,
-               MAX(CASE WHEN ss.messages_zalo IS NOT NULL AND jsonb_array_length(ss.messages_zalo) > 0
-                 THEN (
-                   SELECT MAX((m->>'dateAction')::timestamptz)
-                   FROM jsonb_array_elements(ss.messages_zalo) m
-                   WHERE m->>'dateAction' IS NOT NULL AND m->>'dateAction' != ''
-                 )
-               END) AS last_msg_at,
-               MAX(CASE WHEN ss.messages_zalo IS NOT NULL AND jsonb_array_length(ss.messages_zalo) > 0
-                 THEN (
-                   SELECT MAX((m->>'dateAction')::timestamptz)
-                   FROM jsonb_array_elements(ss.messages_zalo) m
-                   WHERE m->>'uidFrom' = '0'
-                     AND m->>'dateAction' IS NOT NULL AND m->>'dateAction' != ''
-                 )
-               END) AS last_sale_msg_at
+               COALESCE(
+                 MAX(CASE WHEN ss.messages_zalo IS NOT NULL AND jsonb_array_length(ss.messages_zalo) > 0
+                   THEN (
+                     SELECT MAX((m->>'dateAction')::timestamptz)
+                     FROM jsonb_array_elements(ss.messages_zalo) m
+                     WHERE m->>'dateAction' IS NOT NULL AND m->>'dateAction' != ''
+                   )
+                 END),
+                 MAX(l.created_at)
+               ) AS last_msg_at,
+               COALESCE(
+                 MAX(CASE WHEN ss.messages_zalo IS NOT NULL AND jsonb_array_length(ss.messages_zalo) > 0
+                   THEN (
+                     SELECT MAX((m->>'dateAction')::timestamptz)
+                     FROM jsonb_array_elements(ss.messages_zalo) m
+                     WHERE m->>'uidFrom' = '0'
+                       AND m->>'dateAction' IS NOT NULL AND m->>'dateAction' != ''
+                   )
+                 END),
+                 MAX(l.created_at)
+               ) AS last_sale_msg_at
         FROM leads l
         LEFT JOIN cars c ON c.lead_id = l.id
         LEFT JOIN sale_status ss ON ss.car_id = c.id
-        WHERE ${filterWhere} AND (ss.qualified::text != 'STRONG_QUALIFIED' OR ss.qualified IS NULL)
+        WHERE ${filterWhere}
+          AND (ss.qualified::text != 'STRONG_QUALIFIED' OR ss.qualified IS NULL)
           AND l.phone IS NOT NULL
-        GROUP BY l.phone, l.id, l.additional_phone, l.name, c.id, c.brand, c.model, c.year, c.created_at, c.location, c.mileage, ss.notes, ss.qualified
-        ORDER BY l.phone, l.created_at DESC
-        LIMIT 1000
+        GROUP BY l.phone
       `, params)
 
-      const crmLeads = crmRes.rows;
-      const phones = [...new Set(crmLeads.map((r: any) => r.phone).filter(Boolean))];
+      const phoneAggRows = phoneAggRes.rows;
+      const phones = phoneAggRows.map((r: any) => r.phone).filter(Boolean);
 
       if (phones.length === 0) return NextResponse.json({ leads: [], qualifiedValues });
 
-      // Fetch firstMessage actions for these phones
+      // Step 2: Fetch firstMessage actions (same as funnel-stats)
       const fmRes = await e2eQuery(`
         SELECT
           COALESCE(payload->>'phone', payload->>'customer_phone') AS phone,
@@ -200,7 +236,7 @@ export async function GET(request: Request) {
 
       const fmStatusMap = new Map(fmRes.rows.map((r: any) => [r.phone, r]));
 
-      // Fetch rename actions if relevant
+      // Step 3: Fetch rename actions if relevant
       let renameStatusMap = new Map();
       if (metric.startsWith('FUNNEL_RENAME_') || metric.includes('_RENAME') || metric === 'FUNNEL_NEVER_FIRST_MESSAGE_NO_INTERACTION') {
         const renRes = await e2eQuery(`
@@ -217,19 +253,25 @@ export async function GET(request: Request) {
         renameStatusMap = new Map(renRes.rows.map((r: any) => [r.phone, r]));
       }
 
-      const filteredLeads = crmLeads.filter((r: any) => {
-        const phone = r.phone;
+      // Step 4: Classify each phone using SAME logic as funnel-stats
+      const matchingPhones: string[] = [];
+      const phoneDaysWaiting = new Map<string, number>();
+
+      for (const row of phoneAggRows) {
+        const phone = row.phone;
+        const hasMZ = row.has_messages_zalo === 1;
+        const nSale = parseInt(row.msgs_from_sale || "0", 10);
+        const nCust = parseInt(row.msgs_from_customer || "0", 10);
+        const lastMsgAt = row.last_msg_at ? new Date(row.last_msg_at).getTime() : 0;
+        const lastSaleMsgAt = row.last_sale_msg_at ? new Date(row.last_sale_msg_at).getTime() : 0;
+
         const fmStatus = fmStatusMap.get(phone) as any;
         const renStatus = renameStatusMap.get(phone) as any;
-        
-        const hasMZ = r.has_messages_zalo === 1;
-        const nSale = parseInt(r.msgs_from_sale || "0", 10);
-        const nCust = parseInt(r.msgs_from_customer || "0", 10);
-        const lastMsgAt = r.last_msg_at ? new Date(r.last_msg_at).getTime() : 0;
-        const lastSaleMsgAt = r.last_sale_msg_at ? new Date(r.last_sale_msg_at).getTime() : 0;
 
         const isAutoSuccess = fmStatus?.has_success === 1;
         const isManualTwoWay = hasMZ && nSale > 0 && nCust > 0;
+
+        let matches = false;
 
         // 3a. Success (Auto + Manual / Split)
         if (metric === 'FUNNEL_FIRST_MESSAGE_SUCCESS' || metric.startsWith('FUNNEL_FIRST_MESSAGE_SUCCESS_')) {
@@ -241,80 +283,97 @@ export async function GET(request: Request) {
           else if (isManual) isSuccess = !isAutoSuccess && isManualTwoWay;
           else isSuccess = isAutoSuccess || isManualTwoWay;
 
-          if (!isSuccess) return false;
-          if (metric === 'FUNNEL_FIRST_MESSAGE_SUCCESS' || metric === 'FUNNEL_FIRST_MESSAGE_SUCCESS_AUTO' || metric === 'FUNNEL_FIRST_MESSAGE_SUCCESS_MANUAL') return true;
+          if (isSuccess) {
+            if (metric === 'FUNNEL_FIRST_MESSAGE_SUCCESS' || metric === 'FUNNEL_FIRST_MESSAGE_SUCCESS_AUTO' || metric === 'FUNNEL_FIRST_MESSAGE_SUCCESS_MANUAL') {
+              matches = true;
+            } else {
+              let establishedAt = 0;
+              if (isAutoSuccess && fmStatus.first_success_at) establishedAt = new Date(fmStatus.first_success_at).getTime();
+              else if (isManualTwoWay && lastMsgAt) establishedAt = lastMsgAt;
 
-          // Days check
-          let establishedAt = 0;
-          if (isAutoSuccess && fmStatus.first_success_at) establishedAt = new Date(fmStatus.first_success_at).getTime();
-          else if (isManualTwoWay && lastMsgAt) establishedAt = lastMsgAt;
+              if (establishedAt) {
+                const days = (Date.now() - establishedAt) / 86400000;
+                let dayMatch = false;
+                if (metric.includes('_HOT')) dayMatch = days > 7;
+                else if (metric.includes('_WARN')) dayMatch = days > 4 && days <= 7;
+                else if (metric.includes('_MEDIUM')) dayMatch = days > 2 && days <= 4;
+                else if (metric.includes('_FRESH')) dayMatch = days <= 2;
+                else dayMatch = true;
 
-          if (!establishedAt) return false;
-          const days = (Date.now() - establishedAt) / 86400000;
-          
-          let dayMatch = false;
-          if (metric.includes('_HOT')) dayMatch = days > 7;
-          else if (metric.includes('_WARN')) dayMatch = days > 4 && days <= 7;
-          else if (metric.includes('_MEDIUM')) dayMatch = days > 2 && days <= 4;
-          else if (metric.includes('_FRESH')) dayMatch = days <= 2;
-          else dayMatch = true;
-
-          if (!dayMatch) return false;
-
-          // Rename check
-          if (metric.endsWith('_RENAME')) {
-            return renStatus?.has_success === 1;
+                if (dayMatch) {
+                  if (metric.endsWith('_RENAME')) {
+                    matches = renStatus?.has_success === 1;
+                  } else {
+                    matches = true;
+                  }
+                }
+              }
+            }
           }
-          return true;
         }
-
         // 3b. Failed
-        if (metric === 'FUNNEL_FIRST_MESSAGE_FAILED' || metric === 'FUNNEL_BLOCKED_MESSAGE' || metric === 'FUNNEL_SYSTEM_ERROR') {
-          if (isAutoSuccess || isManualTwoWay) return false;
-          if (fmStatus?.has_failed === 1) {
-            if (metric === 'FUNNEL_FIRST_MESSAGE_FAILED') return true;
-            const reasons = (fmStatus.fail_reasons || "").toLowerCase();
-            const isBlocked = reasons.includes("bạn chưa thể gửi") || reasons.includes("xin lỗi! hiện tại");
-            if (metric === 'FUNNEL_BLOCKED_MESSAGE') return isBlocked;
-            if (metric === 'FUNNEL_SYSTEM_ERROR') return !isBlocked;
+        else if (metric === 'FUNNEL_FIRST_MESSAGE_FAILED' || metric === 'FUNNEL_BLOCKED_MESSAGE' || metric === 'FUNNEL_SYSTEM_ERROR') {
+          if (!isAutoSuccess && !isManualTwoWay && fmStatus?.has_failed === 1) {
+            if (metric === 'FUNNEL_FIRST_MESSAGE_FAILED') {
+              matches = true;
+            } else {
+              const reasons = (fmStatus.fail_reasons || "").toLowerCase();
+              const isBlocked = reasons.includes("bạn chưa thể gửi") || reasons.includes("xin lỗi! hiện tại");
+              if (metric === 'FUNNEL_BLOCKED_MESSAGE') matches = isBlocked;
+              if (metric === 'FUNNEL_SYSTEM_ERROR') matches = !isBlocked;
+            }
           }
-          return false;
         }
-
         // 3c. Never
-        if (metric.startsWith('FUNNEL_NEVER_FIRST_MESSAGE') || metric.startsWith('FUNNEL_RENAME_')) {
-          if (isAutoSuccess || isManualTwoWay || (fmStatus?.has_failed === 1)) return false;
-
-          // 3c-iii: Sale nhắn, khách chưa reply
-          if (metric === 'FUNNEL_NEVER_FIRST_MESSAGE_SALE_ONLY') {
-            const match = nSale > 0 && nCust === 0;
-            if (match && lastSaleMsgAt) r.daysWaiting = Math.round((Date.now() - lastSaleMsgAt) / 86400000 * 10) / 10;
-            return match;
+        else if (metric.startsWith('FUNNEL_NEVER_FIRST_MESSAGE') || metric.startsWith('FUNNEL_RENAME_')) {
+          if (!isAutoSuccess && !isManualTwoWay && !(fmStatus?.has_failed === 1)) {
+            if (metric === 'FUNNEL_NEVER_FIRST_MESSAGE') {
+              matches = true;
+            } else if (metric === 'FUNNEL_NEVER_FIRST_MESSAGE_SALE_ONLY') {
+              matches = nSale > 0 && nCust === 0;
+              if (matches && lastSaleMsgAt) {
+                phoneDaysWaiting.set(phone, Math.round((Date.now() - lastSaleMsgAt) / 86400000 * 10) / 10);
+              }
+            } else if (metric === 'FUNNEL_NEVER_FIRST_MESSAGE_NO_INTERACTION' || metric.startsWith('FUNNEL_RENAME_')) {
+              const isNoInteract = nSale === 0;
+              if (isNoInteract) {
+                if (lastMsgAt) {
+                  phoneDaysWaiting.set(phone, Math.round((Date.now() - lastMsgAt) / 86400000 * 10) / 10);
+                }
+                if (metric === 'FUNNEL_NEVER_FIRST_MESSAGE_NO_INTERACTION') matches = true;
+                else if (metric === 'FUNNEL_RENAME_SUCCESS') matches = renStatus?.has_success === 1;
+                else if (metric === 'FUNNEL_RENAME_FAILED') matches = renStatus?.has_failed === 1 && renStatus?.has_success === 0;
+                else if (metric === 'FUNNEL_RENAME_NONE') matches = !renStatus;
+                else if (metric === 'FUNNEL_RENAME_RESERVE') matches = !renStatus || (renStatus.has_success === 0);
+              }
+            }
           }
-
-          // 3c-iv: No interaction
-          if (metric === 'FUNNEL_NEVER_FIRST_MESSAGE_NO_INTERACTION' || metric.startsWith('FUNNEL_RENAME_')) {
-            const isNoInteract = nSale === 0;
-            if (!isNoInteract) return false;
-            
-            if (lastMsgAt) r.daysWaiting = Math.round((Date.now() - lastMsgAt) / 86400000 * 10) / 10;
-            if (metric === 'FUNNEL_NEVER_FIRST_MESSAGE_NO_INTERACTION') return true;
-
-            // Rename filters
-            if (metric === 'FUNNEL_RENAME_SUCCESS') return renStatus?.has_success === 1;
-            if (metric === 'FUNNEL_RENAME_FAILED') return renStatus?.has_failed === 1 && renStatus?.has_success === 0;
-            if (metric === 'FUNNEL_RENAME_NONE') return !renStatus;
-            if (metric === 'FUNNEL_RENAME_RESERVE') return !renStatus || (renStatus.has_success === 0);
-          }
-
-          if (metric === 'FUNNEL_NEVER_FIRST_MESSAGE') return true;
         }
 
-        return false;
-      })
+        if (matches) matchingPhones.push(phone);
+      }
 
+      if (matchingPhones.length === 0) return NextResponse.json({ leads: [], qualifiedValues });
+
+      // Step 5: Fetch lead details for matching phones only
+      const detailIdx = params.length + 1;
+      const detailRes = await vucarV2Query(`
+        SELECT DISTINCT ON (l.phone)
+               l.id AS id, l.phone, l.additional_phone, l.name, c.id AS car_id,
+               c.brand, c.model, c.year, c.created_at AS car_created_at,
+               c.location, c.mileage, ss.notes, ss.qualified
+        FROM leads l
+        LEFT JOIN cars c ON c.lead_id = l.id
+        LEFT JOIN sale_status ss ON ss.car_id = c.id
+        WHERE ${filterWhere}
+          AND (ss.qualified::text != 'STRONG_QUALIFIED' OR ss.qualified IS NULL)
+          AND l.phone = ANY($${detailIdx}::text[])
+        ORDER BY l.phone, l.created_at DESC
+      `, [...params, matchingPhones])
+
+      // Step 6: Fetch zalo actions for display
       const zaloActionsMap = new Map();
-      if (phones.length > 0) {
+      if (matchingPhones.length > 0) {
         const actionsRes = await e2eQuery(`
           SELECT 
             COALESCE(payload->>'phone', payload->>'customer_phone') AS phone,
@@ -324,7 +383,7 @@ export async function GET(request: Request) {
           FROM zalo_action
           WHERE COALESCE(payload->>'phone', payload->>'customer_phone') = ANY($1::text[])
           ORDER BY created_at DESC
-        `, [phones]);
+        `, [matchingPhones]);
 
         for (const act of actionsRes.rows) {
           if (!zaloActionsMap.has(act.phone)) zaloActionsMap.set(act.phone, {});
@@ -336,7 +395,7 @@ export async function GET(request: Request) {
       }
 
       return NextResponse.json({
-        leads: filteredLeads.map((r: any) => ({
+        leads: detailRes.rows.map((r: any) => ({
           id: r.id,
           phone: r.phone || r.additional_phone || "N/A",
           name: r.name || "—",
@@ -349,7 +408,7 @@ export async function GET(request: Request) {
           mileage: r.mileage,
           notes: r.notes || "",
           qualified: r.qualified,
-          daysWaiting: r.daysWaiting || null,
+          daysWaiting: phoneDaysWaiting.get(r.phone) || null,
           zaloActions: zaloActionsMap.get(r.phone) || {}
         })),
         qualifiedValues

@@ -38,6 +38,8 @@ const METRIC_CONFIG: Record<string, { title: string; color: string }> = {
   // Funnel mapped categories (v2)
   FUNNEL_TOTAL_LEADS: { title: "1. Nhận lead", color: "text-gray-800" },
   FUNNEL_HAS_IMAGE: { title: "2a. Đã có hình", color: "text-emerald-700" },
+  FUNNEL_HAS_IMAGE_WITH_ADDITIONAL: { title: "2a-I. Có ảnh bổ sung", color: "text-emerald-700" },
+  FUNNEL_HAS_IMAGE_WITHOUT_ADDITIONAL: { title: "2a-II. Chưa có ảnh bổ sung", color: "text-amber-700" },
   FUNNEL_NO_IMAGE: { title: "2b. Chưa có hình", color: "text-orange-700" },
   FUNNEL_FIRST_MESSAGE_SUCCESS: { title: "3a. FM success (Auto+Manual)", color: "text-blue-700" },
   
@@ -119,17 +121,23 @@ interface KPIDetailPanelProps {
   sources?: string[]
   dateFrom?: string | null
   dateTo?: string | null
+  qualified?: string | null
 }
 
-export function KPIDetailPanel({ open, onClose, metric, picId, search, sources, dateFrom, dateTo }: KPIDetailPanelProps) {
+export function KPIDetailPanel({ open, onClose, metric, picId, search, sources, dateFrom, dateTo, qualified: initialQualified }: KPIDetailPanelProps) {
   const { toast } = useToast()
   const [leads, setLeads] = useState<KPIDetailLead[]>([])
   const [loading, setLoading] = useState(false)
   const [renamingLeads, setRenamingLeads] = useState<Record<string, boolean>>({})
   const [sendingMessages, setSendingMessages] = useState<Record<string, boolean>>({})
   const [isBulkFollowingUp, setIsBulkFollowingUp] = useState(false)
-  const [selectedQualified, setSelectedQualified] = useState<string | null>(null)
+  const [selectedQualified, setSelectedQualified] = useState<string[]>(initialQualified ? initialQualified.split(',').filter(Boolean) : [])
   const [availableQualified, setAvailableQualified] = useState<string[]>([])
+
+  // Sync internal qualified filter when the parent prop changes
+  useEffect(() => {
+    setSelectedQualified(initialQualified ? initialQualified.split(',').filter(Boolean) : [])
+  }, [initialQualified])
   
   // Edit Lead Dialog State
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -353,7 +361,7 @@ export function KPIDetailPanel({ open, onClose, metric, picId, search, sources, 
     if (sources && sources.length > 0) params.set("sources", sources.join(","))
     if (dateFrom) params.set("dateFrom", dateFrom)
     if (dateTo) params.set("dateTo", dateTo)
-    if (selectedQualified) params.set("qualified", selectedQualified)
+    if (selectedQualified.length > 0) params.set("qualified", selectedQualified.join(","))
 
     try {
       const res = await fetch(`/api/e2e/kpi-detail?${params.toString()}`)
@@ -369,7 +377,7 @@ export function KPIDetailPanel({ open, onClose, metric, picId, search, sources, 
     } finally {
       setLoading(false)
     }
-  }, [metric, picId, search, sources?.join(","), dateFrom, dateTo, selectedQualified])
+  }, [metric, picId, search, sources, dateFrom, dateTo, selectedQualified, initialQualified])
 
   useEffect(() => {
     if (open && metric) {
@@ -462,9 +470,9 @@ export function KPIDetailPanel({ open, onClose, metric, picId, search, sources, 
           <div className="px-5 py-2.5 bg-white border-t flex items-center gap-2 overflow-x-auto scrollbar-hide no-scrollbar">
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">Lọc Loại:</span>
             <button 
-              onClick={() => setSelectedQualified(null)}
+              onClick={() => setSelectedQualified([])}
               className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all whitespace-nowrap border ${
-                selectedQualified === null 
+                selectedQualified.length === 0 
                   ? "bg-blue-600 text-white border-blue-600 shadow-sm" 
                   : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
               }`}
@@ -473,12 +481,19 @@ export function KPIDetailPanel({ open, onClose, metric, picId, search, sources, 
             </button>
             {availableQualified.map((q) => {
               const config = QUALIFIED_CONFIG[q] || { label: q, className: "bg-gray-100 text-gray-500 border-gray-200" }
+              const isSelected = selectedQualified.includes(q)
               return (
                 <button
                   key={q}
-                  onClick={() => setSelectedQualified(q)}
+                  onClick={() => {
+                    setSelectedQualified(prev => 
+                      prev.includes(q) 
+                        ? prev.filter(v => v !== q) 
+                        : [...prev, q]
+                    )
+                  }}
                   className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all whitespace-nowrap border ${
-                    selectedQualified === q 
+                    isSelected 
                       ? "bg-blue-600 text-white border-blue-600 shadow-sm"
                       : `${config.className} opacity-60 grayscale-[0.5] hover:opacity-100 hover:grayscale-0`
                   }`}

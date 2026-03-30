@@ -191,6 +191,7 @@ export function E2EManagement({
   // Send first message state
   const [sendingMessage, setSendingMessage] = useState(false)
 
+
   // Inspection system iframe state
   const [inspectionSystemOpen, setInspectionSystemOpen] = useState(false)
 
@@ -1293,7 +1294,7 @@ export function E2EManagement({
       const response = await fetch("/api/akabiz/rename-lead", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone_number, pic_id }),
+        body: JSON.stringify({ phone_number, pic_id, car_id: selectedLead.car_id }),
       })
 
       if (!response.ok) {
@@ -1360,7 +1361,7 @@ export function E2EManagement({
       const response = await fetch("/api/akabiz/send-customer-message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customer_phone, messages, picId: selectedLead.pic_id }),
+        body: JSON.stringify({ customer_phone, messages, picId: selectedLead.pic_id, car_id: selectedLead.car_id }),
       })
 
       if (!response.ok) {

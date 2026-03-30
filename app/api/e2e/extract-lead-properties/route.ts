@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic"
  *   lead_id: string,
  *   properties: {
  *     location, brand, model, variant, year, mileage, plate,
- *     qualified, stage, price_customer, price_vucar_offered,
+ *     qualified, stage, seller_sentiment, price_customer, price_vucar_offered,
  *     negotiation_rounds, had_image,
  *     info_collected_at, price_vucar_offered_at, inspection_booked_at
  *   }
@@ -51,6 +51,7 @@ Từ đoạn tóm tắt được cung cấp, hãy trích xuất các thông tin 
   "plate": "Biển số xe. null nếu không có.",
   "qualified": "Xem logic qualified bên dưới",
   "stage": "Xem logic stage bên dưới",
+  "seller_sentiment": "MỚI. Thái độ khách trong tin nhắn gần nhất: • willing — hợp tác, thiện chí • hesitant — do dự, chưa quyết • ghosting — ngừng phản hồi / không đọc tin • angry — có từ ngữ như 'lừa đảo', 'scam', 'lừa tôi', 'không tin' • bot_detected — khách hỏi 'bạn là bot à', 'mày là AI hả', 'có phải người không' • want_human — 'muốn gặp trực tiếp', 'cho gặp người thật', 'gọi cho tôi', 'có số điện thoại không', 'chỗ khác giá tốt hơn' (cạnh tranh giá).",
   "price_customer": "Giá khách muốn bán (số nguyên VND, VD: nếu khách nói '700tr' thì 700000000, nếu '1,2 tỷ' thì 1200000000). null nếu không có đề cập.",
   "price_vucar_offered": "Mức giá Vucar/AI/Staff đã chào cho khách (số nguyên VND, lấy giá MỚI NHẤT). VD: 'Vucar báo giá 230 triệu' → 230000000. null nếu chưa chào giá.",
   "negotiation_rounds": "Số lần price_customer thay đổi giá trị. Bắt đầu từ 0, tăng 1 mỗi khi khách thay đổi mức giá yêu cầu (không đếm lần đầu nêu giá).",

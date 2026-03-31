@@ -457,6 +457,16 @@ MÔ TẢ STATUS:
                   effectivePayload = { userId, messages: parsedPayload?.messages || [] }
                   urlVariables = { ownId }
                   console.log(`[Process AI Workflows] Zalo override: using Vucar Zalo connector (ownId=${ownId}, userId=${userId})`)
+
+                  // Update workflow_step and step_execution to reflect the actual connector used
+                  await e2eQuery(
+                    `UPDATE workflow_steps SET connector_id = $1 WHERE id = $2`,
+                    [effectiveConnectorId, execution.step_id]
+                  )
+                  await e2eQuery(
+                    `UPDATE step_executions SET request_payload = $1 WHERE id = $2`,
+                    [JSON.stringify(effectivePayload), execution.id]
+                  )
                 }
               }
             } catch (err) {

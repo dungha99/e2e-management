@@ -345,7 +345,18 @@ MÔ TẢ STATUS:
 
                     const jsonMatch = geminiResult.match(/\{[\s\S]*\}/)
                     if (jsonMatch) {
-                      const parsed = JSON.parse(jsonMatch[0])
+                      let parsed: any
+                      try {
+                        parsed = JSON.parse(jsonMatch[0])
+                      } catch (parseErr) {
+                        storeAgentOutput({
+                          agentName: "Review Messages Scheduled",
+                          carId: instance.car_id,
+                          sourceInstanceId: instance.id,
+                          inputPayload: prompt,
+                          outputPayload: { error: "JSON.parse failed", raw: jsonMatch[0].slice(0, 500), level: -1 },
+                        }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
+                      }
                       if (parsed && parsed.status) {
 
                         // ── REVISED_PLAN ─────────────────────────────────────────────
@@ -366,7 +377,7 @@ MÔ TẢ STATUS:
                             [instance.id]
                           )
 
-                          storeAgentOutput({
+                          await storeAgentOutput({
                             agentName: "Review Messages Scheduled",
                             carId: instance.car_id,
                             sourceInstanceId: instance.id,
@@ -423,13 +434,36 @@ MÔ TẢ STATUS:
                           inputPayload: prompt,
                           outputPayload: { ...parsed, level: parsed.status === "EMPTY" ? 1 : 0 },
                         }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
+                      } else {
+                        storeAgentOutput({
+                          agentName: "Review Messages Scheduled",
+                          carId: instance.car_id,
+                          sourceInstanceId: instance.id,
+                          inputPayload: prompt,
+                          outputPayload: { error: "Gemini response missing status field", parsed, level: -1 },
+                        }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
                       }
+                    } else {
+                      storeAgentOutput({
+                        agentName: "Review Messages Scheduled",
+                        carId: instance.car_id,
+                        sourceInstanceId: instance.id,
+                        inputPayload: prompt,
+                        outputPayload: { error: "Gemini returned unparseable response", raw: geminiResult.slice(0, 500), level: -1 },
+                      }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
                     }
                   }
                 }
               }
             } catch (err) {
               console.error(`[Process AI Workflows] AI Script Evaluator failed, falling back to original payload:`, err)
+              storeAgentOutput({
+                agentName: "Review Messages Scheduled",
+                carId: instance.car_id,
+                sourceInstanceId: instance.id,
+                inputPayload: null,
+                outputPayload: { error: err instanceof Error ? err.message : String(err), level: -1 },
+              }).catch(e => console.error("[Process AI Workflows] Failed to store agent output:", e))
             }
           }
 

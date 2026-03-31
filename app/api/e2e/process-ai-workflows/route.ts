@@ -434,14 +434,44 @@ MÔ TẢ STATUS:
           }
 
           // --- 2e. Execute the connector ---
-          console.log(`[Process AI Workflows] Executing step "${execution.step_name}" (connector: ${execution.connector_id})`)
+          // For "Gửi Script" steps, check if leads.zalo_account is set → use Vucar Zalo connector instead
+          let effectiveConnectorId = execution.connector_id
+          let effectivePayload = execution.request_payload
+          let urlVariables: Record<string, string> | undefined
+
+          if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee") {
+            try {
+              const zalosResult = await vucarV2Query(
+                `SELECT l.zalo_account FROM cars c JOIN leads l ON l.id = c.lead_id WHERE c.id = $1 LIMIT 1`,
+                [instance.car_id]
+              )
+              const zaloAccount: string | null = zalosResult.rows[0]?.zalo_account || null
+              if (zaloAccount) {
+                const [ownId, userId] = zaloAccount.split(":")
+                if (ownId && userId) {
+                  let parsedPayload = effectivePayload
+                  if (typeof parsedPayload === "string") {
+                    try { parsedPayload = JSON.parse(parsedPayload) } catch { /* keep */ }
+                  }
+                  effectiveConnectorId = "a1b8debd-7e9d-45d4-8804-cb817d5504f5"
+                  effectivePayload = { userId, messages: parsedPayload?.messages || [] }
+                  urlVariables = { ownId }
+                  console.log(`[Process AI Workflows] Zalo override: using Vucar Zalo connector (ownId=${ownId}, userId=${userId})`)
+                }
+              }
+            } catch (err) {
+              console.warn(`[Process AI Workflows] Failed to check zalo_account, falling back to default connector:`, err)
+            }
+          }
+
+          console.log(`[Process AI Workflows] Executing step "${execution.step_name}" (connector: ${effectiveConnectorId})`)
 
           let connectorSuccess = false
           let responsePayload: any = null
           let errorMessage: string | null = null
 
           try {
-            const execResponse = await executeConnector(execution.connector_id, execution.request_payload)
+            const execResponse = await executeConnector(effectiveConnectorId, effectivePayload, urlVariables)
             connectorSuccess = execResponse.success
             responsePayload = execResponse.data
             if (!connectorSuccess) {
@@ -588,7 +618,8 @@ async function getNextStepId(workflowId: string, currentStepOrder: number): Prom
 // =========================================================================
 async function executeConnector(
   connectorId: string,
-  requestPayload: any
+  requestPayload: any,
+  urlVariables?: Record<string, string>
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   // Parse request_payload if it's a string
   let payload = requestPayload
@@ -608,6 +639,13 @@ async function executeConnector(
 
   const connector = connectorResult.rows[0]
   let { base_url, method, auth_config } = connector
+
+  // Substitute URL path variables (e.g. {ownId} → actual value)
+  if (urlVariables) {
+    Object.entries(urlVariables).forEach(([key, value]) => {
+      base_url = base_url.replace(`{${key}}`, value)
+    })
+  }
 
   // Parse auth_config if it's a string
   if (typeof auth_config === 'string') {

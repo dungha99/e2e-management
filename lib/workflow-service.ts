@@ -1,6 +1,7 @@
 import { vucarV2Query, e2eQuery } from "./db"
 import { storeAgentOutput, getActiveAgentNote } from "./ai-agent-service"
 import { getAgentTools, executeToolCall } from "./agent-tools"
+import { searchPicRAG, getLastCustomerMessage, formatRAGExamples } from "./pic-rag-search"
 
 /**
  * Shared service for AI workflows. 
@@ -256,13 +257,37 @@ export async function handleAutoUseFlow(params: {
     const phoneNumber = phoneResult.rows[0]?.phone || phoneResult.rows[0]?.additional_phone || ""
     console.log(`[handleAutoUseFlow] Phone found: ${phoneNumber ? "YES" : "NO"}`)
 
-    // 3. Load connector schemas
-    console.log(`[handleAutoUseFlow] Loading connector schemas...`)
+    // 3. Load connector schemas + RAG examples in parallel
+    console.log(`[handleAutoUseFlow] Loading connector schemas and RAG examples...`)
     const schemaStart = Date.now()
-    const stepSchemas = await Promise.all(
-      extractedSteps.map(step => loadConnectorSchema(step.connectorId))
-    )
-    console.log(`[handleAutoUseFlow] Schemas loaded in ${Date.now() - schemaStart}ms`)
+    const [stepSchemas, ragExamplesContext] = await Promise.all([
+      Promise.all(extractedSteps.map(step => loadConnectorSchema(step.connectorId))),
+      (async () => {
+        try {
+          const messagesResult = await vucarV2Query(
+            `SELECT ss.messages_zalo FROM cars c
+             LEFT JOIN sale_status ss ON ss.car_id = c.id
+             WHERE c.id = $1 LIMIT 1`,
+            [carId]
+          )
+          const messagesZalo = messagesResult.rows[0]?.messages_zalo
+          const lastCustomerMsg = getLastCustomerMessage(messagesZalo)
+          if (!lastCustomerMsg) {
+            console.log("[handleAutoUseFlow] No customer message found for RAG")
+            return null
+          }
+          console.log(`[handleAutoUseFlow] RAG query: "${lastCustomerMsg.slice(0, 100)}"`)
+          const ragResults = await searchPicRAG(picId || null, `CUSTOMER: ${lastCustomerMsg}`, 5)
+          const formatted = formatRAGExamples(ragResults)
+          console.log(`[handleAutoUseFlow] RAG returned ${ragResults.length} examples`)
+          return formatted || null
+        } catch (err) {
+          console.error("[handleAutoUseFlow] RAG search failed (non-blocking):", err)
+          return null
+        }
+      })(),
+    ])
+    console.log(`[handleAutoUseFlow] Schemas + RAG loaded in ${Date.now() - schemaStart}ms`)
 
     // 4. Load agent note for Worker
     console.log(`[handleAutoUseFlow] Loading Worker agent note...`)
@@ -277,7 +302,8 @@ export async function handleAutoUseFlow(params: {
       picId || "",
       carId,
       phoneNumber,
-      workerAgentNote
+      workerAgentNote,
+      ragExamplesContext
     )
     console.log(`[handleAutoUseFlow] Gemini returned ${geminiResults?.length} results`)
 
@@ -474,7 +500,8 @@ async function callGeminiForParameters(
   picId: string,
   carId: string,
   phoneNumber: string,
-  workerAgentNote?: string | null
+  workerAgentNote?: string | null,
+  ragExamplesContext?: string | null
 ) {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error("GEMINI_API_KEY missing")
@@ -602,10 +629,13 @@ Decided parameters: ${JSON.stringify(prevResult.parameters, null, 2)}
       ? baseSystemPrompt + "\n- Phải được đặt SAU thời điểm của bước trước đó."
       : baseSystemPrompt
 
+    const ragSection = ragExamplesContext ? `\n=== RAG EXAMPLES (Similar successful conversations from this PIC) ===\nDưới đây là các ví dụ từ những cuộc hội thoại thành công tương tự, hãy tham khảo phong cách và cách tiếp cận:\n${ragExamplesContext}\n` : ""
+
     const userPrompt = `
 ${todayInfo}
 
 ${leadContext}
+${ragSection}
 ${previousStepContext}
 === CURRENT STEP TO FILL (Step ${idx + 1} of ${steps.length}) ===
 "${step.stepName}" (connector: ${step.connectorLabel})

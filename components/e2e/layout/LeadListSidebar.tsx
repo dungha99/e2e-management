@@ -7,7 +7,7 @@ import { vi } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SearchInput } from "@/components/ui/search-input"
-import { User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star, X, SlidersHorizontal, Play, CheckCircle, Download, Loader2, Activity, Copy, Calendar, MapPin, Clock, Upload } from "lucide-react"
+import { User, Zap, MessageCircle, FileText, ChevronLeft, ChevronRight, Star, X, SlidersHorizontal, Play, CheckCircle, Download, Loader2, Activity, Copy, Calendar, MapPin, Clock, Upload, TrendingUp } from "lucide-react"
 import { Lead } from "../types"
 import { formatCarInfo, formatPriceShort, calculateCampaignProgress, calculateRemainingTime, formatRelativeTime, getActivityFreshness, getActivityFreshnessClass } from "../utils"
 import { useToast } from "@/hooks/use-toast"
@@ -51,8 +51,8 @@ interface LeadListSidebarProps {
   onDateRangeFilterChange?: (dateRange: DateRange | undefined) => void
 
   // Tabs & counts
-  activeTab: "priority" | "nurture" | "follow-up"
-  onTabChange: (tab: "priority" | "nurture" | "follow-up") => void
+  activeTab: "priority" | "nurture" | "follow-up" | "ai-performance"
+  onTabChange: (tab: "priority" | "nurture" | "follow-up" | "ai-performance") => void
   priorityCount: number
   nurtureCount: number
   followUpCount?: number
@@ -411,10 +411,20 @@ export function LeadListSidebar({
             }`}
         >
           <Clock className="h-4 w-4" />
-          Cần follow-up
-          <Badge className={activeTab === "follow-up" ? "bg-orange-600 text-white text-white text-xs" : "bg-gray-200 text-gray-700 text-xs"}>
+          Follow-up
+          <Badge className={activeTab === "follow-up" ? "bg-orange-600 text-white text-xs" : "bg-gray-200 text-gray-700 text-xs"}>
             {followUpCount}
           </Badge>
+        </button>
+        <button
+          onClick={() => onTabChange("ai-performance")}
+          className={`flex items-center gap-2 text-sm font-medium pb-2 transition-colors ${activeTab === "ai-performance"
+            ? "text-blue-600 border-b-2 border-blue-600"
+            : "text-gray-500 hover:text-gray-700"
+            }`}
+        >
+          <TrendingUp className="h-4 w-4" />
+          AI Performance
         </button>
       </div>
 

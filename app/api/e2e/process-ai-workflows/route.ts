@@ -26,7 +26,7 @@ interface ProcessingResult {
   instanceId: string
   workflowName: string
   stepsProcessed: number
-  stoppedReason: "all_done" | "scheduled_future" | "step_failed" | "error" | "customer_no_response"
+  stoppedReason: "all_done" | "scheduled_future" | "step_failed" | "step_retry_scheduled" | "error" | "customer_no_response"
   error?: string
 }
 
@@ -345,31 +345,25 @@ MÔ TẢ STATUS:
 
                     const jsonMatch = geminiResult.match(/\{[\s\S]*\}/)
                     if (jsonMatch) {
-                      const parsed = JSON.parse(jsonMatch[0])
+                      let parsed: any
+                      try {
+                        parsed = JSON.parse(jsonMatch[0])
+                      } catch (parseErr) {
+                        storeAgentOutput({
+                          agentName: "Review Messages Scheduled",
+                          carId: instance.car_id,
+                          sourceInstanceId: instance.id,
+                          inputPayload: prompt,
+                          outputPayload: { error: "JSON.parse failed", raw: jsonMatch[0].slice(0, 500), level: -1 },
+                        }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
+                      }
                       if (parsed && parsed.status) {
 
                         // ── REVISED_PLAN ─────────────────────────────────────────────
-                        // Context does not match current workflow plan → trigger evaluate-step,
-                        // skip this step entirely (do NOT send messages to customer).
+                        // Context does not match current workflow plan → skip this step,
+                        // terminate the instance, and trigger re-analysis directly via router.
                         if (parsed.status === "REVISED_PLAN") {
-                          console.log(`[Process AI Workflows] REVISED_PLAN detected — triggering evaluate-step, skipping messages for ${customerPhone}`)
-
-                          // Build the output payload from the evaluator's reasoning
-                          const revisedPlanOutput = typeof parsed.reasoning === "object"
-                            ? parsed.reasoning
-                            : {
-                              context_summary: typeof parsed.reasoning === "string" ? parsed.reasoning : "Context mismatch detected by script evaluator",
-                              actions: parsed.actions || [],
-                              message_suggestions: parsed.message_suggestions || [],
-                            }
-
-                          // Call evaluate-step in background (non-blocking)
-                          const evalStepPayload = [{ phone: customerPhone, index: 0, output: revisedPlanOutput }]
-                          fetch(`${process.env.NEXT_PUBLIC_APP_URL || "https://e2e-management.vercel.app"}/api/e2e/evaluate-step`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(evalStepPayload),
-                          }).catch(err => console.error("[Process AI Workflows] evaluate-step call failed:", err))
+                          console.log(`[Process AI Workflows] REVISED_PLAN detected — skipping messages, terminating instance, triggering re-analysis for ${customerPhone}`)
 
                           // Mark this step as skipped (not failed) — don't send messages
                           await e2eQuery(
@@ -377,7 +371,13 @@ MÔ TẢ STATUS:
                             [`REVISED_PLAN: ${typeof parsed.reasoning === "string" ? parsed.reasoning.slice(0, 300) : "Plan mismatch"}`, execution.id]
                           )
 
-                          storeAgentOutput({
+                          // Terminate the workflow instance
+                          await e2eQuery(
+                            `UPDATE workflow_instances SET status = 'terminated', completed_at = NOW() WHERE id = $1`,
+                            [instance.id]
+                          )
+
+                          await storeAgentOutput({
                             agentName: "Review Messages Scheduled",
                             carId: instance.car_id,
                             sourceInstanceId: instance.id,
@@ -385,7 +385,26 @@ MÔ TẢ STATUS:
                             outputPayload: { ...parsed, level: 2 },
                           }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
 
-                          // Stop processing this instance for now
+                          // Trigger re-analysis directly via router (same as no-response path)
+                          const revisedPlanFeedback = `[Auto-Check] Review Messages phát hiện bối cảnh thực tế không khớp với kế hoạch tại bước "${execution.step_name}". Lý do: ${typeof parsed.reasoning === "string" ? parsed.reasoning : JSON.stringify(parsed.reasoning)}`
+
+                          if (instance.car_id) {
+                            try {
+                              console.log(`[Process AI Workflows] Submitting feedback for re-analysis, car ${instance.car_id}...`)
+                              await submitAiFeedback({
+                                carId: instance.car_id,
+                                sourceInstanceId: instance.id,
+                                phoneNumber: customerPhone,
+                                feedback: revisedPlanFeedback,
+                                retrigger: true,
+                              })
+                              console.log(`[Process AI Workflows] Re-analysis triggered successfully.`)
+                            } catch (err) {
+                              console.error(`[Process AI Workflows] submitAiFeedback failed:`, err)
+                            }
+                          }
+
+                          // Stop processing this instance
                           result.stoppedReason = "customer_no_response"
                           continueLoop = false
                           break
@@ -415,25 +434,88 @@ MÔ TẢ STATUS:
                           inputPayload: prompt,
                           outputPayload: { ...parsed, level: parsed.status === "EMPTY" ? 1 : 0 },
                         }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
+                      } else {
+                        storeAgentOutput({
+                          agentName: "Review Messages Scheduled",
+                          carId: instance.car_id,
+                          sourceInstanceId: instance.id,
+                          inputPayload: prompt,
+                          outputPayload: { error: "Gemini response missing status field", parsed, level: -1 },
+                        }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
                       }
+                    } else {
+                      storeAgentOutput({
+                        agentName: "Review Messages Scheduled",
+                        carId: instance.car_id,
+                        sourceInstanceId: instance.id,
+                        inputPayload: prompt,
+                        outputPayload: { error: "Gemini returned unparseable response", raw: geminiResult.slice(0, 500), level: -1 },
+                      }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
                     }
                   }
                 }
               }
             } catch (err) {
               console.error(`[Process AI Workflows] AI Script Evaluator failed, falling back to original payload:`, err)
+              storeAgentOutput({
+                agentName: "Review Messages Scheduled",
+                carId: instance.car_id,
+                sourceInstanceId: instance.id,
+                inputPayload: null,
+                outputPayload: { error: err instanceof Error ? err.message : String(err), level: -1 },
+              }).catch(e => console.error("[Process AI Workflows] Failed to store agent output:", e))
             }
           }
 
           // --- 2e. Execute the connector ---
-          console.log(`[Process AI Workflows] Executing step "${execution.step_name}" (connector: ${execution.connector_id})`)
+          // For "Gửi Script" steps, check if leads.zalo_account is set → use Vucar Zalo connector instead
+          let effectiveConnectorId = execution.connector_id
+          let effectivePayload = execution.request_payload
+          let urlVariables: Record<string, string> | undefined
+
+          if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee") {
+            try {
+              const zalosResult = await vucarV2Query(
+                `SELECT l.zalo_account FROM cars c JOIN leads l ON l.id = c.lead_id WHERE c.id = $1 LIMIT 1`,
+                [instance.car_id]
+              )
+              const zaloAccount: string | null = zalosResult.rows[0]?.zalo_account || null
+              if (zaloAccount) {
+                const [ownId, userId] = zaloAccount.split(":")
+                if (ownId && userId) {
+                  let parsedPayload = effectivePayload
+                  if (typeof parsedPayload === "string") {
+                    try { parsedPayload = JSON.parse(parsedPayload) } catch { /* keep */ }
+                  }
+                  effectiveConnectorId = "a1b8debd-7e9d-45d4-8804-cb817d5504f5"
+                  effectivePayload = { userId, messages: parsedPayload?.messages || [] }
+                  urlVariables = { ownId }
+                  console.log(`[Process AI Workflows] Zalo override: using Vucar Zalo connector (ownId=${ownId}, userId=${userId})`)
+
+                  // Update workflow_step and step_execution to reflect the actual connector used
+                  await e2eQuery(
+                    `UPDATE workflow_steps SET connector_id = $1 WHERE id = $2`,
+                    [effectiveConnectorId, execution.step_id]
+                  )
+                  await e2eQuery(
+                    `UPDATE step_executions SET request_payload = $1 WHERE id = $2`,
+                    [JSON.stringify(effectivePayload), execution.id]
+                  )
+                }
+              }
+            } catch (err) {
+              console.warn(`[Process AI Workflows] Failed to check zalo_account, falling back to default connector:`, err)
+            }
+          }
+
+          console.log(`[Process AI Workflows] Executing step "${execution.step_name}" (connector: ${effectiveConnectorId})`)
 
           let connectorSuccess = false
           let responsePayload: any = null
           let errorMessage: string | null = null
 
           try {
-            const execResponse = await executeConnector(execution.connector_id, execution.request_payload)
+            const execResponse = await executeConnector(effectiveConnectorId, effectivePayload, urlVariables)
             connectorSuccess = execResponse.success
             responsePayload = execResponse.data
             if (!connectorSuccess) {
@@ -580,7 +662,8 @@ async function getNextStepId(workflowId: string, currentStepOrder: number): Prom
 // =========================================================================
 async function executeConnector(
   connectorId: string,
-  requestPayload: any
+  requestPayload: any,
+  urlVariables?: Record<string, string>
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   // Parse request_payload if it's a string
   let payload = requestPayload
@@ -600,6 +683,13 @@ async function executeConnector(
 
   const connector = connectorResult.rows[0]
   let { base_url, method, auth_config } = connector
+
+  // Substitute URL path variables (e.g. {ownId} → actual value)
+  if (urlVariables) {
+    Object.entries(urlVariables).forEach(([key, value]) => {
+      base_url = base_url.replace(`{${key}}`, value)
+    })
+  }
 
   // Parse auth_config if it's a string
   if (typeof auth_config === 'string') {

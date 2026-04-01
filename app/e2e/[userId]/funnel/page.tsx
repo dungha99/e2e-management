@@ -16,6 +16,78 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { cn } from "@/lib/utils"
 
+// Qualification selector component
+function QualificationSelector({
+  selectedQualified,
+  availableQualified,
+  onChange,
+}: {
+  selectedQualified: string[]
+  availableQualified: string[]
+  onChange: (value: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className="flex items-center justify-between gap-1 min-w-[140px] h-9 px-2.5 text-xs bg-background border border-input rounded-md hover:bg-accent transition-colors truncate">
+          <span className="truncate">
+            {selectedQualified.length === 0 
+              ? "Tất cả Qualified" 
+              : `Qualified (${selectedQualified.length})`}
+          </span>
+          <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-0" align="end">
+        <Command>
+          <CommandInput placeholder="Tìm loại..." className="h-9 text-sm" />
+          <CommandList>
+            <CommandEmpty>Không tìm thấy.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                onSelect={() => {
+                  onChange([])
+                }}
+                className="flex items-center gap-2 text-sm"
+              >
+                <div className={cn(
+                  "flex h-4 w-4 items-center justify-center rounded-sm border border-primary transition-all",
+                  selectedQualified.length === 0 ? "bg-primary text-primary-foreground" : "opacity-50"
+                )}>
+                  {selectedQualified.length === 0 && <Check className="h-3 w-3" />}
+                </div>
+                Tất cả Qualified
+              </CommandItem>
+              {availableQualified.map((q) => (
+                <CommandItem
+                  key={q}
+                  onSelect={() => {
+                    const next = selectedQualified.includes(q)
+                      ? selectedQualified.filter((v) => v !== q)
+                      : [...selectedQualified, q]
+                    onChange(next)
+                  }}
+                  className="flex items-center gap-2 text-sm"
+                >
+                  <div className={cn(
+                    "flex h-4 w-4 items-center justify-center rounded-sm border border-primary transition-all",
+                    selectedQualified.includes(q) ? "bg-primary text-primary-foreground" : "opacity-50"
+                  )}>
+                    {selectedQualified.includes(q) && <Check className="h-3 w-3" />}
+                  </div>
+                  {q}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 // Account selector component (copied from main page for consistency)
 function MobileAccountSelector({
   selectedAccount,
@@ -82,6 +154,7 @@ function FunnelPageContent({ userId }: { userId: string }) {
 
   const dateFromParam = searchParams.get("dateFrom")
   const dateToParam = searchParams.get("dateTo")
+  const qualifiedParam = searchParams.get("qualified")
   
   // Initialize date range from URL params
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
@@ -93,6 +166,13 @@ function FunnelPageContent({ userId }: { userId: string }) {
     }
     return undefined
   })
+
+  // Initialize qualified filter from URL params
+  const [selectedQualified, setSelectedQualified] = useState<string[]>(() => {
+    return qualifiedParam ? qualifiedParam.split(',').filter(Boolean) : []
+  })
+
+  const [availableQualified, setAvailableQualified] = useState<string[]>([])
 
   const [funnelData, setFunnelData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -113,15 +193,21 @@ function FunnelPageContent({ userId }: { userId: string }) {
 
     if (from) params.set("dateFrom", from)
     if (to) params.set("dateTo", to)
+    if (selectedQualified.length > 0) params.set("qualified", selectedQualified.join(","))
 
     fetch(`/api/e2e/funnel-stats?${params.toString()}`)
       .then((res) => res.ok ? res.json() : null)
       .then((data) => {
-        if (data) setFunnelData(data)
+        if (data) {
+          setFunnelData(data)
+          if (data.qualifiedValues) {
+            setAvailableQualified(data.qualifiedValues)
+          }
+        }
       })
       .catch((err) => console.error("[FunnelPage] Error:", err))
       .finally(() => setLoading(false))
-  }, [userId, dateRange, dateFromParam, dateToParam])
+  }, [userId, dateRange, dateFromParam, dateToParam, selectedQualified])
 
   const handleBack = () => {
     router.back()
@@ -145,6 +231,17 @@ function FunnelPageContent({ userId }: { userId: string }) {
     } else {
       params.delete("dateFrom")
       params.delete("dateTo")
+    }
+    router.push(`?${params.toString()}`, { scroll: false })
+  }
+
+  const handleQualifiedChange = (newQualified: string[]) => {
+    setSelectedQualified(newQualified)
+    const params = new URLSearchParams(searchParams.toString())
+    if (newQualified.length > 0) {
+      params.set("qualified", newQualified.join(","))
+    } else {
+      params.delete("qualified")
     }
     router.push(`?${params.toString()}`, { scroll: false })
   }
@@ -184,6 +281,11 @@ function FunnelPageContent({ userId }: { userId: string }) {
               onDateRangeChange={handleDateRangeChange}
               className="w-[280px]"
             />
+            <QualificationSelector
+              selectedQualified={selectedQualified}
+              availableQualified={availableQualified}
+              onChange={handleQualifiedChange}
+            />
           </div>
         </div>
 
@@ -195,6 +297,7 @@ function FunnelPageContent({ userId }: { userId: string }) {
             picId={userId}
             dateFrom={dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : dateFromParam}
             dateTo={dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : dateToParam}
+            qualified={selectedQualified.join(',')}
           />
         </TooltipProvider>
 
@@ -205,6 +308,7 @@ function FunnelPageContent({ userId }: { userId: string }) {
           picId={userId}
           dateFrom={dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : dateFromParam}
           dateTo={dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : dateToParam}
+          qualified={selectedQualified.join(',')}
         />
 
         <div className="mt-8 text-sm text-gray-500 bg-gray-50 p-4 rounded-lg border border-gray-100">

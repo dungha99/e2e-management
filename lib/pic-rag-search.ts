@@ -127,7 +127,7 @@ export function formatRAGExamples(results: any[]): string {
   const lines: string[] = []
   results.forEach((result: any, idx: number) => {
     const payload = result.payload
-    const content = payload?.full_document || payload?.chunk_text || payload?.text || JSON.stringify(payload || {})
+    const content = payload?.conversation_text || payload?.full_document || payload?.chunk_text || payload?.text || JSON.stringify(payload || {})
     lines.push(`example_${idx + 1}: "${content}"`)
   })
 

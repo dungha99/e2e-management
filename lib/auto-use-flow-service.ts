@@ -673,7 +673,7 @@ export async function runAutoUseFlow(
             return null
           }
           console.log(`[Auto Use Flow Service] RAG query with last customer message: "${lastCustomerMsg.slice(0, 100)}"`)
-          const ragResults = await searchPicRAG(picId || null, lastCustomerMsg, 5)
+          const ragResults = await searchPicRAG(picId || null, `CUSTOMER: ${lastCustomerMsg}`, 5)
           const formatted = formatRAGExamples(ragResults)
           console.log(`[Auto Use Flow Service] RAG returned ${ragResults.length} examples`)
           return formatted || null

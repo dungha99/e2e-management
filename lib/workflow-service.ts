@@ -288,6 +288,7 @@ export async function handleAutoUseFlow(params: {
       })(),
     ])
     console.log(`[handleAutoUseFlow] Schemas + RAG loaded in ${Date.now() - schemaStart}ms`)
+    console.log(`[handleAutoUseFlow] ragExamplesContext: ${ragExamplesContext ? `${ragExamplesContext.length} chars` : "null"}`)
 
     // 4. Load agent note for Worker
     console.log(`[handleAutoUseFlow] Loading Worker agent note...`)

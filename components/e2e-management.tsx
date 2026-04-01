@@ -29,7 +29,7 @@ import {
   useDealerBiddings,
   useLeadSources
 } from "@/hooks/use-leads"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 // Dialog components
 import { SendToDealerGroupsDialog } from "./e2e/dialogs/SendToDealerGroupsDialog"
@@ -45,6 +45,7 @@ import { LeadDetailPanel } from "./e2e/layout/LeadDetailPanel"
 import { SaleActivitiesPanel } from "./e2e/layout/SaleActivitiesPanel"
 
 // Tab components
+import { AiFunnelDashboard } from "./ai-funnel/AiFunnelDashboard"
 
 // Layout components
 import { AccountSelector } from "./e2e/layout/AccountSelector"
@@ -93,7 +94,7 @@ function WorkflowStep({ icon, title, status, isCompleted, onClick }: {
 
 interface E2EManagementProps {
   userId?: string
-  initialTab?: "priority" | "nurture" | "follow-up"
+  initialTab?: "priority" | "nurture" | "follow-up" | "ai-performance"
   initialPage?: number
   initialSearch?: string
   initialSources?: string[]
@@ -204,7 +205,8 @@ export function E2EManagement({
 
   // Phase 2: React Query hooks for data fetching (server-side)
   // Read params directly from URL - URL is the single source of truth
-  const activeTab = (searchParams.get("tab") as "priority" | "nurture" | "follow-up") || "priority"
+  type TabType = "priority" | "nurture" | "follow-up" | "ai-performance"
+  const activeTab = (searchParams.get("tab") as TabType) || "priority"
   const currentPage = parseInt(searchParams.get("page") || "1")
   const appliedSearchPhone = searchParams.get("search") || ""
   const sourceFilter = searchParams.get("sources")?.split(",").filter(Boolean) || []
@@ -255,7 +257,7 @@ export function E2EManagement({
     refetch: refetchLeads,
   } = useLeads({
     uid: selectedAccount,
-    tab,
+    tab: activeTab === "ai-performance" ? "priority" : activeTab,
     page,
     per_page: ITEMS_PER_PAGE,
     search,
@@ -263,6 +265,26 @@ export function E2EManagement({
     dateFrom: dateFromParam,
     dateTo: dateToParam,
     refreshKey,
+  })
+
+  // AI Funnel Dashboard Data Fetching
+  const { data: funnelData, isLoading: loadingFunnel } = useQuery({
+    queryKey: ["ai-funnel-dashboard", selectedAccount, dateFromParam, dateToParam],
+    queryFn: async () => {
+      let url = "/api/ai-funnel/dashboard"
+      const params = new URLSearchParams()
+      if (dateFromParam) params.append("startDate", new Date(dateFromParam).toISOString())
+      if (dateToParam) params.append("endDate", new Date(dateToParam).toISOString())
+      if (selectedAccount && selectedAccount !== "all") params.append("picId", selectedAccount)
+
+      const queryString = params.toString()
+      if (queryString) url += `?${queryString}`
+
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return res.json()
+    },
+    enabled: !!selectedAccount && activeTab === "ai-performance",
   })
 
   // Extract leads from response
@@ -1872,7 +1894,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
   // Leads are already filtered and paginated from backend (including date range filter)
   const currentPageLeads = enrichedLeads
 
-  const handleTabChange = (tab: "priority" | "nurture" | "follow-up") => {
+  const handleTabChange = (tab: "priority" | "nurture" | "follow-up" | "ai-performance") => {
     // Phase 2: Update URL only, React Query will automatically refetch
     const params = new URLSearchParams(searchParams.toString())
     params.set("tab", tab)
@@ -2349,40 +2371,54 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
       ) : (
         /* Split View Layout - Mobile uses full height with safe areas */
         <div className={`flex ${isMobile ? 'flex-col h-[calc(100dvh-56px)]' : 'gap-4 h-[calc(100vh-100px)]'} bg-gray-50 scroll-touch`}>
-          {/* Lead List Sidebar */}
-          {(!isMobile || mobileView === 'list') && (
-            <LeadListSidebar
-              isMobile={isMobile}
-              mobileView={mobileView}
-              selectedAccount={selectedAccount}
-              loading={loading}
-              loadingCarIds={loadingCarIds}
-              searchPhone={searchPhone}
-              appliedSearch={search}
-              onSearchChange={setSearchPhone}
-              onSearch={searchLeadByPhone}
-              onClearSearch={handleClearSearch}
-              activeTab={activeTab}
-              onTabChange={handleTabChange}
-              priorityCount={priorityCount}
-              nurtureCount={nurtureCount}
-              followUpCount={followUpCount}
-              currentPageLeads={currentPageLeads}
-              selectedLead={selectedLead}
-              onLeadClick={handleLeadClick}
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={handlePageChange}
-              onSummaryOpen={() => setSummaryDialogOpen(true)}
-              onUpdatePrimary={handleUpdatePrimary}
-              updatingPrimary={updatingPrimary}
-              sourceFilter={sourceFilter}
-              onSourceFilterChange={handleSourceFilterChange}
-              availableSources={availableSources}
-              dateRangeFilter={dateRangeFilter}
-              onDateRangeFilterChange={handleDateRangeFilterChange}
-            />
-          )}
+          {activeTab === "ai-performance" ? (
+            <div className="flex-1 overflow-y-auto bg-background">
+              <AiFunnelDashboard
+                data={funnelData}
+                loading={loadingFunnel}
+                filters={{
+                  dateRange: dateRangeFilter,
+                  picId: selectedAccount
+                }}
+                hideHeader={true}
+              />
+            </div>
+          ) : (
+            <>
+              {/* Lead List Sidebar */}
+              {(!isMobile || mobileView === 'list') && (
+                <LeadListSidebar
+                  isMobile={isMobile}
+                  mobileView={mobileView}
+                  selectedAccount={selectedAccount}
+                  loading={loading}
+                  loadingCarIds={loadingCarIds}
+                  searchPhone={searchPhone}
+                  appliedSearch={search}
+                  onSearchChange={setSearchPhone}
+                  onSearch={searchLeadByPhone}
+                  onClearSearch={handleClearSearch}
+                  activeTab={activeTab === "ai-performance" ? "priority" : activeTab}
+                  onTabChange={handleTabChange}
+                  priorityCount={priorityCount}
+                  nurtureCount={nurtureCount}
+                  followUpCount={followUpCount}
+                  currentPageLeads={currentPageLeads}
+                  selectedLead={selectedLead}
+                  onLeadClick={handleLeadClick}
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={handlePageChange}
+                  onSummaryOpen={() => setSummaryDialogOpen(true)}
+                  onUpdatePrimary={handleUpdatePrimary}
+                  updatingPrimary={updatingPrimary}
+                  sourceFilter={sourceFilter}
+                  onSourceFilterChange={handleSourceFilterChange}
+                  availableSources={availableSources}
+                  dateRangeFilter={dateRangeFilter}
+                  onDateRangeFilterChange={handleDateRangeFilterChange}
+                />
+              )}
 
 
 
@@ -2471,8 +2507,10 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
             isCollapsed={rightPanelCollapsed}
             onToggleCollapse={() => setRightPanelCollapsed(!rightPanelCollapsed)}
           />
-        </div>
+        </>
       )}
+    </div>
+  )}
 
       {/* Create Bidding Confirmation Dialog */}
       <CreateBiddingDialog

@@ -17,7 +17,7 @@ interface NavigationHeaderProps {
 }
 
 const NAV_ITEMS = [
-  { value: "dashboard",        label: "AI Performance",      href: "/" },
+  { value: "ai-performance",   label: "AI Performance",      href: (id: string) => `/e2e/${id}?tab=ai-performance` },
   { value: "e2e",              label: "Quản lý E2E",         href: (id: string) => `/e2e/${id}?tab=priority&page=1` },
   { value: "funnel",           label: "Phân tích Funnel",    href: (id: string) => `/e2e/${id}/funnel` },
   { value: "lead-monitor",     label: "Lead Monitor",        href: "/lead-monitor" },

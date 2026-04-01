@@ -668,12 +668,9 @@ export async function runAutoUseFlow(
           )
           const messagesZalo = messagesResult.rows[0]?.messages_zalo
           const lastCustomerMsg = getLastCustomerMessage(messagesZalo)
-          if (!lastCustomerMsg) {
-            console.log("[Auto Use Flow Service] No customer message found for RAG")
-            return null
-          }
-          console.log(`[Auto Use Flow Service] RAG query with last customer message: "${lastCustomerMsg.slice(0, 100)}"`)
-          const ragResults = await searchPicRAG(picId || null, `CUSTOMER: ${lastCustomerMsg}`, 5)
+          const ragQuery = lastCustomerMsg ? `CUSTOMER: ${lastCustomerMsg}` : "CUSTOMER"
+          console.log(`[Auto Use Flow Service] RAG query (${lastCustomerMsg ? "customer msg" : "no messages fallback"}): "${ragQuery.slice(0, 100)}"`)
+          const ragResults = await searchPicRAG(picId || null, ragQuery, 5)
           const formatted = formatRAGExamples(ragResults)
           console.log(`[Auto Use Flow Service] RAG returned ${ragResults.length} examples`)
           return formatted || null

@@ -1,17 +1,19 @@
-import { vucarV2Query } from "@/lib/db"
+import { vucarV2Query, e2eQuery } from "@/lib/db"
 
 const N8N_SHOPID_WEBHOOK = "https://n8n.vucar.vn/webhook/f23b1b03-b198-4dc3-a196-d97a5cae8aff"
 const AKABIZ_CHAT_HISTORY_URL = "https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history"
+const VUCAR_ZALO_GET_MSG_CONNECTOR_ID = "3579bf8f-0d19-4e10-ab89-21a6133f8e04"
 
 /**
- * Fetch real-time Zalo chat history from AkaBiz CRM API.
- * 
- * Flow:
- * 1. Resolve picId from carId if not provided
- * 2. Get shopId from n8n webhook using picId
- * 3. Fetch chat history from AkaBiz using phone + shopId
- * 
- * Returns last `limit` messages (default 100), or empty array on failure.
+ * Fetch Zalo chat history with 3-source fallback:
+ *   Source 1: AkaBiz CRM API (via n8n shopId)
+ *   Source 2: Vucar Zalo Get Message API (via leads.zalo_account)
+ *   Source 3: sale_status.zalo_messages (DB)
+ *
+ * All sources normalize to objects containing at minimum:
+ *   senderName  — "Vucar ..." = PIC, otherwise = customer
+ *   dateAction  — ISO date string
+ *   msg_content — message text
  */
 export async function fetchZaloChatHistory({
   carId,
@@ -24,8 +26,9 @@ export async function fetchZaloChatHistory({
   picId?: string | null
   limit?: number
 }): Promise<any[]> {
+
+  // --- Source 1: AkaBiz ---
   try {
-    // Step 1: Resolve picId if not provided
     let resolvedPicId = picId
     if (!resolvedPicId) {
       const leadCheck = await vucarV2Query(
@@ -35,67 +38,138 @@ export async function fetchZaloChatHistory({
       resolvedPicId = leadCheck.rows[0]?.pic_id
     }
 
-    if (!resolvedPicId) {
-      console.warn(`[ChatHistoryService] No picId found for car ${carId}, cannot fetch chat history`)
-      return []
-    }
-
-    // Step 2: Get shopId from n8n
-    let shopId: string | undefined
-    try {
-      const n8nRes = await fetch(N8N_SHOPID_WEBHOOK, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pic_id: resolvedPicId }),
-      })
-      if (n8nRes.ok) {
-        let n8nData: any = await n8nRes.json()
-        if (Array.isArray(n8nData)) n8nData = n8nData[0]
-        shopId = n8nData?.shop_id
-      }
-    } catch (err) {
-      console.warn(`[ChatHistoryService] Failed to get shopId for picId=${resolvedPicId}:`, err)
-    }
-
-    if (!shopId) {
-      console.warn(`[ChatHistoryService] No shopId returned for picId=${resolvedPicId}`)
-      return []
-    }
-
-    // Step 3: Fetch chat history from AkaBiz (with retries)
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    if (resolvedPicId) {
+      let shopId: string | undefined
       try {
-        const historyRes = await fetch(AKABIZ_CHAT_HISTORY_URL, {
+        const n8nRes = await fetch(N8N_SHOPID_WEBHOOK, {
           method: "POST",
-          headers: { "Content-Type": "application/json", accept: "application/json" },
-          body: JSON.stringify({ phone, shop_id: shopId }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pic_id: resolvedPicId }),
         })
-
-        if (!historyRes.ok) {
-          console.warn(`[ChatHistoryService] AkaBiz API failed on attempt ${attempt}: ${historyRes.status}`)
-          if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
-          continue
+        if (n8nRes.ok) {
+          let n8nData: any = await n8nRes.json()
+          if (Array.isArray(n8nData)) n8nData = n8nData[0]
+          shopId = n8nData?.shop_id
         }
-
-        const historyData = await historyRes.json()
-        if (historyData.is_successful && historyData.chat_history) {
-          const messages = historyData.chat_history.slice(-limit)
-          console.log(`[ChatHistoryService] Loaded ${messages.length} messages for phone=${phone}, car=${carId}`)
-          return messages
-        }
-
-        console.warn(`[ChatHistoryService] AkaBiz returned is_successful=false for phone=${phone} (attempt ${attempt})`)
-        if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
-        continue // Retry on data-level failure
       } catch (err) {
-        console.warn(`[ChatHistoryService] Error during AkaBiz fetch (attempt ${attempt}):`, err)
-        if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
+        console.warn(`[ChatHistoryService] Failed to get shopId for picId=${resolvedPicId}:`, err)
       }
-    }
 
-    return []
+      if (shopId) {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const historyRes = await fetch(AKABIZ_CHAT_HISTORY_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", accept: "application/json" },
+              body: JSON.stringify({ phone, shop_id: shopId }),
+            })
+
+            if (historyRes.ok) {
+              const historyData = await historyRes.json()
+              if (historyData.is_successful && historyData.chat_history?.length > 0) {
+                const messages = historyData.chat_history.slice(-limit)
+                console.log(`[ChatHistoryService] Source: AkaBiz — ${messages.length} messages (shopId=${shopId})`)
+                return messages
+              }
+            }
+
+            console.warn(`[ChatHistoryService] AkaBiz attempt ${attempt} failed for phone=${phone}`)
+            if (attempt < 3) await new Promise((r) => setTimeout(r, 2000))
+          } catch (err) {
+            console.warn(`[ChatHistoryService] AkaBiz attempt ${attempt} error:`, err)
+            if (attempt < 3) await new Promise((r) => setTimeout(r, 2000))
+          }
+        }
+      } else {
+        console.warn(`[ChatHistoryService] No shopId for picId=${resolvedPicId}, skipping AkaBiz`)
+      }
+    } else {
+      console.warn(`[ChatHistoryService] No picId for car ${carId}, skipping AkaBiz`)
+    }
   } catch (err) {
-    console.error(`[ChatHistoryService] Error fetching chat history:`, err)
-    return []
+    console.warn(`[ChatHistoryService] Source 1 (AkaBiz) unexpected error:`, err)
   }
+
+  // --- Source 2: Vucar Zalo Get Message API ---
+  try {
+    const leadResult = await vucarV2Query(
+      `SELECT l.zalo_account FROM cars c JOIN leads l ON l.id = c.lead_id WHERE c.id = $1 LIMIT 1`,
+      [carId]
+    )
+    const zaloAccount: string | null = leadResult.rows[0]?.zalo_account || null
+    if (zaloAccount) {
+      const [ownId, threadId] = zaloAccount.split(":")
+      if (ownId && threadId) {
+        const connectorResult = await e2eQuery(
+          `SELECT * FROM api_connectors WHERE id = $1 LIMIT 1`,
+          [VUCAR_ZALO_GET_MSG_CONNECTOR_ID]
+        )
+        if (connectorResult.rows.length > 0) {
+          const connector = connectorResult.rows[0]
+          let authConfig = connector.auth_config
+          if (typeof authConfig === "string") {
+            try { authConfig = JSON.parse(authConfig) } catch { /* ignore */ }
+          }
+          const headers: Record<string, string> = { "Content-Type": "application/json" }
+          if (authConfig?.type === "bearer" && authConfig?.token) {
+            headers["Authorization"] = `Bearer ${authConfig.token}`
+          } else if (authConfig && typeof authConfig === "object") {
+            Object.entries(authConfig).forEach(([k, v]) => {
+              if (typeof v === "string" && k !== "type") headers[k] = v
+            })
+          }
+          let url: string = connector.base_url
+          url = url.replace("{ownId}", ownId).replace("{threadId}", threadId)
+          const res = await fetch(url, { method: "GET", headers })
+          if (res.ok) {
+            const data = await res.json()
+            const rawMessages: any[] = data?.data || []
+            if (rawMessages.length > 0) {
+              const messages = rawMessages.slice(-limit).map((msg: any) => ({
+                senderName: msg.is_self ? "Vucar PIC" : "Customer",
+                dateAction: msg.created_at || new Date(parseInt(msg.timestamp) * 1000).toISOString(),
+                msg_content: msg.content || "",
+                content: msg.content || "",
+              }))
+              console.log(`[ChatHistoryService] Source: Vucar Zalo API — ${messages.length} messages (ownId=${ownId}, threadId=${threadId})`)
+              return messages
+            }
+          }
+        }
+      }
+    } else {
+      console.warn(`[ChatHistoryService] No zalo_account for car ${carId}, skipping Vucar Zalo API`)
+    }
+  } catch (err) {
+    console.warn(`[ChatHistoryService] Source 2 (Vucar Zalo API) failed:`, err)
+  }
+
+  // --- Source 3: sale_status.zalo_messages (DB) ---
+  try {
+    const dbResult = await vucarV2Query(
+      `SELECT ss.zalo_messages FROM cars c
+       LEFT JOIN sale_status ss ON ss.car_id = c.id
+       WHERE c.id = $1 LIMIT 1`,
+      [carId]
+    )
+    const zaloMessages: any[] | null = dbResult.rows[0]?.zalo_messages
+    if (zaloMessages && Array.isArray(zaloMessages) && zaloMessages.length > 0) {
+      const messages = zaloMessages.slice(-limit).map((msg: any) => {
+        const isFromCustomer = msg.fromMe === false || (msg.uidFrom && msg.uidFrom !== 0 && msg.uidFrom !== "0")
+        return {
+          senderName: isFromCustomer ? "Customer" : "Vucar PIC",
+          dateAction: msg.timestamp ? new Date(msg.timestamp).toISOString() : new Date().toISOString(),
+          msg_content: msg.text || msg.body || msg.content || "",
+          content: msg.text || msg.body || msg.content || "",
+        }
+      })
+      console.log(`[ChatHistoryService] Source: zalo_messages DB — ${messages.length} messages`)
+      return messages
+    }
+  } catch (err) {
+    console.warn(`[ChatHistoryService] Source 3 (zalo_messages DB) failed:`, err)
+  }
+
+  console.warn(`[ChatHistoryService] All sources failed for carId=${carId}, phone=${phone}`)
+  return []
 }

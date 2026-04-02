@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server"
 import { vucarV2Query } from "@/lib/db"
+import { fetchZaloChatHistory } from "@/lib/chat-history-service"
 
 export const dynamic = "force-dynamic"
 
-const N8N_SHOPID_WEBHOOK = "https://n8n.vucar.vn/webhook/f23b1b03-b198-4dc3-a196-d97a5cae8aff"
-const AKABIZ_CHAT_HISTORY_URL = "https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history"
 const AKABIZ_SEND_MESSAGE_URL = "https://crm-vucar-api.vucar.vn/api/v1/akabiz/send-customer-message"
 const N8N_AUTO_CHAT_WEBHOOK = "https://n8nai.vucar.vn/webhook/e2e-chat-vucar"
 
@@ -29,12 +28,11 @@ async function parseJsonResponse(res: Response, label: string) {
  *
  * Flow:
  * 1. Resolve picId from CRM DB
- * 2. Get shopId via n8n webhook
- * 3. Fetch chat history from AkaBiz
- * 4. Send chat history to n8n auto-chat webhook (may take minutes for AI generation)
- * 5. Extract message_suggestions from response
- * 6. Send messages to customer via AkaBiz
- * 7. Return final JSON result in the stream
+ * 2. Fetch chat history (3-source fallback: AkaBiz → Vucar Zalo API → DB)
+ * 3. Send chat history to n8n auto-chat webhook (may take minutes for AI generation)
+ * 4. Extract message_suggestions from response
+ * 5. Send messages to customer via AkaBiz
+ * 6. Return final JSON result in the stream
  */
 export async function POST(request: Request) {
   const startTime = Date.now()
@@ -90,78 +88,21 @@ export async function POST(request: Request) {
           return
         }
 
-        // --- 2. Get shopId via n8n webhook ---
-        console.log(`[Retrigger] Getting shopId for picId=${picId}...`)
-        const n8nRes = await fetch(N8N_SHOPID_WEBHOOK, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pic_id: picId }),
-        })
+        // --- 2. Fetch chat history (3-source fallback) ---
+        console.log(`[Retrigger] Fetching chat history for phone=${phone}, carId=${carId}...`)
+        const chatMessages = await fetchZaloChatHistory({ carId, phone, picId })
 
-        if (!n8nRes.ok) {
+        if (!chatMessages || chatMessages.length === 0) {
           controller.enqueue(encoder.encode(JSON.stringify(
-            { success: false, error: `n8n shopId webhook failed: ${n8nRes.status}` }
+            { success: false, error: "Chat history is empty — all sources returned no messages" }
           )))
           return
         }
 
-        let n8nData: any
-        try {
-          n8nData = await parseJsonResponse(n8nRes, "n8n shopId webhook")
-        } catch (e) {
-          controller.enqueue(encoder.encode(JSON.stringify({
-            success: false,
-            error: "Failed to parse n8n shopId webhook response",
-            details: e instanceof Error ? e.message : String(e),
-          })))
-          return
-        }
-        if (Array.isArray(n8nData)) n8nData = n8nData[0]
-        const shopId = n8nData?.shop_id
+        console.log(`[Retrigger] Chat history fetched successfully (${chatMessages.length} messages)`)
 
-        if (!shopId) {
-          controller.enqueue(encoder.encode(JSON.stringify(
-            { success: false, error: "No shop_id returned from n8n webhook" }
-          )))
-          return
-        }
-
-        // --- 3. Fetch chat history from AkaBiz (with retries) ---
-        console.log(`[Retrigger] Fetching chat history for phone=${phone}, shopId=${shopId}...`)
-        let chatHistoryData: any = null
-        let chatResOk = false
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          try {
-            const chatHistoryRes = await fetch(AKABIZ_CHAT_HISTORY_URL, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "accept": "application/json" },
-              body: JSON.stringify({ phone, shop_id: shopId }),
-            })
-
-            if (chatHistoryRes.ok) {
-              const data = await chatHistoryRes.json()
-              if (data.is_successful !== false) {
-                chatHistoryData = data
-                chatResOk = true
-                break
-              }
-            }
-            console.warn(`[Retrigger] AkaBiz API failed or is_successful=false (attempt ${attempt})`)
-            if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
-          } catch (e) {
-            console.warn(`[Retrigger] Fetch error on attempt ${attempt}:`, e)
-            if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
-          }
-        }
-
-        if (!chatResOk || !chatHistoryData) {
-          controller.enqueue(encoder.encode(JSON.stringify(
-            { success: false, error: `AkaBiz chat history API failed after retries` }
-          )))
-          return
-        }
-
-        console.log(`[Retrigger] Chat history fetched successfully`)
+        // Wrap in the format n8n auto-chat webhook expects (mirrors AkaBiz response shape)
+        const chatHistoryData = { is_successful: true, phone, chat_history: chatMessages }
 
         // --- 4. Send raw chat history body to n8n auto-chat webhook ---
         // This step may take minutes while AI generates suggestions

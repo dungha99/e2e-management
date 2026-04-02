@@ -4,6 +4,7 @@ import { submitAiFeedback } from "@/lib/insight-feedback-service"
 import { callGemini } from "@/lib/gemini"
 import { getAgentTools } from "@/lib/agent-tools"
 import { storeAgentOutput, getActiveAgentNote } from "@/lib/ai-agent-service"
+import { fetchZaloChatHistory } from "@/lib/chat-history-service"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -159,7 +160,7 @@ export async function GET() {
             console.log(`[Process AI Workflows] Checking customer response for "${execution.step_name}" (phone: ${customerPhone})...`)
             let responded = false
             try {
-              responded = await checkCustomerResponded(customerPhone, picId)
+              responded = await checkCustomerResponded(customerPhone, picId, instance.car_id)
             } catch (err) {
               console.warn(`[Process AI Workflows] Engagement check failed (non-blocking):`, err)
               responded = true // Default to proceeding if the check itself fails
@@ -246,48 +247,11 @@ export async function GET() {
               }
 
               if (requestPayload && Array.isArray(requestPayload.messages) && customerPhone && picId) {
-                // Fetch shopId via n8n
-                let shopId: string | undefined
-                try {
-                  const n8nRes = await fetch("https://n8n.vucar.vn/webhook/f23b1b03-b198-4dc3-a196-d97a5cae8aff", {
-                    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pic_id: picId })
-                  })
-                  if (n8nRes.ok) {
-                    let n8nData: any = await n8nRes.json()
-                    if (Array.isArray(n8nData)) n8nData = n8nData[0]
-                    shopId = n8nData?.shop_id
-                  }
-                } catch (e) {
-                  console.warn(`[Process AI Workflows] AI Evaluator failed to get shopId for picId=${picId}`, e)
-                }
+                const chatMessages = await fetchZaloChatHistory({ carId: instance.car_id, phone: customerPhone, picId })
+                const recentChat = chatMessages.length > 0 ? chatMessages.slice(-100) : null
+                console.log(`[Process AI Workflows] AI Evaluator chat messages: ${recentChat?.length ?? 0}`)
 
-                if (shopId) {
-                  // Fetch last 20 messages from CRM
-                  let recentChat: any[] | null = null
-                  for (let attempt = 1; attempt <= 3; attempt++) {
-                    try {
-                      const historyRes = await fetch("https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json", "accept": "application/json" },
-                        body: JSON.stringify({ phone: customerPhone, shop_id: shopId }),
-                      })
-
-                      if (historyRes.ok) {
-                        const historyData = await historyRes.json()
-                        if (historyData.is_successful && historyData.chat_history) {
-                          recentChat = historyData.chat_history.slice(-100)
-                          break
-                        }
-                      }
-                      console.warn(`[Process AI Workflows] AkaBiz returned is_successful=false for phone=${customerPhone} (attempt ${attempt})`)
-                      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
-                    } catch (e) {
-                      console.warn(`[Process AI Workflows] Fetch error on attempt ${attempt}:`, e)
-                      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
-                    }
-                  }
-
-                  if (recentChat) {
+                if (recentChat) {
                     const reviewAgentNote = await getActiveAgentNote("Review Messages Scheduled")
 
                     const systemPrompt = `${reviewAgentNote ? `### Cấu Hình Bổ Sung (System Preferences):\n${reviewAgentNote}\n\n` : ''}# VAI TRÒ (ROLE)
@@ -452,7 +416,6 @@ MÔ TẢ STATUS:
                         outputPayload: { error: "Gemini returned unparseable response", raw: geminiResult.slice(0, 500), level: -1 },
                       }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
                     }
-                  }
                 }
               }
             } catch (err) {
@@ -805,105 +768,26 @@ async function fetchLeadContext(carId: string): Promise<string> {
 // =========================================================================
 // Helper: Check if customer has responded in the last 2 days via Zalo chat
 // =========================================================================
-async function checkCustomerResponded(phone: string, picId: string): Promise<boolean> {
+async function checkCustomerResponded(phone: string, picId: string, carId: string): Promise<boolean> {
   const CustomerResponded_MS = 2 * 24 * 60 * 60 * 1000
 
-  // Step 1: Get shop_id from n8n webhook using pic_id
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000) // 5 minutes
+  const messages = await fetchZaloChatHistory({ carId, phone, picId })
 
-  let shopId: string | undefined
-
-  try {
-    const n8nRes = await fetch(
-      "https://n8n.vucar.vn/webhook/f23b1b03-b198-4dc3-a196-d97a5cae8aff",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pic_id: picId }),
-        signal: controller.signal,
-      }
-    )
-    clearTimeout(timeoutId)
-
-    if (!n8nRes.ok) {
-      throw new Error(`n8n webhook failed: ${n8nRes.status}`)
-    }
-
-    let n8nData: any = await n8nRes.json()
-    if (Array.isArray(n8nData)) n8nData = n8nData[0]
-    shopId = n8nData?.shop_id
-  } catch (err) {
-    clearTimeout(timeoutId)
-    console.error(`[checkCustomerResponded] n8n fetch error:`, err)
-    // Fallback: assume responded if we can't get shopId
-    return true
-  }
-  if (!shopId) {
-    console.warn(`[checkCustomerResponded] No shop_id returned for picId=${picId}. Assuming responded.`)
-    return true
-  }
-
-  // Step 2: Fetch chat history from AkaBiz (with retries)
-  let chatData: any = null
-  let chatResOk = false
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const chatRes = await fetch(
-        "https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contacts_limit: 10,
-            contacts_max_pages: 10,
-            messages_limit: 20,
-            phone,
-            shop_id: shopId,
-          }),
-        }
-      )
-
-      if (chatRes.ok) {
-        const data = await chatRes.json()
-        if (data.is_successful !== false) {
-          chatData = data
-          chatResOk = true
-          break
-        }
-      }
-      console.warn(`[checkCustomerResponded] AkaBiz API failed or is_successful=false (attempt ${attempt})`)
-      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
-    } catch (e) {
-      console.warn(`[checkCustomerResponded] Fetch error on attempt ${attempt}:`, e)
-      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
-    }
-  }
-
-  if (!chatResOk || !chatData) {
-    throw new Error(`AkaBiz chat history API failed after retries`)
-  }
-
-  const chatHistory: any[] = chatData?.chat_history || []
-
-  if (chatHistory.length === 0) {
-    console.log(`[checkCustomerResponded] No chat history found for phone=${phone}`)
+  if (messages.length === 0) {
+    console.log(`[checkCustomerResponded] No messages found for phone=${phone}`)
     return false
   }
 
-  // Step 3: Find any message from the CUSTOMER (senderName without "Vucar") within 6 hours
   const cutoff = new Date(Date.now() - CustomerResponded_MS)
-  const customerReplied = chatHistory.some((msg) => {
-    const name: string = msg.senderName || ""
-    const isCustomer = !name.toLowerCase().includes("vucar")
+  const customerReplied = messages.some((msg: any) => {
+    const isCustomer = !msg.senderName.toLowerCase().includes("vucar")
     if (!isCustomer) return false
     const msgDate = new Date(msg.dateAction)
     return msgDate >= cutoff
   })
 
   console.log(
-    `[checkCustomerResponded] phone=${phone}, shopId=${shopId}, ` +
-    `messages=${chatHistory.length}, customerRepliedIn6Hours=${customerReplied}`
+    `[checkCustomerResponded] phone=${phone}, messages=${messages.length}, customerReplied=${customerReplied}`
   )
   return customerReplied
 }

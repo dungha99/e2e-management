@@ -22,7 +22,7 @@ function MobileAccountSelector({
 }) {
   const { accounts } = useAccounts()
   const [open, setOpen] = useState(false)
-  const selectedName = accounts.find((a) => a.uid === selectedAccount)?.name ?? "Tài khoản"
+  const selectedName = selectedAccount === 'all' ? "Tất cả PIC (ALL)" : (accounts.find((a) => a.uid === selectedAccount)?.name ?? "Tài khoản")
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -38,6 +38,18 @@ function MobileAccountSelector({
           <CommandList>
             <CommandEmpty>Không tìm thấy.</CommandEmpty>
             <CommandGroup>
+              <CommandItem
+                key="all"
+                value="Tất cả PIC (ALL)"
+                onSelect={() => {
+                  onAccountChange('all')
+                  setOpen(false)
+                }}
+                className="flex items-center gap-2 text-sm"
+              >
+                <Check className={cn("w-3.5 h-3.5 shrink-0", selectedAccount === 'all' ? "opacity-100" : "opacity-0")} />
+                Tất cả PIC (ALL)
+              </CommandItem>
               {accounts.map((account) => (
                 <CommandItem
                   key={account.uid}
@@ -88,7 +100,7 @@ function E2EPageContent({ userId }: { userId: string }) {
   }
 
   function handleAccountChange(newUserId: string) {
-    router.push(`/e2e/${newUserId}?tab=priority&page=1`)
+    router.push(`/e2e/${newUserId}?tab=${tab}&page=${page}`)
     // Also update localStorage for backward compatibility if needed, though E2EManagement seems to handle it too.
     if (typeof window !== 'undefined') {
       localStorage.setItem('e2e-selectedAccount', newUserId);

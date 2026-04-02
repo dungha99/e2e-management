@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Lead, ChatMessage } from "../types"
+import { ZaloChatViewer } from "../common/ZaloChatViewer"
 
 interface ZaloChatTabProps {
   selectedLead: Lead | null
@@ -191,62 +192,18 @@ export function ZaloChatTab({
       </div>
 
       {/* Messages Display */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 min-h-0 bg-gray-50 border-t">
         {loadingE2eMessages ? (
-          <div className="flex items-center justify-center h-full">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-muted-foreground">Đang tải tin nhắn...</span>
-          </div>
-        ) : e2eMessages.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            Chưa có tin nhắn
+          <div className="flex flex-col items-center justify-center h-full gap-3 py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+            <p className="text-sm text-muted-foreground">Đang tải tin nhắn...</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {e2eMessages.map((msg: any, index: number) => {
-              const isVuCar = msg.fromMe === true || msg.uidFrom === "0" || msg.uidFrom === "bot" || msg.uidFrom === "system"
-              const content = msg.content || msg.text || msg.body || ""
-              const timestamp = msg.timestamp
-                ? (typeof msg.timestamp === 'number' ? new Date(msg.timestamp).toLocaleString("vi-VN") : msg.timestamp)
-                : msg.dateAction || ""
-
-              return (
-                <div
-                  key={msg._id || index}
-                  className={`flex ${isVuCar ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[70%] rounded-lg p-3 ${isVuCar
-                      ? "bg-purple-500 text-white"
-                      : "bg-gray-200 text-gray-900"
-                      }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-semibold">
-                        {isVuCar ? "VuCar" : "Khách hàng"}
-                      </span>
-                      <span className="text-xs opacity-70">{timestamp}</span>
-                    </div>
-                    {msg.img && (
-                      <img
-                        src={msg.img}
-                        alt="Message image"
-                        className="max-w-[200px] max-h-[200px] object-cover rounded mb-2"
-                      />
-                    )}
-                    <p className="text-sm whitespace-pre-wrap break-words">
-                      {content}
-                    </p>
-                    {msg.type && msg.type !== "text" && (
-                      <span className="text-xs opacity-70 mt-1 block">
-                        Type: {msg.type}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          <ZaloChatViewer 
+            messages={e2eMessages} 
+            customerName={selectedLead?.name || "Khách hàng"} 
+            className="h-full"
+          />
         )}
       </div>
     </div>

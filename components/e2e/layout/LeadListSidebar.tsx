@@ -416,16 +416,6 @@ export function LeadListSidebar({
             {followUpCount}
           </Badge>
         </button>
-        <button
-          onClick={() => onTabChange("ai-performance")}
-          className={`flex items-center gap-2 text-sm font-medium pb-2 transition-colors ${activeTab === "ai-performance"
-            ? "text-blue-600 border-b-2 border-blue-600"
-            : "text-gray-500 hover:text-gray-700"
-            }`}
-        >
-          <TrendingUp className="h-4 w-4" />
-          AI Performance
-        </button>
       </div>
 
       {/* Leads List - Scrollable area with touch scroll */}

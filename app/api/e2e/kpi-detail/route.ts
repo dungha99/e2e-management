@@ -70,7 +70,7 @@ export async function GET(request: Request) {
     const crmWhere = crmConditions.length > 0 ? crmConditions.join(" AND ") : "1=1"
 
     // ── 1. Tiers 1 & 2 (Total, Has Image, No Image) ──────────────────────────
-    if (metric === 'FUNNEL_TOTAL_LEADS' || metric === 'FUNNEL_HAS_IMAGE' || metric === 'FUNNEL_HAS_IMAGE_WITH_ADDITIONAL' || metric === 'FUNNEL_HAS_IMAGE_WITHOUT_ADDITIONAL' || metric === 'FUNNEL_NO_IMAGE') {
+    if (metric === 'FUNNEL_TOTAL_LEADS' || metric === 'FUNNEL_HAS_IMAGE' || metric === 'FUNNEL_HAS_IMAGE_WITH_ADDITIONAL' || metric === 'FUNNEL_HAS_IMAGE_WITHOUT_ADDITIONAL' || metric === 'FUNNEL_NO_IMAGE' || metric === 'FUNNEL_NO_IMAGE_HAD_IMAGE' || metric === 'FUNNEL_NO_IMAGE_NO_HAD_IMAGE') {
       let extraWhere = "";
       if (metric === 'FUNNEL_HAS_IMAGE') extraWhere = " AND ss.qualified::text = 'STRONG_QUALIFIED'";
       if (metric === 'FUNNEL_NO_IMAGE') extraWhere = " AND (ss.qualified::text != 'STRONG_QUALIFIED' OR ss.qualified IS NULL)";
@@ -97,6 +97,33 @@ export async function GET(request: Request) {
             GROUP BY l.phone
           ) sub WHERE has_additional = $${idx}
         `, [...params, hasAdditionalFlag])
+        phoneFilter = phoneAggRes.rows.map((r: any) => r.phone).filter(Boolean);
+        if (phoneFilter.length === 0) return NextResponse.json({ leads: [], qualifiedValues });
+      }
+
+      // For 2B sub-metrics, first find phones by had_image from chat_summary/summary_properties
+      if (metric === 'FUNNEL_NO_IMAGE_HAD_IMAGE' || metric === 'FUNNEL_NO_IMAGE_NO_HAD_IMAGE') {
+        extraWhere = " AND (ss.qualified::text != 'STRONG_QUALIFIED' OR ss.qualified IS NULL)";
+        const hadImageFlag = metric === 'FUNNEL_NO_IMAGE_HAD_IMAGE' ? 1 : 0;
+        const phoneAggRes = await vucarV2Query(`
+          SELECT phone FROM (
+            SELECT l.phone,
+              MAX(CASE 
+                WHEN jsonb_typeof(sp.result::jsonb) = 'array' 
+                  THEN (sp.result::jsonb -> (jsonb_array_length(sp.result::jsonb) - 1) ->> 'had_image')::boolean::int
+                WHEN jsonb_typeof(sp.result::jsonb) = 'object' 
+                  THEN (sp.result::jsonb ->> 'had_image')::boolean::int
+                ELSE 0
+              END) AS had_image
+            FROM leads l
+            LEFT JOIN cars c ON c.lead_id = l.id
+            LEFT JOIN sale_status ss ON ss.car_id = c.id
+            LEFT JOIN chat_summary cs ON l.id = cs.lead_id
+            LEFT JOIN summary_properties sp ON cs.id = sp.summary_id
+            WHERE ${filterWhere} AND (ss.qualified::text != 'STRONG_QUALIFIED' OR ss.qualified IS NULL)
+            GROUP BY l.phone
+          ) sub WHERE had_image ${metric === 'FUNNEL_NO_IMAGE_HAD_IMAGE' ? '= 1' : '= 0 OR had_image IS NULL'}
+        `, params)
         phoneFilter = phoneAggRes.rows.map((r: any) => r.phone).filter(Boolean);
         if (phoneFilter.length === 0) return NextResponse.json({ leads: [], qualifiedValues });
       }

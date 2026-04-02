@@ -41,6 +41,8 @@ const METRIC_CONFIG: Record<string, { title: string; color: string }> = {
   FUNNEL_HAS_IMAGE_WITH_ADDITIONAL: { title: "2a-I. Có ảnh bổ sung", color: "text-emerald-700" },
   FUNNEL_HAS_IMAGE_WITHOUT_ADDITIONAL: { title: "2a-II. Chưa có ảnh bổ sung", color: "text-amber-700" },
   FUNNEL_NO_IMAGE: { title: "2b. Chưa có hình", color: "text-orange-700" },
+  FUNNEL_NO_IMAGE_HAD_IMAGE: { title: "2b-I. Đã gửi ảnh qua chat", color: "text-orange-700" },
+  FUNNEL_NO_IMAGE_NO_HAD_IMAGE: { title: "2b-II. Chưa gửi ảnh", color: "text-red-700" },
   FUNNEL_FIRST_MESSAGE_SUCCESS: { title: "3a. FM success (Auto+Manual)", color: "text-blue-700" },
   
   // 3a-I: Automation

@@ -36,7 +36,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "summary is required" }, { status: 400 })
     }
 
+    const now = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().replace("Z", "+07:00")
     const systemPrompt = `Bạn là một hệ thống trích xuất thông tin từ tóm tắt hội thoại bán hàng xe cũ của công ty Vucar.
+THỜI GIAN HIỆN TẠI: ${now} — Dùng làm mốc thời gian khi tóm tắt đề cập sự kiện xảy ra "vừa rồi", "hôm nay", "lúc nãy" mà không có timestamp cụ thể.
 
 Từ đoạn tóm tắt được cung cấp, hãy trích xuất các thông tin sau và trả về MỘT JSON object duy nhất:
 

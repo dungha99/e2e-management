@@ -18,6 +18,7 @@ import {
 } from "lucide-react"
 import { DateRangePickerWithPresets } from "@/components/e2e/common/DateRangePickerWithPresets"
 import { DrilldownPanel } from "./DrilldownPanel"
+import { BotAtRiskCard } from "./BotAtRiskCard"
 import {
   Select,
   SelectContent,
@@ -520,10 +521,9 @@ function SlaSection({ data }: { data: any }) {
   )
 }
 
-// ============================================================================
 // SECTION 4: AI Quality
 // ============================================================================
-function QualitySection({ data, onDrilldown }: { data: any, onDrilldown: (title: string, ids: string[]) => void }) {
+function QualitySection({ data, onDrilldown, filters }: { data: any, onDrilldown: (title: string, ids: string[]) => void, filters?: any }) {
   const { quality, volume } = data
   const { sentiment } = quality
 
@@ -568,47 +568,53 @@ function QualitySection({ data, onDrilldown }: { data: any, onDrilldown: (title:
         </div>
 
         {/* S3: Escalation Risk Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card 
-            className="border-l-4 border-l-red-500 cursor-pointer hover:shadow-md transition-all"
-            onClick={() => onDrilldown("Escalation Risk Leads", [...(sentiment?.escalation?.angryIds || []), ...(sentiment?.escalation?.wantHumanIds || []), ...(sentiment?.escalation?.botDetectedIds || [])])}
-          >
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground font-medium">Escalation Rate</p>
-              <div className="flex items-end gap-2">
-                <p className="text-2xl font-bold">{sentiment?.escalation?.rate}%</p>
-                <p className="text-xs text-red-500 mb-1 font-medium">Target &lt; 5%</p>
-              </div>
-              <p className="text-[10px] text-muted-foreground mt-1">N = {sentiment?.escalation?.total} leads có sentiment</p>
-            </CardContent>
-          </Card>
-          <Card 
-            className="cursor-pointer hover:shadow-md transition-all"
-            onClick={() => onDrilldown("Angry Leads", sentiment?.escalation?.angryIds || [])}
-          >
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground font-medium">Angry Count</p>
-              <p className="text-2xl font-bold text-red-600">{sentiment?.escalation?.angry}</p>
-              <Progress value={(sentiment?.escalation?.angry / (sentiment?.escalation?.total || 1)) * 100} className="h-1 mt-2" />
-            </CardContent>
-          </Card>
-          <Card 
-            className="cursor-pointer hover:shadow-md transition-all"
-            onClick={() => onDrilldown("Want Human Leads", sentiment?.escalation?.wantHumanIds || [])}
-          >
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground font-medium">Want Human</p>
-              <p className="text-2xl font-bold text-indigo-600">{sentiment?.escalation?.wantHuman}</p>
-              <Progress value={(sentiment?.escalation?.wantHuman / (sentiment?.escalation?.total || 1)) * 100} className="h-1 mt-2" />
-            </CardContent>
-          </Card>
-          <Card className="bg-gray-50/50">
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground font-medium">Ghosting Proxy</p>
-              <p className="text-2xl font-bold text-slate-600">{sentiment?.ghostingProxy?.rate}%</p>
-              <p className="text-[10px] text-muted-foreground mt-1">{sentiment?.ghostingProxy?.count} active leads &gt; 48h im lặng</p>
-            </CardContent>
-          </Card>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4">
+            <BotAtRiskCard filters={filters} />
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card 
+              className="border-l-4 border-l-red-500 cursor-pointer hover:shadow-md transition-all h-full"
+              onClick={() => onDrilldown("Escalation Risk Leads", [...(sentiment?.escalation?.angryIds || []), ...(sentiment?.escalation?.wantHumanIds || []), ...(sentiment?.escalation?.botDetectedIds || [])])}
+            >
+              <CardContent className="pt-4">
+                <p className="text-xs text-muted-foreground font-medium">Escalation Rate</p>
+                <div className="flex items-end gap-2">
+                  <p className="text-2xl font-bold">{sentiment?.escalation?.rate}%</p>
+                  <p className="text-xs text-red-500 mb-1 font-medium">Target &lt; 5%</p>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">N = {sentiment?.escalation?.total} leads có sentiment</p>
+              </CardContent>
+            </Card>
+            <Card 
+              className="cursor-pointer hover:shadow-md transition-all"
+              onClick={() => onDrilldown("Angry Leads", sentiment?.escalation?.angryIds || [])}
+            >
+              <CardContent className="pt-4">
+                <p className="text-xs text-muted-foreground font-medium">Angry Count</p>
+                <p className="text-2xl font-bold text-red-600">{sentiment?.escalation?.angry}</p>
+                <Progress value={(sentiment?.escalation?.angry / (sentiment?.escalation?.total || 1)) * 100} className="h-1 mt-2" />
+              </CardContent>
+            </Card>
+            <Card 
+              className="cursor-pointer hover:shadow-md transition-all"
+              onClick={() => onDrilldown("Want Human Leads", sentiment?.escalation?.wantHumanIds || [])}
+            >
+              <CardContent className="pt-4">
+                <p className="text-xs text-muted-foreground font-medium">Want Human</p>
+                <p className="text-2xl font-bold text-indigo-600">{sentiment?.escalation?.wantHuman}</p>
+                <Progress value={(sentiment?.escalation?.wantHuman / (sentiment?.escalation?.total || 1)) * 100} className="h-1 mt-2" />
+              </CardContent>
+            </Card>
+            <Card className="bg-gray-50/50">
+              <CardContent className="pt-4">
+                <p className="text-xs text-muted-foreground font-medium">Ghosting Proxy</p>
+                <p className="text-2xl font-bold text-slate-600">{sentiment?.ghostingProxy?.rate}%</p>
+                <p className="text-[10px] text-muted-foreground mt-1">{sentiment?.ghostingProxy?.count} active leads &gt; 48h im lặng</p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -976,7 +982,7 @@ export function AiFunnelDashboard({
             </TabsContent>
 
             <TabsContent value="quality" className="mt-6">
-              <QualitySection data={data} onDrilldown={handleDrilldown} />
+              <QualitySection data={data} onDrilldown={handleDrilldown} filters={filters} />
             </TabsContent>
 
             <TabsContent value="pic" className="mt-6">

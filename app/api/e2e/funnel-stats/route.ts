@@ -173,6 +173,34 @@ export async function GET(request: Request) {
         `, crmParams)
         const noImageCount = parseInt(noImageCountRes.rows[0]?.cnt || "0", 10)
 
+        // 2b sub-metrics: had_image from chat_summary -> summary_properties
+        const noImageHadImageRes = await vucarV2Query(`
+            WITH phone_had_image AS (
+              SELECT l.phone,
+                MAX(CASE 
+                  WHEN jsonb_typeof(sp.result::jsonb) = 'array' 
+                    THEN (sp.result::jsonb -> (jsonb_array_length(sp.result::jsonb) - 1) ->> 'had_image')::boolean::int
+                  WHEN jsonb_typeof(sp.result::jsonb) = 'object' 
+                    THEN (sp.result::jsonb ->> 'had_image')::boolean::int
+                  ELSE 0
+                END) AS had_image
+              FROM leads l
+              LEFT JOIN cars c ON c.lead_id = l.id
+              LEFT JOIN sale_status ss ON ss.car_id = c.id
+              LEFT JOIN chat_summary cs ON l.id = cs.lead_id
+              LEFT JOIN summary_properties sp ON cs.id = sp.summary_id
+              WHERE ${crmWhere}
+                AND (ss.qualified::text != 'STRONG_QUALIFIED' OR ss.qualified IS NULL)
+              GROUP BY l.phone
+            )
+            SELECT
+              COUNT(*) FILTER (WHERE had_image = 1) AS with_had_image,
+              COUNT(*) FILTER (WHERE had_image = 0 OR had_image IS NULL) AS without_had_image
+            FROM phone_had_image
+        `, crmParams)
+        const noImageHadImage = parseInt(noImageHadImageRes.rows[0]?.with_had_image || "0", 10)
+        const noImageNoHadImage = parseInt(noImageHadImageRes.rows[0]?.without_had_image || "0", 10)
+
         const chuaCoHinhPhoneRows = noImagePhonesRes.rows
         const chuaCoHinhPhones = chuaCoHinhPhoneRows.map((r: any) => r.phone).filter(Boolean)
 
@@ -368,6 +396,8 @@ export async function GET(request: Request) {
             hasImageWithAdditional,
             hasImageWithoutAdditional,
             noImageCount,
+            noImageHadImage,
+            noImageNoHadImage,
             zaloSuccessCount: zaloSuccessAutoCount + zaloSuccessManualCount,
             
             zaloSuccessAutoCount,

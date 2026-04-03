@@ -174,6 +174,12 @@ export async function GET() {
                 ['Customer did not respond within 2 days — strategy re-analysis triggered', execution.id]
               )
 
+              // Terminate the instance so subsequent cron runs don't re-trigger re-analysis
+              await e2eQuery(
+                `UPDATE workflow_instances SET status = 'terminated', completed_at = NOW() WHERE id = $1`,
+                [instance.id]
+              )
+
               if (instance.car_id) {
                 const noResponseFeedback = `[Auto-Check] Khách hàng chưa phản hồi trong 2 ngày kể từ bước "${execution.step_name}". Cần điều chỉnh chiến lược tiếp cận.`
 

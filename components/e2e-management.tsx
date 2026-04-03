@@ -205,7 +205,8 @@ export function E2EManagement({
   // Phase 2: React Query hooks for data fetching (server-side)
   // Read params directly from URL - URL is the single source of truth
   type TabType = "priority" | "nurture" | "follow-up"
-  const activeTabRaw = searchParams.get("tab")
+  type TabTypeExtended = TabType | "ai-performance"
+  const activeTabRaw = searchParams.get("tab") as TabTypeExtended | null
   const activeTab = (activeTabRaw === "ai-performance" ? "priority" : activeTabRaw as TabType) || "priority"
   const currentPage = parseInt(searchParams.get("page") || "1")
   const appliedSearchPhone = searchParams.get("search") || ""
@@ -316,7 +317,7 @@ export function E2EManagement({
   const setViewMode = onViewModeChange || setInternalViewMode
 
   // Detail view tab state
-  const [activeDetailView, setActiveDetailView] = useState<"workflow" | "agent-tracing" | "decoy-web" | "recent-activity" | "decoy-history">("workflow")
+  const [activeDetailView, setActiveDetailView] = useState<"workflow" | "agent-tracing" | "agent-prompts" | "decoy-web" | "recent-activity" | "decoy-history">("workflow")
 
   // Workflow 2 activation state
   const [workflow2Open, setWorkflow2Open] = useState(false)
@@ -2366,7 +2367,7 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
                   onSearchChange={setSearchPhone}
                   onSearch={searchLeadByPhone}
                   onClearSearch={handleClearSearch}
-                  activeTab={activeTab === "ai-performance" ? "priority" : activeTab}
+                  activeTab={activeTab}
                   onTabChange={handleTabChange}
                   priorityCount={priorityCount}
                   nurtureCount={nurtureCount}

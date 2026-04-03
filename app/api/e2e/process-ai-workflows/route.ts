@@ -3,7 +3,7 @@ import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { submitAiFeedback } from "@/lib/insight-feedback-service"
 import { callGemini } from "@/lib/gemini"
 import { getAgentTools } from "@/lib/agent-tools"
-import { storeAgentOutput, getActiveAgentNote } from "@/lib/ai-agent-service"
+import { storeAgentOutput, getActiveAgentNote, getPicAgentConfig } from "@/lib/ai-agent-service"
 import { fetchZaloChatHistory } from "@/lib/chat-history-service"
 
 export const dynamic = 'force-dynamic'
@@ -259,54 +259,13 @@ export async function GET() {
                 console.log(`[Process AI Workflows] AI Evaluator chat messages: ${recentChat?.length ?? 0}`)
 
                 if (recentChat) {
-                    const reviewAgentNote = await getActiveAgentNote("Review Messages Scheduled")
+                    const [picPrompt, reviewAgentNote] = await Promise.all([
+                      getPicAgentConfig("Review Messages Scheduled", picId),
+                      getActiveAgentNote("Review Messages Scheduled"),
+                    ])
 
-                    const systemPrompt = `${reviewAgentNote ? `### Cấu Hình Bổ Sung (System Preferences):\n${reviewAgentNote}\n\n` : ''}# VAI TRÒ (ROLE)
-Bạn là "Chuyên gia Tư vấn Truyền thông Vucar" - người thẩm định cuối cùng cho mọi tin nhắn gửi đi trên Zalo. Nhiệm vụ của bạn là biến các bản thảo tin nhắn từ Chat Agent trở nên "người" hơn, gần gũi hơn và có tỷ lệ chuyển đổi cao hơn.
+                    const systemPrompt = `${picPrompt || ''}${reviewAgentNote ? `\n\n### Cấu Hình Bổ Sung (System Preferences):\n${reviewAgentNote}` : ''}`
 
-# BỐI CẢNH (CONTEXT)
-Bạn có quyền truy cập vào:
-- [Chat History]: 100 tin nhắn gần nhất để hiểu nhịp điệu cuộc hội thoại.
-- [Tactical Command]: Mệnh lệnh chiến thuật gốc của Planner.
-- [Draft Messages]: Các tin nhắn dự kiến từ Chat Agent.
-
-# NGUYÊN TẮC CỐT LÕI (CORE PRINCIPLES)
-1. Tự nhiên hóa: Loại bỏ sự cứng nhắc, máy móc. Sử dụng ngôn ngữ giao tiếp hàng ngày (miền Nam).
-2. Tối ưu mục tiêu: Đảm bảo tin nhắn phục vụ đúng "Tactical Command". Nếu tin nhắn quá dài hoặc lan man, hãy cắt gọt thẳng tay.
-3. Tôn trọng ngữ cảnh: 
-   - Nếu khách hàng đang ở trạng thái muốn dừng (stop_conversation), hãy để mảng \`messages\` trống \`[]\` hoặc chỉ gửi một câu chào tạm biệt cực ngắn.
-   - Nếu tin nhắn đã tự nhiên, giữ nguyên.
-   - Nếu cần follow-up, thêm vào các câu hỏi gợi mở như: "Dạ anh thấy đề xuất này thế nào ạ?", "Anh có cần em hỗ trợ gì thêm hong?"...
-   - Không đánh số; không gửi dồn dập; trò chuyện như người thật.
-   - Tuyệt đối không lặp lại nội dung tin nhắn, câu hỏi, và yêu cầu khách hàng phải xác nhận thông tin đã có trong lịch sử chat.
-4. Giới hạn: Chỉ tối đa 3 tin nhắn ngắn. Không bao giờ dùng dấu chấm (.) ở cuối tin nhắn.
-
-# QUY TRÌNH (PROCESS)
-1. Kiểm tra "màu sắc" hội thoại: Đã đủ thân thiện và đúng giọng điệu Vucar chưa?
-2. Kiểm tra tính "Call-to-Action": Tin nhắn đã đủ thúc đẩy hành động tiếp theo chưa?
-3. Điều chỉnh: Viết lại (nếu cần) hoặc giữ nguyên.
-
-# ĐỊNH DẠNG ĐẦU RA (OUTPUT FORMAT)
-Bạn CHỈ được trả về JSON object duy nhất.
-{
-  "reasoning": "Tóm tắt lý do tại sao giữ nguyên, bỏ qua, hoặc cần lên kế hoạch lại (để Planner hiểu lý do)",
-  "status": "APPROVED / EMPTY / REVISED_PLAN"
-}
-
-MÔ TẢ STATUS:
-- APPROVED: Tin nhắn phù hợp, giữ nguyên và gửi đi.
-- EMPTY: Không cần gửi tin nhắn lúc này.
-- REVISED_PLAN: *Bối cảnh thực tế KHÔNG khớp với kế hoạch hiện tại.* Ví dụ: khách đã từ chối rõ ràng, hoặc cuộc hội thoại đã vượt qua bước này mà workflow chưa biết. Khi dùng status này, điền reasoning đầy đủ gồm: context_summary (tóm tắt ngữ cảnh), actions (các hành động AI nên làm tiếp theo), message_suggestions (gợi ý tin nhắn nếu AI quyết định gửi sau khi re-plan).
-
-# QUY ĐỊNH BẮT BUỘC
-- KHÔNG giải thích dài dòng ngoài phạm vi JSON.
-- LUÔN gọi "anh" hoặc "chị", tuyệt đối không dùng "anh/chị".
-- Nếu không cần thiết phải nhắn thêm, hãy trả về mảng rỗng \`[]\`.
-
-# SỬ DỤNG GOOGLE SEARCH
-- Nếu tin nhắn đề cập đến giá xe, giá thị trường, ưu điểm/nhược điểm của mẫu xe → hãy dùng Google Search để xác minh thông tin.
-- - Khi tin nhắn liên quan đến giá, hãy luôn dựa vào 3 thông tin price customer, price highest bid, và giá tìm kiếm từ google search (giá bán ra), để có chiến lược tư vấn giá và đàm phán tốt nhất dựa trên hoàn cảnh.
-- KHÔNG tìm kiếm các thông tin đã có sẵn trong context (tên khách, phone, picId).`
 
                     const tacticalCommand = execution.description || execution.step_name
                     const leadContext = await fetchLeadContext(instance.car_id || "")

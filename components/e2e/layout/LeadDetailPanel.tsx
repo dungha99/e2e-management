@@ -18,7 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car, Images, MapPin, Send, Activity, ArrowLeft, Bell, Upload, Settings2 } from "lucide-react"
+import { Loader2, User, PhoneCall, Pencil, Clock, RefreshCw, Star, Zap, MessageSquare, Car, Images, MapPin, Send, Activity, ArrowLeft, Bell, Upload, Settings2, Bot } from "lucide-react"
 import { Lead } from "../types"
 import { formatCarInfo, formatPrice, formatDate, formatRelativeTime, getActivityFreshness, getActivityFreshnessClass } from "../utils"
 import { WorkflowTrackerTab } from "../tabs/WorkflowTrackerTab"
@@ -26,6 +26,7 @@ import { DecoyWebTab } from "../tabs/DecoyWebTab"
 import { RecentActivityTab } from "../tabs/RecentActivityTab"
 import { DecoyHistoryTab } from "../tabs/DecoyHistoryTab"
 import { AgentTracingTab } from "../tabs/AgentTracingTab"
+import { AgentPromptsTab } from "../tabs/AgentPromptsTab"
 import { Workflow2Dialog } from "../dialogs/Workflow2Dialog"
 import { ImageGalleryModal } from "../dialogs/ImageGalleryModal"
 import { ImageUploadService } from "../common/ImageUploadService"
@@ -45,8 +46,8 @@ interface LeadDetailPanelProps {
   mobileView: "list" | "detail"
 
   // Tab State
-  activeDetailView: "workflow" | "agent-tracing" | "decoy-web" | "recent-activity" | "decoy-history"
-  onActiveDetailViewChange: (view: "workflow" | "agent-tracing" | "decoy-web" | "recent-activity" | "decoy-history") => void
+  activeDetailView: "workflow" | "agent-tracing" | "agent-prompts" | "decoy-web" | "recent-activity" | "decoy-history"
+  onActiveDetailViewChange: (view: "workflow" | "agent-tracing" | "agent-prompts" | "decoy-web" | "recent-activity" | "decoy-history") => void
 
   // Actions
   onTogglePrimary: (lead: Lead, e: React.MouseEvent) => Promise<void>
@@ -611,6 +612,20 @@ export function LeadDetailPanel({
             </button>
             <button
               type="button"
+              className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${activeDetailView === "agent-prompts"
+                ? "text-violet-600 border-violet-600"
+                : "text-gray-500 border-transparent hover:text-gray-700"
+                }`}
+              onClick={() => onActiveDetailViewChange("agent-prompts")}
+            >
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <Bot className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
+                <span className="hidden sm:inline">Agent Prompts</span>
+                <span className="sm:hidden">Prompts</span>
+              </div>
+            </button>
+            <button
+              type="button"
               className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${activeDetailView === "agent-tracing"
                 ? "text-orange-600 border-orange-600"
                 : "text-gray-500 border-transparent hover:text-gray-700"
@@ -718,6 +733,12 @@ export function LeadDetailPanel({
           </div>
         )}
 
+
+        {activeDetailView === "agent-prompts" && (
+          <div className="h-[calc(100vh-250px)] overflow-y-auto scrollbar-hide">
+            <AgentPromptsTab picId={selectedLead.pic_id} />
+          </div>
+        )}
 
         {activeDetailView === "agent-tracing" && (
           <div className="h-[calc(100vh-250px)]">

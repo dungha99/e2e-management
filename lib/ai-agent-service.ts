@@ -64,6 +64,29 @@ export async function storeAgentOutput(params: StoreAgentOutputParams): Promise<
 }
 
 /**
+ * Fetches the currently active PIC-specific prompt for a given agent + PIC pair.
+ * Returns null if no active config exists.
+ */
+export async function getPicAgentConfig(agentName: string, picId: string): Promise<string | null> {
+  try {
+    const result = await e2eQuery(
+      `SELECT c.prompt
+       FROM ai_agent_pic_configs c
+       JOIN ai_agents a ON a.id = c.agent_id
+       WHERE a.name = $1 AND c.is_active = true
+         AND (c.pic_id = $2 OR c.pic_id IS NULL)
+       ORDER BY (c.pic_id IS NOT NULL) DESC, c.version DESC
+       LIMIT 1`,
+      [agentName, picId]
+    );
+    return result.rows.length > 0 ? result.rows[0].prompt : null;
+  } catch (error) {
+    console.error(`[AI Agent Service] Error fetching PIC config for agent=${agentName} pic=${picId}:`, error);
+    return null;
+  }
+}
+
+/**
  * Fetches the currently active note content (markdown configuration) for a given agent.
  * Returns null if no active note exists or if the agent is not found.
  */

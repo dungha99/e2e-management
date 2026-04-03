@@ -244,7 +244,8 @@ export async function GET() {
           }
 
           // --- 2d. Pre-execution AI Script Evaluator (for "Gửi Script" only) ---
-          if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee") { // Gửi Script
+          // Skip evaluator for unscheduled steps (scheduled_at = null) — first messages are sent as-is
+          if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee" && execution.scheduled_at !== null) { // Gửi Script
             console.log(`[Process AI Workflows] Triggering AI Script Evaluator for Gửi Script...`)
             try {
               let requestPayload = execution.request_payload

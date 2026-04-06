@@ -200,6 +200,7 @@ export function AiThinkingChat({
   const isAutoFlowingRef = useRef(false)
   const isSubmittingRef = useRef(false)
   const [autoActivate, setAutoActivate] = useState(false)
+  const autoActivateRef = useRef(false)
   const autoActivatedInsightRef = useRef<string | null>(null)
   const [expandedIndices, setExpandedIndices] = useState<number[]>([])
   const [hasAnimated, setHasAnimated] = useState<string | null>(null) // Tracks last animated unique state
@@ -413,22 +414,29 @@ export function AiThinkingChat({
     }
   }, [insights, isLoading])
 
+  // Keep ref in sync with checkbox state
+  useEffect(() => {
+    autoActivateRef.current = autoActivate
+  }, [autoActivate])
+
   // Reset checkbox and ref when lead changes
   useEffect(() => {
     setAutoActivate(false)
+    autoActivateRef.current = false
     autoActivatedInsightRef.current = null
   }, [carId])
 
-  // Auto-activate workflow when a new plan arrives and checkbox is checked
+  // Auto-activate workflow when a new plan arrives from n8n
+  // autoActivateRef is read inside but NOT a dependency — checkbox toggling alone never triggers this
   useEffect(() => {
-    if (!autoActivate) return
+    if (!autoActivateRef.current) return
     if (isLoading) return
     const analysis = insights?.analysis as any
     if (!analysis || !insights?.aiInsightId) return
     if (autoActivatedInsightRef.current === insights.aiInsightId) return
     autoActivatedInsightRef.current = insights.aiInsightId
     handleAutoUseFlow(analysis)
-  }, [insights?.aiInsightId, isLoading, autoActivate])
+  }, [insights?.aiInsightId, isLoading])
 
   const animationKey = insights ? `${insights.aiInsightId}-${insights.created_at}` : null
 

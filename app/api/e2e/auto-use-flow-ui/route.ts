@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const result = await runAutoUseFlow(carId, aiInsightSummary, picId)
+    const result = await runAutoUseFlow(carId, aiInsightSummary, picId, 'user')
 
     return NextResponse.json(result, { status: result.success ? 200 : 500 })
   } catch (error) {

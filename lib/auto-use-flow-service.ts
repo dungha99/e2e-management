@@ -526,7 +526,8 @@ export interface RunAutoUseFlowResult {
 export async function runAutoUseFlow(
   carId: string,
   aiInsightSummary: any,
-  picId?: string | null
+  picId?: string | null,
+  triggeredBy: 'ai' | 'user' = 'ai'
 ): Promise<RunAutoUseFlowResult> {
   const startTime = Date.now()
 
@@ -688,10 +689,10 @@ export async function runAutoUseFlow(
     )
 
     const instanceResult = await e2eQuery(
-      `INSERT INTO workflow_instances (car_id, workflow_id, current_step_id, status, started_at)
-       VALUES ($1, $2, $3, 'running', NOW())
+      `INSERT INTO workflow_instances (car_id, workflow_id, current_step_id, status, started_at, triggered_by)
+       VALUES ($1, $2, $3, 'running', NOW(), $4)
        RETURNING *`,
-      [carId, workflow.id, createdSteps[0].id]
+      [carId, workflow.id, createdSteps[0].id, triggeredBy]
     )
     const instance = instanceResult.rows[0]
 

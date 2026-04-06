@@ -243,8 +243,8 @@ export async function GET() {
             console.warn(`[Process AI Workflows] Re-claiming stale step "${execution.step_name}" — was stuck in 'running' >5 min`)
           }
 
-          // --- 2d. Pre-execution AI Script Evaluator (for "Gửi Script" only) ---
-          if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee") { // Gửi Script
+          // --- 2d. Pre-execution AI Script Evaluator (for "Gửi Script" only, AI-triggered instances) ---
+          if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee" && instance.triggered_by !== 'user') { // Gửi Script
             console.log(`[Process AI Workflows] Triggering AI Script Evaluator for Gửi Script...`)
             try {
               let requestPayload = execution.request_payload

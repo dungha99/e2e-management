@@ -719,8 +719,8 @@ export async function POST(request: Request) {
     )
 
     const instanceResult = await e2eQuery(
-      `INSERT INTO workflow_instances (car_id, workflow_id, current_step_id, status, started_at)
-       VALUES ($1, $2, $3, 'running', NOW())
+      `INSERT INTO workflow_instances (car_id, workflow_id, current_step_id, status, started_at, triggered_by)
+       VALUES ($1, $2, $3, 'running', NOW(), 'ai')
        RETURNING *`,
       [carId, workflow.id, createdSteps[0].id]
     )

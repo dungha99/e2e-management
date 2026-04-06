@@ -521,7 +521,80 @@ export async function GET() {
             break
           }
 
-          // --- 2f. Advance to next step ---
+          // --- 2f. Deactivate AI if sent message contains inspection-related keywords ---
+          if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee") {
+            const INSPECTION_KEYWORDS = ["kiểm định", "kỹ thuật viên", "đội kĩ thuật", "xem xe"]
+
+            let messagesToCheck: string[] = []
+            let parsedPayload = effectivePayload
+            if (typeof parsedPayload === "string") {
+              try { parsedPayload = JSON.parse(parsedPayload) } catch { /* keep */ }
+            }
+            if (Array.isArray(parsedPayload?.messages)) {
+              messagesToCheck = parsedPayload.messages
+            }
+
+            const hasInspectionKeyword = messagesToCheck.some((msg: any) => {
+              const text = (typeof msg === "string" ? msg : JSON.stringify(msg)).toLowerCase()
+              return INSPECTION_KEYWORDS.some(kw => text.includes(kw))
+            })
+
+            if (hasInspectionKeyword) {
+              console.log(`[Process AI Workflows] Inspection keyword detected — deactivating AI for car ${instance.car_id}`)
+              try {
+                await e2eQuery(
+                  `INSERT INTO ai_process_blacklist (car_id) VALUES ($1) ON CONFLICT DO NOTHING`,
+                  [instance.car_id]
+                )
+                console.log(`[Process AI Workflows] AI deactivated for car ${instance.car_id}`)
+              } catch (err) {
+                console.error(`[Process AI Workflows] Failed to deactivate AI for car ${instance.car_id}:`, err)
+              }
+
+              // Notify sales group via Abit Zalo
+              try {
+                const { followupDataQuery } = await import("@/lib/db")
+
+                const [staffResult, botResult] = await Promise.all([
+                  followupDataQuery(
+                    `SELECT group_id FROM staffs WHERE pic_id = $1 LIMIT 1`,
+                    [picId]
+                  ),
+                  e2eQuery(
+                    `SELECT abitstore_id, account_name, dynamic_key FROM abit_zalo_accounts WHERE phone = '84963041272' LIMIT 1`
+                  ),
+                ])
+
+                const account = botResult.rows[0]
+                const groupId = staffResult.rows[0]?.group_id
+
+                if (!account) {
+                  console.warn(`[Process AI Workflows] Bot account 84963041272 not found in abit_zalo_accounts, skipping group notification`)
+                } else if (!groupId) {
+                  console.warn(`[Process AI Workflows] No group_id found in staffs for pic_id=${picId}, skipping group notification`)
+                } else {
+                  const stopMessage = `Đã dừng AI cho lead ${customerPhone} - hãy xem thông tin hẹn kiểm định`
+                  await fetch(
+                    `https://new.abitstore.vn/zalo/sendMessageToGroupZalo/${account.abitstore_id}/${account.account_name}/${account.dynamic_key}`,
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        send_from_number: "84963041272",
+                        send_to_groupid: groupId,
+                        message: stopMessage,
+                      }),
+                    }
+                  )
+                  console.log(`[Process AI Workflows] Stop notification sent to group ${groupId} (pic_id=${picId})`)
+                }
+              } catch (err) {
+                console.error(`[Process AI Workflows] Failed to send group stop notification:`, err)
+              }
+            }
+          }
+
+          // --- 2g. Advance to next step ---
           const nextStepId = await getNextStepId(instance.workflow_id, execution.step_order)
 
           if (nextStepId) {

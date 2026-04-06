@@ -696,8 +696,8 @@ export function LeadDetailPanel({
         </div>
 
         {/* Tab Content */}
-        {activeDetailView === "workflow" && (
-          <div className="py-6">
+        {/* WorkflowTrackerTab stays mounted across tab switches to preserve in-flight state (isAutoFlowingRef etc.) */}
+        <div className={activeDetailView === "workflow" ? "py-6" : "hidden"}>
             <WorkflowTrackerTab
               selectedLead={selectedLead}
               currentUserId={selectedAccount}
@@ -730,9 +730,7 @@ export function LeadDetailPanel({
               workflowInstancesData={workflowInstancesData}
               onWorkflowActivated={onWorkflowActivated}
             />
-          </div>
-        )}
-
+        </div>
 
         {activeDetailView === "agent-prompts" && (
           <div className="h-[calc(100vh-250px)] overflow-y-auto scrollbar-hide">

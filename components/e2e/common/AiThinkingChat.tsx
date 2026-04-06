@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, memo } from "react"
 import { Bot, Target, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, History, BrainCircuit, Hand, Power, Play, RefreshCw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { AiInsight } from "../types"
@@ -196,6 +197,10 @@ export function AiThinkingChat({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isRewriting, setIsRewriting] = useState(false)
   const [isAutoFlowing, setIsAutoFlowing] = useState(false)
+  const isAutoFlowingRef = useRef(false)
+  const isSubmittingRef = useRef(false)
+  const [autoActivate, setAutoActivate] = useState(false)
+  const autoActivatedInsightRef = useRef<string | null>(null)
   const [expandedIndices, setExpandedIndices] = useState<number[]>([])
   const [hasAnimated, setHasAnimated] = useState<string | null>(null) // Tracks last animated unique state
   const [showHistory, setShowHistory] = useState(false) // Toggle for chat history visibility
@@ -301,17 +306,22 @@ export function AiThinkingChat({
 
   const handleSendFeedback = async () => {
     if (!feedback.trim()) return
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
     setIsSubmitting(true)
     try {
       await onSubmitFeedback(feedback)
       setFeedback("")
     } finally {
+      isSubmittingRef.current = false
       setIsSubmitting(false)
     }
   }
 
   const handleAutoUseFlow = async (aiInsightSummary: any) => {
     if (!carId || !aiInsightSummary) return
+    if (isAutoFlowingRef.current) return
+    isAutoFlowingRef.current = true
     setIsAutoFlowing(true)
     try {
       const res = await fetch("/api/e2e/auto-use-flow-ui", {
@@ -333,6 +343,7 @@ export function AiThinkingChat({
     } catch (err) {
       console.error("[Auto Use Flow] Error:", err)
     } finally {
+      isAutoFlowingRef.current = false
       setIsAutoFlowing(false)
     }
   }
@@ -401,6 +412,23 @@ export function AiThinkingChat({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [insights, isLoading])
+
+  // Reset checkbox and ref when lead changes
+  useEffect(() => {
+    setAutoActivate(false)
+    autoActivatedInsightRef.current = null
+  }, [carId])
+
+  // Auto-activate workflow when a new plan arrives and checkbox is checked
+  useEffect(() => {
+    if (!autoActivate) return
+    if (isLoading) return
+    const analysis = insights?.analysis as any
+    if (!analysis || !insights?.aiInsightId) return
+    if (autoActivatedInsightRef.current === insights.aiInsightId) return
+    autoActivatedInsightRef.current = insights.aiInsightId
+    handleAutoUseFlow(analysis)
+  }, [insights?.aiInsightId, isLoading, autoActivate])
 
   const animationKey = insights ? `${insights.aiInsightId}-${insights.created_at}` : null
 
@@ -765,6 +793,17 @@ export function AiThinkingChat({
                 : <><Bot className="h-3.5 w-3.5 mr-1.5" />Kích hoạt Flow tự động</>
               }
             </Button>
+          )}
+
+          {onUseFlow && (
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <Checkbox
+                checked={autoActivate}
+                onCheckedChange={(v) => setAutoActivate(!!v)}
+                className="h-3.5 w-3.5"
+              />
+              <span className="text-xs text-gray-500">Tự kích hoạt</span>
+            </label>
           )}
 
           <Button

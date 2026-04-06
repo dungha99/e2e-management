@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { e2eQuery, vucarV2Query } from "@/lib/db"
+import { e2eQuery, vucarV2Query, getE2ePool } from "@/lib/db"
 import { storeAgentOutput, getActiveAgentNote, getPicAgentConfig } from "@/lib/ai-agent-service"
 import { getAgentTools, executeToolCall } from "@/lib/agent-tools"
 import { searchPicRAG, getLastCustomerMessage, formatRAGExamples } from "@/lib/pic-rag-search"
@@ -711,20 +711,31 @@ export async function POST(request: Request) {
       createdSteps.push(stepResult.rows[0])
     }
 
-    // 6. Terminate existing "running" instances for this car
+    // 6. Terminate existing + create new instance atomically to prevent race conditions
     console.log(`[Auto Use Flow] Terminating existing running workflows for car ${carId}...`)
-    await e2eQuery(
-      `UPDATE workflow_instances SET status = 'terminated' WHERE car_id = $1 AND status = 'running'`,
-      [carId]
-    )
-
-    const instanceResult = await e2eQuery(
-      `INSERT INTO workflow_instances (car_id, workflow_id, current_step_id, status, started_at, triggered_by)
-       VALUES ($1, $2, $3, 'running', NOW(), 'ai')
-       RETURNING *`,
-      [carId, workflow.id, createdSteps[0].id]
-    )
-    const instance = instanceResult.rows[0]
+    const pool = getE2ePool()
+    const client = await pool.connect()
+    let instance: any
+    try {
+      await client.query("BEGIN")
+      await client.query(
+        `UPDATE workflow_instances SET status = 'terminated' WHERE car_id = $1 AND status = 'running'`,
+        [carId]
+      )
+      const instanceResult = await client.query(
+        `INSERT INTO workflow_instances (car_id, workflow_id, current_step_id, status, started_at, triggered_by)
+         VALUES ($1, $2, $3, 'running', NOW(), 'ai')
+         RETURNING *`,
+        [carId, workflow.id, createdSteps[0].id]
+      )
+      await client.query("COMMIT")
+      instance = instanceResult.rows[0]
+    } catch (txErr) {
+      await client.query("ROLLBACK")
+      throw txErr
+    } finally {
+      client.release()
+    }
 
     for (let i = 0; i < createdSteps.length; i++) {
       await e2eQuery(

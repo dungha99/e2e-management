@@ -56,9 +56,17 @@ function pad(n: number) {
   return String(n).padStart(2, "0")
 }
 
+// For true-UTC timestamps (started_at, executed_at, completed_at from NOW())
 function formatVnTime(iso: string | null): string {
   if (!iso) return "—"
   const d = toVnDate(iso)
+  return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}, ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
+}
+
+// For scheduled_at — already stored as VN local time, display directly with no offset
+function formatScheduledTime(iso: string | null): string {
+  if (!iso) return "—"
+  const d = new Date(iso)
   return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}, ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
 }
 
@@ -168,7 +176,7 @@ function StepCard({ step, isLast, effectiveScheduledAt }: { step: MonitorStep; i
         {(status === "pending" || status === "retrying") && effectiveScheduledAt && (
           <div className={`mt-1 text-xs flex items-center gap-1 ${status === "retrying" ? "text-orange-600" : "text-amber-600"}`}>
             <span>{status === "retrying" ? "Thử lại lúc:" : "Lên lịch:"}</span>
-            <span className="font-mono">{formatVnTime(effectiveScheduledAt)}</span>
+            <span className="font-mono">{formatScheduledTime(effectiveScheduledAt)}</span>
           </div>
         )}
 

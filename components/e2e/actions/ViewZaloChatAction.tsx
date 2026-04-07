@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { MessageCircle, Loader2 } from "lucide-react"
+import { MessageSquare, MessageCircle, Loader2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { ChatMessage } from "../types"
+import { ZaloChatViewer } from "../common/ZaloChatViewer"
 
 interface ViewZaloChatActionProps {
   carId: string | null | undefined
@@ -99,65 +100,34 @@ function ChatDialog({ open, onOpenChange, loading, messages, customerName }: {
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <MessageCircle className="w-5 h-5 text-emerald-500" />
-            Tin nhắn Zalo{customerName ? ` — ${customerName}` : ''}
-          </DialogTitle>
+      <DialogContent className="sm:max-w-[500px] h-[85vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl">
+        <DialogHeader className="p-4 border-b shrink-0 bg-white relative">
+          <div className="pr-8">
+            <DialogTitle className="text-base font-bold text-gray-900 truncate">
+              {customerName || "Khách hàng"}
+            </DialogTitle>
+            <p className="text-xs text-gray-500 font-medium mt-0.5">
+              Lịch sử tin nhắn Zalo
+            </p>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="absolute right-3 top-3 h-8 w-8 rounded-full hover:bg-gray-100"
+            onClick={() => onOpenChange(false)}
+          >
+            <X className="h-4 w-4 text-gray-500" />
+          </Button>
         </DialogHeader>
-        <div className="flex-1 overflow-y-auto space-y-3 py-2 min-h-[200px] max-h-[60vh]">
+        
+        <div className="flex-1 min-h-0 bg-gray-50">
           {loading ? (
-            <div className="flex items-center justify-center h-full py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-              <span className="ml-2 text-sm text-gray-400">Đang tải tin nhắn...</span>
-            </div>
-          ) : messages.length === 0 ? (
-            <div className="flex items-center justify-center h-full py-12 text-gray-400 text-sm">
-              Chưa có tin nhắn
+            <div className="flex flex-col items-center justify-center h-full gap-3">
+              <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+              <p className="text-sm text-muted-foreground">Đang tải tin nhắn...</p>
             </div>
           ) : (
-            messages.map((msg: any, index) => {
-              const isVuCar = msg.fromMe === true || msg.uidFrom === "0" || msg.uidFrom === "bot" || msg.uidFrom === "system"
-              const content = msg.content || msg.text || msg.body || ""
-              const timestamp = msg.timestamp
-                ? (typeof msg.timestamp === 'number' ? new Date(msg.timestamp).toLocaleString("vi-VN") : msg.timestamp)
-                : msg.dateAction || ""
-
-              return (
-                <div
-                  key={msg._id || index}
-                  className={`flex ${isVuCar ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[75%] rounded-xl px-3 py-2 ${isVuCar
-                      ? "bg-purple-500 text-white"
-                      : "bg-gray-100 text-gray-900"
-                      }`}
-                  >
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-[10px] font-semibold">
-                        {isVuCar ? "VuCar" : "Khách hàng"}
-                      </span>
-                      <span className="text-[10px] opacity-70">{timestamp}</span>
-                    </div>
-                    {msg.img && (
-                      <img
-                        src={msg.img}
-                        alt="Message image"
-                        className="max-w-[180px] max-h-[180px] object-cover rounded mb-1.5"
-                      />
-                    )}
-                    <p className="text-sm whitespace-pre-wrap break-words">{content}</p>
-                    {msg.type && msg.type !== "text" && (
-                      <span className="text-[10px] opacity-60 mt-0.5 block">
-                        Type: {msg.type}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )
-            })
+            <ZaloChatViewer messages={messages} customerName={customerName} />
           )}
         </div>
       </DialogContent>

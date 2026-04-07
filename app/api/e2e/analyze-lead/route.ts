@@ -109,11 +109,13 @@ async function extractLeadProperties(
   summary: string,
   previous_properties?: Record<string, any> | null
 ): Promise<Record<string, any>> {
+  const now = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().replace("Z", "+07:00")
   const prevPropsSection = previous_properties
     ? `\nDỮ LIỆU PROPERTIES TRƯỚC ĐÓ (đã trích xuất từ lần chạy trước):\n${JSON.stringify(previous_properties, null, 2)}\n\nHãy dùng dữ liệu trước đó làm nền tảng, chỉ cập nhật các trường có thông tin mới hoặc chính xác hơn từ tóm tắt. Giữ nguyên giá trị cũ nếu tóm tắt mới không đề cập rõ ràng.\n`
     : ""
 
   const systemPrompt = `Bạn là một hệ thống trích xuất thông tin từ tóm tắt hội thoại bán hàng xe cũ của công ty Vucar.
+THỜI GIAN HIỆN TẠI: ${now} — Dùng làm mốc thời gian khi tóm tắt đề cập sự kiện xảy ra "vừa rồi", "hôm nay", "lúc nãy" mà không có timestamp cụ thể.
 ${prevPropsSection}
 Từ đoạn tóm tắt được cung cấp, hãy trích xuất các thông tin sau và trả về MỘT JSON object duy nhất:
 

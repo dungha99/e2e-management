@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { submitAiFeedback } from "@/lib/insight-feedback-service"
-import { storeAgentOutput, getActiveAgentNote } from "@/lib/ai-agent-service"
+import { storeAgentOutput, getActiveAgentNote, getPicAgentConfig } from "@/lib/ai-agent-service"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -190,12 +190,16 @@ async function evaluateSingleItem(phone: string, autoChatOutput: any) {
   const existingInsight = insightResult.rows[0]?.ai_insight_summary
 
   // --- 3. Call Gemini to evaluate ---
-  const evalAgentNote = await getActiveAgentNote("Evaluate-step")
+  const [picPrompt, evalAgentNote] = await Promise.all([
+    getPicAgentConfig("Evaluate-step", lead.pic_id || ""),
+    getActiveAgentNote("Evaluate-step"),
+  ])
+  const evalSystemPrompt = `${picPrompt || ''}${evalAgentNote ? `\n\n### Cấu Hình Bổ Sung (System Preferences):\n${evalAgentNote}` : ''}`
   const geminiResult = await callGeminiEvaluation(
     step,
     autoChatOutput,
     existingInsight,
-    evalAgentNote
+    evalSystemPrompt
   )
 
   console.log(
@@ -270,29 +274,7 @@ async function callGeminiEvaluation(
 
   const stepDescription = step.description || "Không có mô tả chi tiết cho bước này."
 
-  const systemPrompt = `${agentNote ? `### Cấu Hình Bổ Sung (System Preferences):\n${agentNote}\n\n` : ''}Bạn là 1 AI evaluator cho quy trình sales xe cũ VuCar.
-
-## NHIỆM VỤ
-Đánh giá output từ hệ thống auto-chat và xác định liệu cuộc hội thoại có đang đi đúng hướng so với mục tiêu của bước workflow hiện tại hay không.
-
-## YÊU CẦU OUTPUT
-Trả về JSON duy nhất với format:
-{
-  "thinking": "Phân tích chi tiết bằng tiếng Việt: tình trạng cuộc trò chuyện, khách hàng đang phản ứng ra sao, có phù hợp với mục tiêu bước này không, tại sao on_track hoặc deviated",
-  "verdict": "on_track" hoặc "deviated"
-}
-
-Chỉ verdict "deviated" khi:
-- Khách rõ ràng từ chối / không hợp tác
-- Auto-chat đang đi sai hướng so với mục tiêu bước
-- Tình huống cho thấy chiến lược hiện tại không hiệu quả
-
-Verdict "on_track" khi:
-- Cuộc trò chuyện đang đi đúng hướng
-- Khách phản hồi tích cực hoặc trung lập
-- Auto-chat actions phù hợp với mục tiêu bước
-
-CHỈ TRẢ VỀ JSON, KHÔNG CÓ GÌ KHÁC.`
+  const systemPrompt = agentNote || ""
 
   const userPrompt = `## THÔNG TIN BƯỚC HIỆN TẠI
 Tên bước: ${step.step_name}

@@ -3,7 +3,8 @@ import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { submitAiFeedback } from "@/lib/insight-feedback-service"
 import { callGemini } from "@/lib/gemini"
 import { getAgentTools } from "@/lib/agent-tools"
-import { storeAgentOutput, getActiveAgentNote } from "@/lib/ai-agent-service"
+import { storeAgentOutput, getActiveAgentNote, getPicAgentConfig } from "@/lib/ai-agent-service"
+import { fetchZaloChatHistory } from "@/lib/chat-history-service"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -159,7 +160,7 @@ export async function GET() {
             console.log(`[Process AI Workflows] Checking customer response for "${execution.step_name}" (phone: ${customerPhone})...`)
             let responded = false
             try {
-              responded = await checkCustomerResponded(customerPhone, picId)
+              responded = await checkCustomerResponded(customerPhone, picId, instance.car_id)
             } catch (err) {
               console.warn(`[Process AI Workflows] Engagement check failed (non-blocking):`, err)
               responded = true // Default to proceeding if the check itself fails
@@ -171,6 +172,12 @@ export async function GET() {
               await e2eQuery(
                 `UPDATE step_executions SET status = 'skipped', error_message = $1 WHERE id = $2`,
                 ['Customer did not respond within 2 days — strategy re-analysis triggered', execution.id]
+              )
+
+              // Terminate the instance so subsequent cron runs don't re-trigger re-analysis
+              await e2eQuery(
+                `UPDATE workflow_instances SET status = 'terminated', completed_at = NOW() WHERE id = $1`,
+                [instance.id]
               )
 
               if (instance.car_id) {
@@ -236,8 +243,8 @@ export async function GET() {
             console.warn(`[Process AI Workflows] Re-claiming stale step "${execution.step_name}" — was stuck in 'running' >5 min`)
           }
 
-          // --- 2d. Pre-execution AI Script Evaluator (for "Gửi Script" only) ---
-          if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee") { // Gửi Script
+          // --- 2d. Pre-execution AI Script Evaluator (for "Gửi Script" only, AI-triggered instances) ---
+          if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee" && instance.triggered_by !== 'user') { // Gửi Script
             console.log(`[Process AI Workflows] Triggering AI Script Evaluator for Gửi Script...`)
             try {
               let requestPayload = execution.request_payload
@@ -246,96 +253,18 @@ export async function GET() {
               }
 
               if (requestPayload && Array.isArray(requestPayload.messages) && customerPhone && picId) {
-                // Fetch shopId via n8n
-                let shopId: string | undefined
-                try {
-                  const n8nRes = await fetch("https://n8n.vucar.vn/webhook/f23b1b03-b198-4dc3-a196-d97a5cae8aff", {
-                    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pic_id: picId })
-                  })
-                  if (n8nRes.ok) {
-                    let n8nData: any = await n8nRes.json()
-                    if (Array.isArray(n8nData)) n8nData = n8nData[0]
-                    shopId = n8nData?.shop_id
-                  }
-                } catch (e) {
-                  console.warn(`[Process AI Workflows] AI Evaluator failed to get shopId for picId=${picId}`, e)
-                }
+                const chatMessages = await fetchZaloChatHistory({ carId: instance.car_id, phone: customerPhone, picId })
+                const recentChat = chatMessages.length > 0 ? chatMessages.slice(-100) : null
+                console.log(`[Process AI Workflows] AI Evaluator chat messages: ${recentChat?.length ?? 0}`)
 
-                if (shopId) {
-                  // Fetch last 20 messages from CRM
-                  let recentChat: any[] | null = null
-                  for (let attempt = 1; attempt <= 3; attempt++) {
-                    try {
-                      const historyRes = await fetch("https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json", "accept": "application/json" },
-                        body: JSON.stringify({ phone: customerPhone, shop_id: shopId }),
-                      })
+                if (recentChat) {
+                    const [picPrompt, reviewAgentNote] = await Promise.all([
+                      getPicAgentConfig("Review Messages Scheduled", picId),
+                      getActiveAgentNote("Review Messages Scheduled"),
+                    ])
 
-                      if (historyRes.ok) {
-                        const historyData = await historyRes.json()
-                        if (historyData.is_successful && historyData.chat_history) {
-                          recentChat = historyData.chat_history.slice(-100)
-                          break
-                        }
-                      }
-                      console.warn(`[Process AI Workflows] AkaBiz returned is_successful=false for phone=${customerPhone} (attempt ${attempt})`)
-                      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
-                    } catch (e) {
-                      console.warn(`[Process AI Workflows] Fetch error on attempt ${attempt}:`, e)
-                      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
-                    }
-                  }
+                    const systemPrompt = `${picPrompt || ''}${reviewAgentNote ? `\n\n### Cấu Hình Bổ Sung (System Preferences):\n${reviewAgentNote}` : ''}`
 
-                  if (recentChat) {
-                    const reviewAgentNote = await getActiveAgentNote("Review Messages Scheduled")
-
-                    const systemPrompt = `${reviewAgentNote ? `### Cấu Hình Bổ Sung (System Preferences):\n${reviewAgentNote}\n\n` : ''}# VAI TRÒ (ROLE)
-Bạn là "Chuyên gia Tư vấn Truyền thông Vucar" - người thẩm định cuối cùng cho mọi tin nhắn gửi đi trên Zalo. Nhiệm vụ của bạn là biến các bản thảo tin nhắn từ Chat Agent trở nên "người" hơn, gần gũi hơn và có tỷ lệ chuyển đổi cao hơn.
-
-# BỐI CẢNH (CONTEXT)
-Bạn có quyền truy cập vào:
-- [Chat History]: 100 tin nhắn gần nhất để hiểu nhịp điệu cuộc hội thoại.
-- [Tactical Command]: Mệnh lệnh chiến thuật gốc của Planner.
-- [Draft Messages]: Các tin nhắn dự kiến từ Chat Agent.
-
-# NGUYÊN TẮC CỐT LÕI (CORE PRINCIPLES)
-1. Tự nhiên hóa: Loại bỏ sự cứng nhắc, máy móc. Sử dụng ngôn ngữ giao tiếp hàng ngày (miền Nam).
-2. Tối ưu mục tiêu: Đảm bảo tin nhắn phục vụ đúng "Tactical Command". Nếu tin nhắn quá dài hoặc lan man, hãy cắt gọt thẳng tay.
-3. Tôn trọng ngữ cảnh: 
-   - Nếu khách hàng đang ở trạng thái muốn dừng (stop_conversation), hãy để mảng \`messages\` trống \`[]\` hoặc chỉ gửi một câu chào tạm biệt cực ngắn.
-   - Nếu tin nhắn đã tự nhiên, giữ nguyên.
-   - Nếu cần follow-up, thêm vào các câu hỏi gợi mở như: "Dạ anh thấy đề xuất này thế nào ạ?", "Anh có cần em hỗ trợ gì thêm hong?"...
-   - Không đánh số; không gửi dồn dập; trò chuyện như người thật.
-   - Tuyệt đối không lặp lại nội dung tin nhắn, câu hỏi, và yêu cầu khách hàng phải xác nhận thông tin đã có trong lịch sử chat.
-4. Giới hạn: Chỉ tối đa 3 tin nhắn ngắn. Không bao giờ dùng dấu chấm (.) ở cuối tin nhắn.
-
-# QUY TRÌNH (PROCESS)
-1. Kiểm tra "màu sắc" hội thoại: Đã đủ thân thiện và đúng giọng điệu Vucar chưa?
-2. Kiểm tra tính "Call-to-Action": Tin nhắn đã đủ thúc đẩy hành động tiếp theo chưa?
-3. Điều chỉnh: Viết lại (nếu cần) hoặc giữ nguyên.
-
-# ĐỊNH DẠNG ĐẦU RA (OUTPUT FORMAT)
-Bạn CHỈ được trả về JSON object duy nhất.
-{
-  "reasoning": "Tóm tắt lý do tại sao giữ nguyên, bỏ qua, hoặc cần lên kế hoạch lại (để Planner hiểu lý do)",
-  "status": "APPROVED / EMPTY / REVISED_PLAN"
-}
-
-MÔ TẢ STATUS:
-- APPROVED: Tin nhắn phù hợp, giữ nguyên và gửi đi.
-- EMPTY: Không cần gửi tin nhắn lúc này.
-- REVISED_PLAN: *Bối cảnh thực tế KHÔNG khớp với kế hoạch hiện tại.* Ví dụ: khách đã từ chối rõ ràng, hoặc cuộc hội thoại đã vượt qua bước này mà workflow chưa biết. Khi dùng status này, điền reasoning đầy đủ gồm: context_summary (tóm tắt ngữ cảnh), actions (các hành động AI nên làm tiếp theo), message_suggestions (gợi ý tin nhắn nếu AI quyết định gửi sau khi re-plan).
-
-# QUY ĐỊNH BẮT BUỘC
-- KHÔNG giải thích dài dòng ngoài phạm vi JSON.
-- LUÔN gọi "anh" hoặc "chị", tuyệt đối không dùng "anh/chị".
-- Nếu không cần thiết phải nhắn thêm, hãy trả về mảng rỗng \`[]\`.
-
-# SỬ DỤNG GOOGLE SEARCH
-- Nếu tin nhắn đề cập đến giá xe, giá thị trường, ưu điểm/nhược điểm của mẫu xe → hãy dùng Google Search để xác minh thông tin.
-- - Khi tin nhắn liên quan đến giá, hãy luôn dựa vào 3 thông tin price customer, price highest bid, và giá tìm kiếm từ google search (giá bán ra), để có chiến lược tư vấn giá và đàm phán tốt nhất dựa trên hoàn cảnh.
-- KHÔNG tìm kiếm các thông tin đã có sẵn trong context (tên khách, phone, picId).`
 
                     const tacticalCommand = execution.description || execution.step_name
                     const leadContext = await fetchLeadContext(instance.car_id || "")
@@ -452,7 +381,6 @@ MÔ TẢ STATUS:
                         outputPayload: { error: "Gemini returned unparseable response", raw: geminiResult.slice(0, 500), level: -1 },
                       }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
                     }
-                  }
                 }
               }
             } catch (err) {
@@ -593,7 +521,80 @@ MÔ TẢ STATUS:
             break
           }
 
-          // --- 2f. Advance to next step ---
+          // --- 2f. Deactivate AI if sent message contains inspection-related keywords ---
+          if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee") {
+            const INSPECTION_KEYWORDS = ["kiểm định", "kỹ thuật viên", "đội kĩ thuật", "xem xe"]
+
+            let messagesToCheck: string[] = []
+            let parsedPayload = effectivePayload
+            if (typeof parsedPayload === "string") {
+              try { parsedPayload = JSON.parse(parsedPayload) } catch { /* keep */ }
+            }
+            if (Array.isArray(parsedPayload?.messages)) {
+              messagesToCheck = parsedPayload.messages
+            }
+
+            const hasInspectionKeyword = messagesToCheck.some((msg: any) => {
+              const text = (typeof msg === "string" ? msg : JSON.stringify(msg)).toLowerCase()
+              return INSPECTION_KEYWORDS.some(kw => text.includes(kw))
+            })
+
+            if (hasInspectionKeyword) {
+              console.log(`[Process AI Workflows] Inspection keyword detected — deactivating AI for car ${instance.car_id}`)
+              try {
+                await e2eQuery(
+                  `INSERT INTO ai_process_blacklist (car_id) VALUES ($1) ON CONFLICT DO NOTHING`,
+                  [instance.car_id]
+                )
+                console.log(`[Process AI Workflows] AI deactivated for car ${instance.car_id}`)
+              } catch (err) {
+                console.error(`[Process AI Workflows] Failed to deactivate AI for car ${instance.car_id}:`, err)
+              }
+
+              // Notify sales group via Abit Zalo
+              try {
+                const { followupDataQuery } = await import("@/lib/db")
+
+                const [staffResult, botResult] = await Promise.all([
+                  followupDataQuery(
+                    `SELECT group_id FROM staffs WHERE pic_id = $1 LIMIT 1`,
+                    [picId]
+                  ),
+                  e2eQuery(
+                    `SELECT abitstore_id, account_name, dynamic_key FROM abit_zalo_accounts WHERE phone = '84963041272' LIMIT 1`
+                  ),
+                ])
+
+                const account = botResult.rows[0]
+                const groupId = staffResult.rows[0]?.group_id
+
+                if (!account) {
+                  console.warn(`[Process AI Workflows] Bot account 84963041272 not found in abit_zalo_accounts, skipping group notification`)
+                } else if (!groupId) {
+                  console.warn(`[Process AI Workflows] No group_id found in staffs for pic_id=${picId}, skipping group notification`)
+                } else {
+                  const stopMessage = `Đã dừng AI cho lead ${customerPhone} - hãy xem thông tin hẹn kiểm định`
+                  await fetch(
+                    `https://new.abitstore.vn/zalo/sendMessageToGroupZalo/${account.abitstore_id}/${account.account_name}/${account.dynamic_key}`,
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        send_from_number: "84963041272",
+                        send_to_groupid: groupId,
+                        message: stopMessage,
+                      }),
+                    }
+                  )
+                  console.log(`[Process AI Workflows] Stop notification sent to group ${groupId} (pic_id=${picId})`)
+                }
+              } catch (err) {
+                console.error(`[Process AI Workflows] Failed to send group stop notification:`, err)
+              }
+            }
+          }
+
+          // --- 2g. Advance to next step ---
           const nextStepId = await getNextStepId(instance.workflow_id, execution.step_order)
 
           if (nextStepId) {
@@ -805,105 +806,26 @@ async function fetchLeadContext(carId: string): Promise<string> {
 // =========================================================================
 // Helper: Check if customer has responded in the last 2 days via Zalo chat
 // =========================================================================
-async function checkCustomerResponded(phone: string, picId: string): Promise<boolean> {
+async function checkCustomerResponded(phone: string, picId: string, carId: string): Promise<boolean> {
   const CustomerResponded_MS = 2 * 24 * 60 * 60 * 1000
 
-  // Step 1: Get shop_id from n8n webhook using pic_id
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000) // 5 minutes
+  const messages = await fetchZaloChatHistory({ carId, phone, picId })
 
-  let shopId: string | undefined
-
-  try {
-    const n8nRes = await fetch(
-      "https://n8n.vucar.vn/webhook/f23b1b03-b198-4dc3-a196-d97a5cae8aff",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pic_id: picId }),
-        signal: controller.signal,
-      }
-    )
-    clearTimeout(timeoutId)
-
-    if (!n8nRes.ok) {
-      throw new Error(`n8n webhook failed: ${n8nRes.status}`)
-    }
-
-    let n8nData: any = await n8nRes.json()
-    if (Array.isArray(n8nData)) n8nData = n8nData[0]
-    shopId = n8nData?.shop_id
-  } catch (err) {
-    clearTimeout(timeoutId)
-    console.error(`[checkCustomerResponded] n8n fetch error:`, err)
-    // Fallback: assume responded if we can't get shopId
-    return true
-  }
-  if (!shopId) {
-    console.warn(`[checkCustomerResponded] No shop_id returned for picId=${picId}. Assuming responded.`)
-    return true
-  }
-
-  // Step 2: Fetch chat history from AkaBiz (with retries)
-  let chatData: any = null
-  let chatResOk = false
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const chatRes = await fetch(
-        "https://crm-vucar-api.vucar.vn/api/v1/akabiz/get-chat-history",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contacts_limit: 10,
-            contacts_max_pages: 10,
-            messages_limit: 20,
-            phone,
-            shop_id: shopId,
-          }),
-        }
-      )
-
-      if (chatRes.ok) {
-        const data = await chatRes.json()
-        if (data.is_successful !== false) {
-          chatData = data
-          chatResOk = true
-          break
-        }
-      }
-      console.warn(`[checkCustomerResponded] AkaBiz API failed or is_successful=false (attempt ${attempt})`)
-      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
-    } catch (e) {
-      console.warn(`[checkCustomerResponded] Fetch error on attempt ${attempt}:`, e)
-      if (attempt < 3) await new Promise((res) => setTimeout(res, 2000))
-    }
-  }
-
-  if (!chatResOk || !chatData) {
-    throw new Error(`AkaBiz chat history API failed after retries`)
-  }
-
-  const chatHistory: any[] = chatData?.chat_history || []
-
-  if (chatHistory.length === 0) {
-    console.log(`[checkCustomerResponded] No chat history found for phone=${phone}`)
+  if (messages.length === 0) {
+    console.log(`[checkCustomerResponded] No messages found for phone=${phone}`)
     return false
   }
 
-  // Step 3: Find any message from the CUSTOMER (senderName without "Vucar") within 6 hours
   const cutoff = new Date(Date.now() - CustomerResponded_MS)
-  const customerReplied = chatHistory.some((msg) => {
-    const name: string = msg.senderName || ""
-    const isCustomer = !name.toLowerCase().includes("vucar")
+  const customerReplied = messages.some((msg: any) => {
+    const isCustomer = !msg.senderName.toLowerCase().includes("vucar")
     if (!isCustomer) return false
     const msgDate = new Date(msg.dateAction)
     return msgDate >= cutoff
   })
 
   console.log(
-    `[checkCustomerResponded] phone=${phone}, shopId=${shopId}, ` +
-    `messages=${chatHistory.length}, customerRepliedIn6Hours=${customerReplied}`
+    `[checkCustomerResponded] phone=${phone}, messages=${messages.length}, customerReplied=${customerReplied}`
   )
   return customerReplied
 }

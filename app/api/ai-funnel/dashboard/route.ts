@@ -348,35 +348,44 @@ export async function GET(request: Request) {
     // ============================================================
     // SECTION 1: Volume
     // ============================================================
-    const totalAiLeads = allLeadsFiltered.length
-    const aiLeadsWithSummary = leadsWithSummary.length
-    const activeLeads = leadsWithSummary.filter(l => l.latestStage && activeStages.includes(l.latestStage)).length
-    const closedLeads = leadsWithSummary.filter(l => l.latestStage === 'completed' || l.latestStage === 'deposited').length
+    const totalAiLeadsIds = allLeadsFiltered.map(l => l.carId)
+    const aiLeadsWithSummaryIds = leadsWithSummary.map(l => l.carId)
+    const activeIds = leadsWithSummary.filter(l => l.latestStage && activeStages.includes(l.latestStage)).map(l => l.carId)
+    const closedIds = leadsWithSummary.filter(l => l.latestStage === 'completed' || l.latestStage === 'deposited').map(l => l.carId)
+
+    const totalAiLeads = totalAiLeadsIds.length
+    const aiLeadsWithSummary = aiLeadsWithSummaryIds.length
+    const activeLeads = activeIds.length
+    const closedLeads = closedIds.length
 
     // Stage distribution (snapshot mới nhất)
-    const stageCounts: Record<string, number> = {}
+    const stageCounts: Record<string, { count: number, carIds: string[] }> = {}
     for (const l of leadsWithSummary) {
       const stage = l.latestStage || 'unknown'
-      stageCounts[stage] = (stageCounts[stage] || 0) + 1
+      if (!stageCounts[stage]) stageCounts[stage] = { count: 0, carIds: [] }
+      stageCounts[stage].count++
+      stageCounts[stage].carIds.push(l.carId)
     }
     const stageDistribution = [
-      { stage: 'totalAssigned', count: totalAssignedLeadsCount, percentage: 100 },
-      ...Object.entries(stageCounts).map(([stage, count]) => ({
+      { stage: 'totalAssigned', count: totalAssignedLeadsCount, percentage: 100, carIds: [] },
+      ...Object.entries(stageCounts).map(([stage, { count, carIds }]) => ({
         stage,
         count,
         percentage: totalAssignedLeadsCount > 0 ? Math.round((count / totalAssignedLeadsCount) * 1000) / 10 : 0,
+        carIds,
       }))
     ]
 
     // Qualified distribution
-    const strongQualified = leadsWithSummary.filter(l => l.hadCarImage).length
-    const weakQualified = leadsWithSummary.filter(l => !l.hadCarImage).length
+    const strongQualifiedIds = leadsWithSummary.filter(l => l.hadCarImage).map(l => l.carId)
+    const weakQualifiedIds = leadsWithSummary.filter(l => !l.hadCarImage).map(l => l.carId)
+    const strongQualified = strongQualifiedIds.length
+    const weakQualified = weakQualifiedIds.length
 
     // ============================================================
     // SECTION 2: Funnel Conversion
     // ============================================================
     // Stage reach rate: count unique car_ids that EVER appeared at each stage
-    const stageOrder = ['contacted', 'negotiation', 'inspection']
     const stageReachCounts: Record<string, Set<string>> = {
       contacted: new Set(),
       negotiation: new Set(),
@@ -384,7 +393,6 @@ export async function GET(request: Request) {
     }
 
     for (const l of leadsWithSummary) {
-      // Mọi lead có summary đều được coi là contacted
       stageReachCounts['contacted'].add(l.carId)
 
       for (const snap of l.snapshots) {
@@ -399,17 +407,16 @@ export async function GET(request: Request) {
     }
 
     const closedSet = new Set(leadsWithSummary.filter(l => l.latestStage === 'completed' || l.latestStage === 'deposited').map(l => l.carId))
-    const failedSet = new Set(leadsWithSummary.filter(l => l.latestStage === 'failed').map(l => l.carId))
-
+    
     const stageReachRates = [
-      { stage: 'totalAssigned', count: totalAssignedLeadsCount, rate: 100 },
-      { stage: 'totalAi', count: totalAiLeads, rate: totalAssignedLeadsCount > 0 ? Math.round((totalAiLeads / totalAssignedLeadsCount) * 1000) / 10 : 0 },
-      { stage: 'summary', count: aiLeadsWithSummary, rate: totalAssignedLeadsCount > 0 ? Math.round((aiLeadsWithSummary / totalAssignedLeadsCount) * 1000) / 10 : 0 },
-      { stage: 'contacted', count: stageReachCounts['contacted'].size, rate: totalAssignedLeadsCount > 0 ? Math.round((stageReachCounts['contacted'].size / totalAssignedLeadsCount) * 1000) / 10 : 0 },
-      { stage: 'qualified', count: strongQualified, rate: totalAssignedLeadsCount > 0 ? Math.round((strongQualified / totalAssignedLeadsCount) * 1000) / 10 : 0 },
-      { stage: 'negotiation', count: stageReachCounts['negotiation'].size, rate: totalAssignedLeadsCount > 0 ? Math.round((stageReachCounts['negotiation'].size / totalAssignedLeadsCount) * 1000) / 10 : 0 },
-      { stage: 'inspection', count: stageReachCounts['inspection'].size, rate: totalAssignedLeadsCount > 0 ? Math.round((stageReachCounts['inspection'].size / totalAssignedLeadsCount) * 1000) / 10 : 0 },
-      { stage: 'closed', count: closedSet.size, rate: totalAssignedLeadsCount > 0 ? Math.round((closedSet.size / totalAssignedLeadsCount) * 1000) / 10 : 0 }
+      { stage: 'totalAssigned', count: totalAssignedLeadsCount, rate: 100, carIds: [] },
+      { stage: 'totalAi', count: totalAiLeads, rate: totalAssignedLeadsCount > 0 ? Math.round((totalAiLeads / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: totalAiLeadsIds },
+      { stage: 'summary', count: aiLeadsWithSummary, rate: totalAssignedLeadsCount > 0 ? Math.round((aiLeadsWithSummary / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: aiLeadsWithSummaryIds },
+      { stage: 'contacted', count: stageReachCounts['contacted'].size, rate: totalAssignedLeadsCount > 0 ? Math.round((stageReachCounts['contacted'].size / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: Array.from(stageReachCounts['contacted']) },
+      { stage: 'qualified', count: strongQualified, rate: totalAssignedLeadsCount > 0 ? Math.round((strongQualified / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: strongQualifiedIds },
+      { stage: 'negotiation', count: stageReachCounts['negotiation'].size, rate: totalAssignedLeadsCount > 0 ? Math.round((stageReachCounts['negotiation'].size / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: Array.from(stageReachCounts['negotiation']) },
+      { stage: 'inspection', count: stageReachCounts['inspection'].size, rate: totalAssignedLeadsCount > 0 ? Math.round((stageReachCounts['inspection'].size / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: Array.from(stageReachCounts['inspection']) },
+      { stage: 'closed', count: closedSet.size, rate: totalAssignedLeadsCount > 0 ? Math.round((closedSet.size / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: Array.from(closedSet) }
     ]
 
     // Stage-to-stage conversion
@@ -660,12 +667,19 @@ export async function GET(request: Request) {
     const totalWithSentiment = leadsWithSentiment.length
     
     // S1: Distribution
-    const sentimentCounts: Record<string, number> = {
-      willing: 0, hesitant: 0, want_human: 0, angry: 0, ghosting: 0, bot_detected: 0
+    const sentimentCounts: Record<string, { count: number, carIds: string[] }> = {
+      willing: { count: 0, carIds: [] },
+      hesitant: { count: 0, carIds: [] },
+      want_human: { count: 0, carIds: [] },
+      angry: { count: 0, carIds: [] },
+      ghosting: { count: 0, carIds: [] },
+      bot_detected: { count: 0, carIds: [] }
     }
     leadsWithSentiment.forEach(l => {
-      if (l.sellerSentiment && sentimentCounts[l.sellerSentiment] !== undefined) {
-        sentimentCounts[l.sellerSentiment]++
+      const s = l.sellerSentiment!
+      if (sentimentCounts[s]) {
+        sentimentCounts[s].count++
+        sentimentCounts[s].carIds.push(l.carId)
       }
     })
 
@@ -680,9 +694,12 @@ export async function GET(request: Request) {
     })
 
     // S3: Escalation signal rate
-    const angryCount = sentimentCounts.angry || 0
-    const wantHumanCount = sentimentCounts.want_human || 0
-    const botDetectedCount = sentimentCounts.bot_detected || 0
+    const angryIds = sentimentCounts.angry.carIds
+    const wantHumanIds = sentimentCounts.want_human.carIds
+    const botDetectedIds = sentimentCounts.bot_detected.carIds
+    const angryCount = angryIds.length
+    const wantHumanCount = wantHumanIds.length
+    const botDetectedCount = botDetectedIds.length
     const escalationCount = angryCount + wantHumanCount + botDetectedCount
     const escalationRate = totalWithSentiment > 0 ? Math.round((escalationCount / totalWithSentiment) * 1000) / 10 : 0
 
@@ -722,12 +739,15 @@ export async function GET(request: Request) {
       : 0
 
     const sentiment = {
-      distribution: Object.entries(sentimentCounts).map(([name, value]) => ({ name, value, pct: totalWithSentiment > 0 ? Math.round((value / totalWithSentiment) * 100) : 0 })),
+      distribution: Object.entries(sentimentCounts).map(([name, val]) => ({ name, value: val.count, pct: totalWithSentiment > 0 ? Math.round((val.count / totalWithSentiment) * 100) : 0, carIds: val.carIds })),
       escalation: {
         rate: escalationRate,
         angry: angryCount,
+        angryIds,
         wantHuman: wantHumanCount,
+        wantHumanIds,
         botDetected: botDetectedCount,
+        botDetectedIds,
         total: totalWithSentiment
       },
       crossTab: sentimentStageMap,
@@ -906,13 +926,19 @@ export async function GET(request: Request) {
     return NextResponse.json({
       volume: {
         totalAiLeads,
+        totalAiLeadsIds,
         aiLeadsWithSummary,
+        aiLeadsWithSummaryIds,
         active: activeLeads,
+        activeIds,
         closed: closedLeads,
+        closedIds,
         stageDistribution,
         qualifiedDistribution: {
           strongQualified,
+          strongQualifiedIds,
           weakQualified,
+          weakQualifiedIds,
           strongQualifiedRate: aiLeadsWithSummary > 0 ? Math.round((strongQualified / aiLeadsWithSummary) * 1000) / 10 : 0,
           weakQualifiedRate: aiLeadsWithSummary > 0 ? Math.round((weakQualified / aiLeadsWithSummary) * 1000) / 10 : 0,
         },

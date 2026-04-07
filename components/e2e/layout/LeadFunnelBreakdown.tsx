@@ -199,6 +199,8 @@ export function LeadFunnelBreakdown({ data, loading, onMetricClick, picId, dateF
   const hasImageWithAdditional = Number(data.hasImageWithAdditional) || 0;
   const hasImageWithoutAdditional = Number(data.hasImageWithoutAdditional) || 0;
   const noImageCount = Number(data.noImageCount) || 0;
+  const noImageHadImage = Number(data.noImageHadImage) || 0;
+  const noImageNoHadImage = Number(data.noImageNoHadImage) || 0;
   const zaloSuccessCount = Number(data.zaloSuccessCount) || 0;
   const zaloSuccessAutoCount = Number(data.zaloSuccessAutoCount) || 0;
   const zaloSuccessManualCount = Number(data.zaloSuccessManualCount) || 0;
@@ -509,6 +511,18 @@ export function LeadFunnelBreakdown({ data, loading, onMetricClick, picId, dateF
                         </div>
                       </TooltipContent>
                     </Tooltip>
+                    <div className="flex flex-col gap-1 mt-2 w-full">
+                      <div className="flex gap-1 justify-center">
+                        <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_NO_IMAGE_HAD_IMAGE"); }} className="bg-orange-50 border border-orange-100 hover:bg-orange-100 rounded px-1.5 py-1 flex-1 transition-colors group" title="Đã gửi ảnh qua chat (had_image=true)">
+                          <div className="text-[7px] font-bold text-orange-500 uppercase tracking-tighter group-hover:text-orange-700">2b-I. Có ảnh</div>
+                          <div className="text-[10px] font-black text-orange-700">{noImageHadImage}</div>
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); onMetricClick?.("FUNNEL_NO_IMAGE_NO_HAD_IMAGE"); }} className="bg-red-50 border border-red-100 hover:bg-red-100 rounded px-1.5 py-1 flex-1 transition-colors group" title="Chưa gửi ảnh (had_image=false)">
+                          <div className="text-[7px] font-bold text-red-400 uppercase tracking-tighter group-hover:text-red-700">2b-II. Chưa</div>
+                          <div className="text-[10px] font-black text-red-600">{noImageNoHadImage}</div>
+                        </button>
+                      </div>
+                    </div>
                     <div className="tree-line-v"></div>
                   </div>
                 </div>

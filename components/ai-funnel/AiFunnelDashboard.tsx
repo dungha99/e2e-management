@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { cn } from "@/lib/utils"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -16,6 +17,8 @@ import {
   BarChart3, Shield, UserCheck, Loader2 
 } from "lucide-react"
 import { DateRangePickerWithPresets } from "@/components/e2e/common/DateRangePickerWithPresets"
+import { DrilldownPanel } from "./DrilldownPanel"
+import { BotAtRiskCard } from "./BotAtRiskCard"
 import {
   Select,
   SelectContent,
@@ -158,23 +161,27 @@ function TrendChart({
   )
 }
 
-function StatCard({ title, value, subtitle, icon: Icon, color = "text-primary" }: {
+function StatCard({ title, value, subtitle, icon: Icon, color = "text-primary", onClick }: {
   title: string
   value: string | number
   subtitle?: string
   icon?: any
   color?: string
+  onClick?: () => void
 }) {
   return (
-    <Card className="py-4">
+    <Card 
+      className={cn("py-4 transition-all", onClick && "cursor-pointer hover:border-blue-400 hover:shadow-md group")}
+      onClick={onClick}
+    >
       <CardContent className="flex items-center gap-4">
         {Icon && (
-          <div className={`rounded-lg bg-primary/10 p-2.5 ${color}`}>
+          <div className={cn("rounded-lg bg-primary/10 p-2.5 transition-colors", color, onClick && "group-hover:bg-blue-500/10")}>
             <Icon className="h-5 w-5" />
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <p className="text-xs text-muted-foreground font-medium truncate">{title}</p>
+          <p className="text-xs text-muted-foreground font-medium truncate group-hover:text-blue-500 transition-colors">{title}</p>
           <p className="text-2xl font-bold tracking-tight">{value}</p>
           {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
         </div>
@@ -186,7 +193,7 @@ function StatCard({ title, value, subtitle, icon: Icon, color = "text-primary" }
 // ============================================================================
 // SECTION 1: Volume
 // ============================================================================
-function VolumeSection({ data }: { data: any }) {
+function VolumeSection({ data, onDrilldown }: { data: any, onDrilldown: (title: string, ids: string[]) => void }) {
   const { volume } = data
   const stageData = (volume.stageDistribution || [])
     .sort((a: any, b: any) => b.count - a.count)
@@ -197,18 +204,18 @@ function VolumeSection({ data }: { data: any }) {
     }))
 
   const qualifiedData = [
-    { name: "Strong Qualified", value: volume.qualifiedDistribution?.strongQualified || 0 },
-    { name: "Weak Qualified", value: volume.qualifiedDistribution?.weakQualified || 0 },
+    { name: "Strong Qualified", value: volume.qualifiedDistribution?.strongQualified || 0, carIds: volume.qualifiedDistribution?.strongQualifiedIds || [] },
+    { name: "Weak Qualified", value: volume.qualifiedDistribution?.weakQualified || 0, carIds: volume.qualifiedDistribution?.weakQualifiedIds || [] },
   ]
 
   return (
     <div className="space-y-6">
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard title="Tổng AI Leads" value={formatNumber(volume.totalAiLeads)} icon={Users} subtitle="Từ workflow" />
-        <StatCard title="Có Summary" value={formatNumber(volume.aiLeadsWithSummary)} icon={BarChart3} subtitle={`${volume.totalAiLeads > 0 ? Math.round(volume.aiLeadsWithSummary / volume.totalAiLeads * 100) : 0}% tổng`} />
-        <StatCard title="Đang Active" value={formatNumber(volume.active)} icon={TrendingUp} color="text-emerald-500" subtitle="contacted / negotiation / inspection" />
-        <StatCard title="Closed (CRM)" value={formatNumber(volume.closed)} icon={CheckCircle2} color="text-blue-500" subtitle="COMPLETED + DEPOSIT_PAID" />
+        <StatCard title="Tổng AI Leads" value={formatNumber(volume.totalAiLeads)} icon={Users} subtitle="Từ workflow" onClick={() => onDrilldown("Tổng AI Leads", volume.totalAiLeadsIds || [])} />
+        <StatCard title="Có Summary" value={formatNumber(volume.aiLeadsWithSummary)} icon={BarChart3} subtitle={`${volume.totalAiLeads > 0 ? Math.round(volume.aiLeadsWithSummary / volume.totalAiLeads * 100) : 0}% tổng`} onClick={() => onDrilldown("Có Summary", volume.aiLeadsWithSummaryIds || [])} />
+        <StatCard title="Đang Active" value={formatNumber(volume.active)} icon={TrendingUp} color="text-emerald-500" subtitle="contacted / negotiation / inspection" onClick={() => onDrilldown("Đang Active", volume.activeIds || [])} />
+        <StatCard title="Closed (CRM)" value={formatNumber(volume.closed)} icon={CheckCircle2} color="text-blue-500" subtitle="COMPLETED + DEPOSIT_PAID" onClick={() => onDrilldown("Closed (CRM)", volume.closedIds || [])} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -298,7 +305,7 @@ function VolumeSection({ data }: { data: any }) {
 // ============================================================================
 // SECTION 2: Funnel Conversion
 // ============================================================================
-function ConversionSection({ data }: { data: any }) {
+function ConversionSection({ data, onDrilldown }: { data: any, onDrilldown: (title: string, ids: string[]) => void }) {
   const { conversion } = data
   const { stageReachRates, stageToStage, negotiationAnalysis } = conversion
 
@@ -356,11 +363,11 @@ function ConversionSection({ data }: { data: any }) {
                 else baselineText = "của tổng leads được giao"
 
                 return (
-                  <TableRow key={s.stage}>
+                  <TableRow key={s.stage} className="group cursor-pointer hover:bg-muted/50" onClick={() => onDrilldown(`Reached ${STAGE_LABELS[s.stage] || s.stage}`, s.carIds || [])}>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: STAGE_COLORS[s.stage] || "#94a3b8" }} />
-                        {STAGE_LABELS[s.stage] || s.stage}
+                        <span className="group-hover:text-blue-600 transition-colors">{STAGE_LABELS[s.stage] || s.stage}</span>
                       </div>
                     </TableCell>
                     <TableCell className="text-right font-medium">{formatNumber(s.count)}</TableCell>
@@ -514,17 +521,21 @@ function SlaSection({ data }: { data: any }) {
   )
 }
 
-// ============================================================================
 // SECTION 4: AI Quality
 // ============================================================================
-function QualitySection({ data }: { data: any }) {
-  const { quality } = data
+function QualitySection({ data, onDrilldown, filters }: { data: any, onDrilldown: (title: string, ids: string[]) => void, filters?: any }) {
+  const { quality, volume } = data
   const { sentiment } = quality
 
-  const mainMetrics: { label: string; value: string; desc: string; highlight?: string }[] = [
-    { label: "Strong Qualified Rate (D1)", value: formatPercent(quality.strongQualifiedRate), desc: "% leads có ảnh xe" },
-    { label: "Avg Negotiation Rounds (D2)", value: quality.avgNegotiationRounds?.toString() || "0", desc: "Leads ở negotiation/inspection" },
-    { label: "Giảm Giá Thành Công (D3)", value: `${quality.leadsWithPriceReduction} (${formatPercent(quality.priceReductionRate)})`, desc: "price_customer giảm qua ≥2 snapshots" },
+  const mainMetrics: { label: string; value: string; desc: string; highlight?: string; carIds?: string[] }[] = [
+    { label: "Strong Qualified Rate (D1)", value: formatPercent(quality.strongQualifiedRate), desc: "% leads có ảnh xe", carIds: volume.qualifiedDistribution?.strongQualifiedIds },
+    { label: "Avg Negotiation Rounds (D2)", value: quality.avgNegotiationRounds?.toString() || "0", desc: "Leads ở negotiation/inspection", carIds: Array.from(new Set([...(data.conversion.stageReachRates.find((s: any) => s.stage === 'negotiation')?.carIds || []), ...(data.conversion.stageReachRates.find((s: any) => s.stage === 'inspection')?.carIds || [])])) },
+    { 
+      label: "Giảm Giá Thành Công (D3)", 
+      value: `${quality.leadsWithPriceReduction} (${formatPercent(quality.avgPriceReductionPercent)})`, 
+      desc: "price_customer giảm qua ≥2 snapshots",
+      carIds: [] // Needs refinement if we want to drill into price reduction
+    },
   ]
 
   const convTotal = quality.convergenceTotal || 1
@@ -535,9 +546,13 @@ function QualitySection({ data }: { data: any }) {
       {/* Existing KPI Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {mainMetrics.map((m, idx) => (
-          <Card key={idx} className="py-2">
+          <Card 
+            key={idx} 
+            className={cn("py-2 transition-all", m.carIds && m.carIds.length > 0 && "cursor-pointer hover:border-blue-400 hover:shadow-md group")}
+            onClick={() => m.carIds && m.carIds.length > 0 && onDrilldown(m.label, m.carIds)}
+          >
             <CardContent className="pt-4 pb-2">
-              <p className="text-xs text-muted-foreground font-medium">{m.label}</p>
+              <p className="text-xs text-muted-foreground font-medium group-hover:text-blue-600 transition-colors">{m.label}</p>
               <p className={`text-2xl font-bold mt-1 ${m.highlight || ""}`}>{m.value}</p>
               <p className="text-[11px] text-muted-foreground mt-1">{m.desc}</p>
             </CardContent>
@@ -553,38 +568,53 @@ function QualitySection({ data }: { data: any }) {
         </div>
 
         {/* S3: Escalation Risk Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="border-l-4 border-l-red-500">
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground font-medium">Escalation Rate</p>
-              <div className="flex items-end gap-2">
-                <p className="text-2xl font-bold">{sentiment?.escalation?.rate}%</p>
-                <p className="text-xs text-red-500 mb-1 font-medium">Target &lt; 5%</p>
-              </div>
-              <p className="text-[10px] text-muted-foreground mt-1">N = {sentiment?.escalation?.total} leads có sentiment</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground font-medium">Angry Count</p>
-              <p className="text-2xl font-bold text-red-600">{sentiment?.escalation?.angry}</p>
-              <Progress value={(sentiment?.escalation?.angry / (sentiment?.escalation?.total || 1)) * 100} className="h-1 mt-2" />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground font-medium">Want Human</p>
-              <p className="text-2xl font-bold text-indigo-600">{sentiment?.escalation?.wantHuman}</p>
-              <Progress value={(sentiment?.escalation?.wantHuman / (sentiment?.escalation?.total || 1)) * 100} className="h-1 mt-2" />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground font-medium">Ghosting Proxy</p>
-              <p className="text-2xl font-bold text-slate-600">{sentiment?.ghostingProxy?.rate}%</p>
-              <p className="text-[10px] text-muted-foreground mt-1">{sentiment?.ghostingProxy?.count} active leads &gt; 48h im lặng</p>
-            </CardContent>
-          </Card>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4">
+            <BotAtRiskCard filters={filters} />
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card 
+              className="border-l-4 border-l-red-500 cursor-pointer hover:shadow-md transition-all h-full"
+              onClick={() => onDrilldown("Escalation Risk Leads", [...(sentiment?.escalation?.angryIds || []), ...(sentiment?.escalation?.wantHumanIds || []), ...(sentiment?.escalation?.botDetectedIds || [])])}
+            >
+              <CardContent className="pt-4">
+                <p className="text-xs text-muted-foreground font-medium">Escalation Rate</p>
+                <div className="flex items-end gap-2">
+                  <p className="text-2xl font-bold">{sentiment?.escalation?.rate}%</p>
+                  <p className="text-xs text-red-500 mb-1 font-medium">Target &lt; 5%</p>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">N = {sentiment?.escalation?.total} leads có sentiment</p>
+              </CardContent>
+            </Card>
+            <Card 
+              className="cursor-pointer hover:shadow-md transition-all"
+              onClick={() => onDrilldown("Angry Leads", sentiment?.escalation?.angryIds || [])}
+            >
+              <CardContent className="pt-4">
+                <p className="text-xs text-muted-foreground font-medium">Angry Count</p>
+                <p className="text-2xl font-bold text-red-600">{sentiment?.escalation?.angry}</p>
+                <Progress value={(sentiment?.escalation?.angry / (sentiment?.escalation?.total || 1)) * 100} className="h-1 mt-2" />
+              </CardContent>
+            </Card>
+            <Card 
+              className="cursor-pointer hover:shadow-md transition-all"
+              onClick={() => onDrilldown("Want Human Leads", sentiment?.escalation?.wantHumanIds || [])}
+            >
+              <CardContent className="pt-4">
+                <p className="text-xs text-muted-foreground font-medium">Want Human</p>
+                <p className="text-2xl font-bold text-indigo-600">{sentiment?.escalation?.wantHuman}</p>
+                <Progress value={(sentiment?.escalation?.wantHuman / (sentiment?.escalation?.total || 1)) * 100} className="h-1 mt-2" />
+              </CardContent>
+            </Card>
+            <Card className="bg-gray-50/50">
+              <CardContent className="pt-4">
+                <p className="text-xs text-muted-foreground font-medium">Ghosting Proxy</p>
+                <p className="text-2xl font-bold text-slate-600">{sentiment?.ghostingProxy?.rate}%</p>
+                <p className="text-[10px] text-muted-foreground mt-1">{sentiment?.ghostingProxy?.count} active leads &gt; 48h im lặng</p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -854,9 +884,23 @@ export function AiFunnelDashboard({
   onFilterChange,
   hideHeader = false
 }: AiFunnelDashboardProps) {
-  const picList = data?.picList || []
+  const [drilldown, setDrilldown] = useState<{ title: string, subtitle?: string, carIds: string[] } | null>(null)
+
+  const handleDrilldown = (title: string, carIds: string[], subtitle?: string) => {
+    if (!carIds || carIds.length === 0) return
+    setDrilldown({ title, subtitle, carIds })
+  }
+
   return (
     <div className="min-h-screen bg-background">
+      <DrilldownPanel
+        isOpen={!!drilldown}
+        onClose={() => setDrilldown(null)}
+        title={drilldown?.title || ""}
+        subtitle={drilldown?.subtitle}
+        carIds={drilldown?.carIds || []}
+      />
+
       {/* Header */}
       {!hideHeader && (
         <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -880,23 +924,6 @@ export function AiFunnelDashboard({
                 onDateRangeChange={(range) => onFilterChange?.({ dateRange: range })}
                 className="w-[260px] h-9 text-xs"
               />
-
-              <Select 
-                value={filters?.picId || "all"} 
-                onValueChange={(val) => onFilterChange?.({ picId: val })}
-              >
-                <SelectTrigger className="w-[180px] h-9 text-xs">
-                  <SelectValue placeholder="Chọn PIC" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tất cả PIC</SelectItem>
-                  {picList.map((pic: any) => (
-                    <SelectItem key={pic.id} value={pic.id}>
-                      {pic.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </div>
         </header>
@@ -919,49 +946,49 @@ export function AiFunnelDashboard({
 
         {data && (
           <Tabs defaultValue="volume">
-          <TabsList className="w-full justify-start overflow-x-auto flex-nowrap">
-            <TabsTrigger value="volume" className="gap-1.5">
-              <Users className="h-3.5 w-3.5" />
-              Volume
-            </TabsTrigger>
-            <TabsTrigger value="conversion" className="gap-1.5">
-              <TrendingUp className="h-3.5 w-3.5" />
-              Conversion
-            </TabsTrigger>
-            <TabsTrigger value="sla" className="gap-1.5">
-              <Clock className="h-3.5 w-3.5" />
-              SLA & Speed
-            </TabsTrigger>
-            <TabsTrigger value="quality" className="gap-1.5">
-              <Shield className="h-3.5 w-3.5" />
-              AI Quality
-            </TabsTrigger>
-            <TabsTrigger value="pic" className="gap-1.5">
-              <UserCheck className="h-3.5 w-3.5" />
-              Theo PIC
-            </TabsTrigger>
-          </TabsList>
+            <TabsList className="w-full justify-start overflow-x-auto flex-nowrap">
+              <TabsTrigger value="volume" className="gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                Volume
+              </TabsTrigger>
+              <TabsTrigger value="conversion" className="gap-1.5">
+                <TrendingUp className="h-3.5 w-3.5" />
+                Conversion
+              </TabsTrigger>
+              <TabsTrigger value="sla" className="gap-1.5">
+                <Clock className="h-3.5 w-3.5" />
+                SLA & Speed
+              </TabsTrigger>
+              <TabsTrigger value="quality" className="gap-1.5">
+                <Shield className="h-3.5 w-3.5" />
+                AI Quality
+              </TabsTrigger>
+              <TabsTrigger value="pic" className="gap-1.5">
+                <UserCheck className="h-3.5 w-3.5" />
+                Theo PIC
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="volume" className="mt-6">
-            <VolumeSection data={data} />
-          </TabsContent>
+            <TabsContent value="volume" className="mt-6">
+              <VolumeSection data={data} onDrilldown={handleDrilldown} />
+            </TabsContent>
 
-          <TabsContent value="conversion" className="mt-6">
-            <ConversionSection data={data} />
-          </TabsContent>
+            <TabsContent value="conversion" className="mt-6">
+              <ConversionSection data={data} onDrilldown={handleDrilldown} />
+            </TabsContent>
 
-          <TabsContent value="sla" className="mt-6">
-            <SlaSection data={data} />
-          </TabsContent>
+            <TabsContent value="sla" className="mt-6">
+              <SlaSection data={data} />
+            </TabsContent>
 
-          <TabsContent value="quality" className="mt-6">
-            <QualitySection data={data} />
-          </TabsContent>
+            <TabsContent value="quality" className="mt-6">
+              <QualitySection data={data} onDrilldown={handleDrilldown} filters={filters} />
+            </TabsContent>
 
-          <TabsContent value="pic" className="mt-6">
-            <PicSection data={data} />
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="pic" className="mt-6">
+              <PicSection data={data} />
+            </TabsContent>
+          </Tabs>
         )}
       </main>
     </div>

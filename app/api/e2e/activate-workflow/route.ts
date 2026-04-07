@@ -136,8 +136,9 @@ export async function POST(request: Request) {
         sla_deadline,
         transition_properties,
         ai_insight_id,
-        is_aligned_with_ai
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        is_aligned_with_ai,
+        triggered_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'user')
       RETURNING id`,
       [
         carId,

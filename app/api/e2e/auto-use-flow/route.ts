@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { e2eQuery, vucarV2Query } from "@/lib/db"
-import { storeAgentOutput, getActiveAgentNote } from "@/lib/ai-agent-service"
+import { e2eQuery, vucarV2Query, getE2ePool } from "@/lib/db"
+import { storeAgentOutput, getActiveAgentNote, getPicAgentConfig } from "@/lib/ai-agent-service"
 import { getAgentTools, executeToolCall } from "@/lib/agent-tools"
 import { searchPicRAG, getLastCustomerMessage, formatRAGExamples } from "@/lib/pic-rag-search"
 
@@ -392,7 +392,6 @@ async function callGeminiForParameters(
   picId: string,
   carId: string,
   phoneNumber: string,
-  workerAgentNote?: string | null,
   ragExamplesContext?: string | null
 ): Promise<any[]> {
   const geminiHost = process.env.GEMINI_HOST || "https://generativelanguage.googleapis.com"
@@ -407,6 +406,12 @@ async function callGeminiForParameters(
   const todayInfo = `Current date and time (Vietnam UTC+7): ${vnTime.toISOString().replace('T', ' ').slice(0, 19)}, ${['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][vnTime.getUTCDay()]}`
 
   const url = `${geminiHost}/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`
+
+  const [picPrompt, agentNote] = await Promise.all([
+    getPicAgentConfig("Worker (Parameter/Rule)", picId),
+    getActiveAgentNote("Worker (Parameter/Rule)"),
+  ])
+  const baseSystemPrompt = `${picPrompt || ''}${agentNote ? `\n\n### Cấu Hình Bổ Sung (System Preferences):\n${agentNote}` : ''}`
 
   const results: any[] = []
 
@@ -429,95 +434,10 @@ Decided parameters: ${JSON.stringify(prevResult.parameters, null, 2)}
 `
     }
 
-    const systemPrompt = `${workerAgentNote ? `### Cấu Hình Bổ Sung (System Preferences):\n${workerAgentNote}\n\n` : ''}Role: Bạn là một Trợ lý Bán hàng (Sales Agent) chuyên nghiệp tại Vucar. Nhiệm vụ của bạn là trích xuất dữ liệu từ kịch bản tư vấn để điều phối quy trình qua API.
+    const systemPrompt = idx > 0
+      ? baseSystemPrompt + "\n- Phải được đặt SAU thời điểm của bước trước đó."
+      : baseSystemPrompt
 
-Objective: Xác định đúng hành động (Action) và điền tham số (parameters). Đặc biệt lưu ý tính toán thời gian scheduled_at dựa trên trình tự các bước.
-
-1. Nguyên tắc lập lịch (Scheduling Logic)
-
-Tham chiếu: scheduled_at phải dựa trên thời gian hiện tại và thời gian của bước ngay trước đó (cho các Step sau). Ví dụ ngày hiện tại là "2026-02-22T18:00:00" và timing là "1-2 ngày sau", thì scheduled_at là "2026-02-23T18:00:00". Ví dụ nếu step 2 có thời gian là "2026-02-23T18:00:00", thì step 3 với timing "Trong vòng 4-5 giờ sau khi gửi thông tin thị trường và báo cáo kiểm định" sẽ có scheduled vào "2026-02-23T22:00:00"
-
-Tuyệt đối luôn xem xét kĩ lưỡng scheduled_at, tránh bỏ trống dữ liệu này, điền dữ liệu cần hợp lí theo tham chiếu.
-
-Tính toán khoảng cách: * Dựa vào mục "timing" trong input (VD: "sau 1 ngày", "sau 2 giờ").
-
-Quy tắc Sub-steps: Nếu một Step yêu cầu 2 hành động (ví dụ: Gửi Script và Tạo phiên đấu giá), hành động thứ hai phải được đặt scheduled_at sau hành động thứ nhất đúng 30 phút.
-
-Ràng buộc thời gian: * Định dạng: ISO 8601 với offset +07:00 (VD: "2026-02-24T18:00:00+07:00").
-
-Chỉ đặt lịch trong khung 08:00 - 22:00. Nếu thời gian tính toán rơi vào sau 22:00, phải tự động dời sang 08:00 sáng ngày hôm sau.
-
-Nếu bước đầu tiên yêu cầu "Ngay lập tức", đặt scheduled_at: null.
-
-2. Quy định về API
-API 1: Gửi Kịch Bản Tư Vấn (Gui Script)
-Sử dụng khi cần gửi tin nhắn chăm sóc khách hàng hoặc kịch bản bán hàng có sẵn.
-- picId (String): ID của nhân viên phụ trách.
-- messages (Array of Strings): Danh sách các câu thoại/tin nhắn cần gửi.
-- customer_phone (String): Số điện thoại khách hàng (định dạng Việt Nam).
-
-API 2: Tạo Phiên Đấu Giá (Create Bidding Session)
-Sử dụng khi bắt đầu đưa một chiếc xe lên sàn đấu giá.
-- carId (String): ID định danh của chiếc xe.
-- duration (Integer): Thời gian đấu giá (tính bằng giờ).
-- minPrice (Integer): Giá khởi điểm (VNĐ).
-- shouldGenerateMetadata (Object): Cấu hình tự động tạo nội dung.
-
-3. Giọng văn & Thuật ngữ (Tone & Terminology)
-- Tự nhiên, thân thiện, giống người thật.
-- TUYỆT ĐỐI KHÔNG dùng từ "dealer". Hãy dùng "người mua".
-- Nhấn mạnh: Giúp khách bán giá CAO NHẤT, rủi ro THẤP NHẤT.
-- Ngắn gọn: Mỗi tin nhắn dưới 500 ký tự.
-- Tuyệt đối KHÔNG tự giới thiệu lại thông tin như "Chào anh, em là Huy Hồ từ Vucar"
-- Tránh giữ nguyên các biến số như: "[Dải giá thị trường hợp lý, ví dụ: từ 700-800 triệu VND nếu xe đẹp, hoặc thấp hơn nếu xe có vấn đề theo kiểm định và anh đã xác minh là do lỗi xe]"
-- Chỉ đổi giọng văn, phải tuân theo các giá trị từ thông tin của lead, không được đưa thông tin ảo, đặc biệt là về giá xe.
-- Khi tin nhắn liên quan đến giá, hãy luôn dựa vào 3 thông tin price customer, price highest bid, và giá tìm kiếm từ google search (giá bán ra), để có chiến lược tư vấn giá và đàm phán tốt nhất dựa trên hoàn cảnh.
-- Nên tách các tin nhắn thành nhiều tin nhắn nhỏ, nếu tin nhắn gốc dài.
-
-4. QUY TẮC MESSAGES — Bắt buộc tuyệt đối:
-
-KHÔNG tự tạo nội dung messages trong 2 trường hợp sau:
-
-4. 1. Script = null hoặc rỗng ("", " "):
-   → KHÔNG điền messages.
-   → Trả về lỗi:
-     {
-       "scheduled_at": null,
-       "error": "script_missing",
-       "reason": "script null hoặc rỗng — Worker không tự tạo nội dung."
-     }
-
-4. 2. Action không thuộc các loại sau:
-     • "send_message"
-     • "Gửi tin nhắn"
-     • "Gửi Zalo"
-     • "send_zalo_message"
-     • "Zalo Message"
-   → KHÔNG điền messages dù script có nội dung hay không.
-   → Bỏ qua field messages hoàn toàn, xử lý theo action_type tương ứng.
-
-Trong mọi trường hợp khác: lấy nguyên nội dung từ field script của Planner,
-không chỉnh sửa, không paraphrase, không bổ sung thêm bất kỳ nội dung nào.
-
-5. Định dạng đầu ra (Output Format)
-CHỈ trả về MỘT object JSON duy nhất:
-{
-  "scheduled_at": "ISO string hoặc null",
-  "parameters": { ... }
-}
-
-6. Tra cứu giá xe (Price Lookup Tool)
-- Khi tin nhắn cần đề cập đến giá xe, giá thị trường, hoặc khi cần đàm phán giá → gọi tool lookup_car_market_price với brand, model, year của xe khách hàng.
-- Tool sẽ kiểm tra xe có trong hệ thống Vucar không và trả về giá các xe tương tự đang rao bán.
-- Kết hợp giá từ tool với price_customer và price_highest_bid để có chiến lược tư vấn giá tốt nhất.
-- Nếu tool trả về found=false, KHÔNG đề cập giá thị trường trong tin nhắn.
-
-7. Kiểm tra lịch kiểm định (Booking Tool)
-- Khi bước yêu cầu hẹn lịch kiểm định xe → LUÔN gọi tool get_bookings_and_leave với ngày dự kiến để kiểm tra slot trống.
-- Dựa vào kết quả trả về, chọn thời gian inspector còn trống và đề xuất cho khách.
-- Nếu ngày đó đã kín lịch, thử ngày tiếp theo.
-
-CHỈ TRẢ VỀ JSON, KHÔNG GIẢI THÍCH.`
 
     const ragSection = ragExamplesContext ? `\n=== RAG EXAMPLES (Similar successful conversations from this PIC) ===\nDưới đây là các ví dụ từ những cuộc hội thoại thành công tương tự, hãy tham khảo phong cách và cách tiếp cận:\n${ragExamplesContext}\n` : ""
 
@@ -707,7 +627,6 @@ export async function POST(request: Request) {
     ])
 
     // --- 4. Call Gemini to decide parameters ---
-    const workerAgentNote = await getActiveAgentNote("Worker (Parameter/Rule)")
     const geminiResults = await callGeminiForParameters(
       extractedSteps,
       stepSchemas,
@@ -715,7 +634,6 @@ export async function POST(request: Request) {
       picId,
       carId,
       phoneNumber,
-      workerAgentNote,
       ragExamplesContext
     )
 
@@ -793,20 +711,31 @@ export async function POST(request: Request) {
       createdSteps.push(stepResult.rows[0])
     }
 
-    // 6. Terminate existing "running" instances for this car
+    // 6. Terminate existing + create new instance atomically to prevent race conditions
     console.log(`[Auto Use Flow] Terminating existing running workflows for car ${carId}...`)
-    await e2eQuery(
-      `UPDATE workflow_instances SET status = 'terminated' WHERE car_id = $1 AND status = 'running'`,
-      [carId]
-    )
-
-    const instanceResult = await e2eQuery(
-      `INSERT INTO workflow_instances (car_id, workflow_id, current_step_id, status, started_at)
-       VALUES ($1, $2, $3, 'running', NOW())
-       RETURNING *`,
-      [carId, workflow.id, createdSteps[0].id]
-    )
-    const instance = instanceResult.rows[0]
+    const pool = getE2ePool()
+    const client = await pool.connect()
+    let instance: any
+    try {
+      await client.query("BEGIN")
+      await client.query(
+        `UPDATE workflow_instances SET status = 'terminated' WHERE car_id = $1 AND status = 'running'`,
+        [carId]
+      )
+      const instanceResult = await client.query(
+        `INSERT INTO workflow_instances (car_id, workflow_id, current_step_id, status, started_at, triggered_by)
+         VALUES ($1, $2, $3, 'running', NOW(), 'ai')
+         RETURNING *`,
+        [carId, workflow.id, createdSteps[0].id]
+      )
+      await client.query("COMMIT")
+      instance = instanceResult.rows[0]
+    } catch (txErr) {
+      await client.query("ROLLBACK")
+      throw txErr
+    } finally {
+      client.release()
+    }
 
     for (let i = 0; i < createdSteps.length; i++) {
       await e2eQuery(

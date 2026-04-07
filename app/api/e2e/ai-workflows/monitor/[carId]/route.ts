@@ -52,7 +52,7 @@ export async function GET(
       [carId]
     )
 
-    const VN_7H = 7 * 60 * 60 * 1000
+    const VN_7H = 0 * 60 * 60 * 1000
 
     /**
      * scheduled_at is stored as VN local time (Gemini raw output or NOW()+7h),

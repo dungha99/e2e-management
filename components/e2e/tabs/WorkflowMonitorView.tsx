@@ -46,7 +46,7 @@ interface MonitorInstance {
 // Timestamps are stored as VN local time in the DB (Gemini output stored raw, or
 // via NOW() + INTERVAL '7 hours'). pg reads them as UTC Date objects, so the value
 // is already +7h. Displaying as VN time requires another +7h → 14h total.
-const VN_OFFSET_MS = 0 * 60 * 60 * 1000
+const VN_OFFSET_MS = 7 * 60 * 60 * 1000
 
 function toVnDate(iso: string): Date {
   return new Date(new Date(iso).getTime() + VN_OFFSET_MS)

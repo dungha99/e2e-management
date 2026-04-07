@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { submitAiFeedback } from "@/lib/insight-feedback-service"
-import { storeAgentOutput, getActiveAgentNote, getPicAgentConfig } from "@/lib/ai-agent-service"
+import { storeAgentOutput, getActiveAgentNote, getPicAgentConfig, getCarAgentMemory } from "@/lib/ai-agent-service"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -190,16 +190,18 @@ async function evaluateSingleItem(phone: string, autoChatOutput: any) {
   const existingInsight = insightResult.rows[0]?.ai_insight_summary
 
   // --- 3. Call Gemini to evaluate ---
-  const [picPrompt, evalAgentNote] = await Promise.all([
+  const [picPrompt, evalAgentNote, agentMemory] = await Promise.all([
     getPicAgentConfig("Evaluate-step", lead.pic_id || ""),
     getActiveAgentNote("Evaluate-step"),
+    getCarAgentMemory(car.id).catch(() => null),
   ])
   const evalSystemPrompt = `${picPrompt || ''}${evalAgentNote ? `\n\n### Cấu Hình Bổ Sung (System Preferences):\n${evalAgentNote}` : ''}`
   const geminiResult = await callGeminiEvaluation(
     step,
     autoChatOutput,
     existingInsight,
-    evalSystemPrompt
+    evalSystemPrompt,
+    agentMemory
   )
 
   console.log(
@@ -261,7 +263,8 @@ async function callGeminiEvaluation(
     message_suggestions?: string[]
   },
   existingInsight?: any,
-  agentNote?: string | null
+  agentNote?: string | null,
+  agentMemory?: string | null
 ): Promise<{ thinking: string; verdict: "on_track" | "deviated" }> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error("GEMINI_API_KEY missing")
@@ -276,7 +279,9 @@ async function callGeminiEvaluation(
 
   const systemPrompt = agentNote || ""
 
-  const userPrompt = `## THÔNG TIN BƯỚC HIỆN TẠI
+  const memorySection = agentMemory ? `${agentMemory}\n\n` : ""
+
+  const userPrompt = `${memorySection}## THÔNG TIN BƯỚC HIỆN TẠI
 Tên bước: ${step.step_name}
 Mô tả chi tiết:
 ${stepDescription}

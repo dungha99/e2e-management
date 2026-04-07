@@ -514,6 +514,6 @@ export function AgentTracingTab({ selectedLead }: AgentTracingTabProps) {
           </div>
         )}
       </div>
-    </div >
+    </div>
   )
 }

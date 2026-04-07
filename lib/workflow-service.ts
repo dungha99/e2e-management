@@ -1,5 +1,5 @@
 import { vucarV2Query, e2eQuery } from "./db"
-import { storeAgentOutput, getActiveAgentNote, getPicAgentConfig } from "./ai-agent-service"
+import { storeAgentOutput, getActiveAgentNote, getPicAgentConfig, getCarAgentMemory } from "./ai-agent-service"
 import { getAgentTools, executeToolCall } from "./agent-tools"
 import { searchPicRAG, getLastCustomerMessage, formatRAGExamples } from "./pic-rag-search"
 
@@ -260,7 +260,7 @@ export async function handleAutoUseFlow(params: {
     // 3. Load connector schemas + RAG examples in parallel
     console.log(`[handleAutoUseFlow] Loading connector schemas and RAG examples...`)
     const schemaStart = Date.now()
-    const [stepSchemas, ragExamplesContext] = await Promise.all([
+    const [stepSchemas, ragExamplesContext, agentMemory] = await Promise.all([
       Promise.all(extractedSteps.map(step => loadConnectorSchema(step.connectorId))),
       (async () => {
         try {
@@ -283,6 +283,10 @@ export async function handleAutoUseFlow(params: {
           return null
         }
       })(),
+      getCarAgentMemory(carId).catch((err) => {
+        console.error("[handleAutoUseFlow] Agent memory fetch failed (non-blocking):", err)
+        return null
+      }),
     ])
     console.log(`[handleAutoUseFlow] Schemas + RAG loaded in ${Date.now() - schemaStart}ms`)
     console.log(`[handleAutoUseFlow] ragExamplesContext: ${ragExamplesContext ? `${ragExamplesContext.length} chars` : "null"}`)
@@ -296,7 +300,8 @@ export async function handleAutoUseFlow(params: {
       picId || "",
       carId,
       phoneNumber,
-      ragExamplesContext
+      ragExamplesContext,
+      agentMemory
     )
     console.log(`[handleAutoUseFlow] Gemini returned ${geminiResults?.length} results`)
 
@@ -305,7 +310,7 @@ export async function handleAutoUseFlow(params: {
       agentName: "Worker (Parameter/Rule)",
       carId,
       inputPayload: geminiResults.map((r: any) => r._prompt).join("\n\n=== NEXT STEP ===\n\n"),
-      outputPayload: geminiResults,
+      outputPayload: geminiResults.map(({ _prompt, ...rest }: any) => rest),
     }).catch(err => console.error("[handleAutoUseFlow] Failed to store Worker output:", err))
 
     // 5. Build payload
@@ -493,7 +498,8 @@ async function callGeminiForParameters(
   picId: string,
   carId: string,
   phoneNumber: string,
-  ragExamplesContext?: string | null
+  ragExamplesContext?: string | null,
+  agentMemory?: string | null
 ) {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error("GEMINI_API_KEY missing")
@@ -539,12 +545,13 @@ Decided parameters: ${JSON.stringify(prevResult.parameters, null, 2)}
       : baseSystemPrompt
 
     const ragSection = ragExamplesContext ? `\n=== RAG EXAMPLES (Similar successful conversations from this PIC) ===\nDưới đây là các ví dụ từ những cuộc hội thoại thành công tương tự, hãy tham khảo phong cách và cách tiếp cận:\n${ragExamplesContext}\n` : ""
+    const memorySection = agentMemory ? `\n${agentMemory}\n` : ""
 
     const userPrompt = `
 ${todayInfo}
 
 ${leadContext}
-${ragSection}
+${memorySection}${ragSection}
 ${previousStepContext}
 === CURRENT STEP TO FILL (Step ${idx + 1} of ${steps.length}) ===
 "${step.stepName}" (connector: ${step.connectorLabel})

@@ -46,7 +46,7 @@ interface MonitorInstance {
 // Timestamps are stored as VN local time in the DB (Gemini output stored raw, or
 // via NOW() + INTERVAL '7 hours'). pg reads them as UTC Date objects, so the value
 // is already +7h. Displaying as VN time requires another +7h → 14h total.
-const VN_OFFSET_MS = 14 * 60 * 60 * 1000
+const VN_OFFSET_MS = 7 * 60 * 60 * 1000
 
 function toVnDate(iso: string): Date {
   return new Date(new Date(iso).getTime() + VN_OFFSET_MS)
@@ -106,7 +106,7 @@ function stepStatusConfig(status: string) {
 
 // ─── Step Card ────────────────────────────────────────────────────────────────
 
-function StepCard({ step, isLast }: { step: MonitorStep; isLast: boolean }) {
+function StepCard({ step, isLast, effectiveScheduledAt }: { step: MonitorStep; isLast: boolean; effectiveScheduledAt: string | null }) {
   const [expanded, setExpanded] = useState(false)
   const exec = step.execution
   const rawStatus = exec?.status ?? "pending"
@@ -130,10 +130,10 @@ function StepCard({ step, isLast }: { step: MonitorStep; isLast: boolean }) {
       <div
         onClick={() => setExpanded(v => !v)}
         className={`rounded-xl border p-3 transition-all cursor-pointer select-none ${status === "failed" ? "border-red-200 bg-red-50/30 hover:bg-red-50/50" :
-            status === "retrying" ? "border-orange-200 bg-orange-50/20 hover:bg-orange-50/40" :
-              status === "pending" ? "border-amber-200 bg-amber-50/20 hover:bg-amber-50/40" :
-                status === "success" ? "border-emerald-200 bg-white hover:bg-emerald-50/20" :
-                  "border-gray-200 bg-white hover:bg-gray-50"
+          status === "retrying" ? "border-orange-200 bg-orange-50/20 hover:bg-orange-50/40" :
+            status === "pending" ? "border-amber-200 bg-amber-50/20 hover:bg-amber-50/40" :
+              status === "success" ? "border-emerald-200 bg-white hover:bg-emerald-50/20" :
+                "border-gray-200 bg-white hover:bg-gray-50"
           }`}
       >
         {/* Header row */}
@@ -143,19 +143,19 @@ function StepCard({ step, isLast }: { step: MonitorStep; isLast: boolean }) {
             <span className="text-sm font-medium text-gray-800 truncate">{step.stepName}</span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {(status === "pending" || status === "retrying") && exec?.scheduledAt && (
+            {(status === "pending" || status === "retrying") && effectiveScheduledAt && (
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full border flex items-center gap-1 ${status === "retrying"
-                  ? "text-orange-700 bg-orange-100 border-orange-200"
-                  : "text-amber-700 bg-amber-100 border-amber-200"
+                ? "text-orange-700 bg-orange-100 border-orange-200"
+                : "text-amber-700 bg-amber-100 border-amber-200"
                 }`}>
                 <Clock className="h-3 w-3" />
-                {formatRelative(exec.scheduledAt)}
+                {formatRelative(effectiveScheduledAt)}
               </span>
             )}
             {(status === "retrying" || status === "failed") && exec && exec.retryCount > 0 && (
               <span className={`text-xs px-2 py-0.5 rounded-full border ${status === "retrying"
-                  ? "text-orange-600 bg-orange-100 border-orange-200"
-                  : "text-red-600 bg-red-100 border-red-200"
+                ? "text-orange-600 bg-orange-100 border-orange-200"
+                : "text-red-600 bg-red-100 border-red-200"
                 }`}>
                 {exec.retryCount}/3 retries
               </span>
@@ -165,10 +165,10 @@ function StepCard({ step, isLast }: { step: MonitorStep; isLast: boolean }) {
         </div>
 
         {/* Scheduled time (full) for pending / retrying */}
-        {(status === "pending" || status === "retrying") && exec?.scheduledAt && (
+        {(status === "pending" || status === "retrying") && effectiveScheduledAt && (
           <div className={`mt-1 text-xs flex items-center gap-1 ${status === "retrying" ? "text-orange-600" : "text-amber-600"}`}>
             <span>{status === "retrying" ? "Thử lại lúc:" : "Lên lịch:"}</span>
-            <span className="font-mono">{formatVnTime(exec.scheduledAt)}</span>
+            <span className="font-mono">{formatVnTime(effectiveScheduledAt)}</span>
           </div>
         )}
 
@@ -230,8 +230,8 @@ function InstanceCard({ instance }: { instance: MonitorInstance }) {
 
   return (
     <div className={`rounded-xl border overflow-hidden shadow-sm ${instance.status === "running" ? "border-blue-200" :
-        instance.status === "failed" ? "border-red-200" :
-          "border-gray-200"
+      instance.status === "failed" ? "border-red-200" :
+        "border-gray-200"
       }`}>
       {/* Instance header */}
       <button
@@ -287,15 +287,32 @@ function InstanceCard({ instance }: { instance: MonitorInstance }) {
       {/* Steps */}
       {!collapsed && (
         <div className={`p-4 border-t space-y-0 ${instance.status === "running" ? "bg-blue-50/20" :
-            instance.status === "failed" ? "bg-red-50/10" :
-              "bg-gray-50/40"
+          instance.status === "failed" ? "bg-red-50/10" :
+            "bg-gray-50/40"
           }`}>
           {instance.steps.length === 0 ? (
             <p className="text-xs text-gray-400 text-center py-4">Không có bước nào</p>
           ) : (
-            instance.steps.map((step, idx) => (
-              <StepCard key={step.stepId} step={step} isLast={idx === instance.steps.length - 1} />
-            ))
+            instance.steps.map((step, idx) => {
+              // Compute effective scheduled time for unexecuted steps:
+              // - has its own scheduledAt → use it
+              // - first step with no scheduledAt → fall back to instance startedAt
+              // - later step with no scheduledAt → fall back to previous step's scheduledAt
+              const effectiveScheduledAt =
+                step.execution?.scheduledAt ??
+                (idx === 0
+                  ? instance.startedAt
+                  : instance.steps[idx - 1].execution?.scheduledAt ?? instance.startedAt)
+
+              return (
+                <StepCard
+                  key={step.stepId}
+                  step={step}
+                  isLast={idx === instance.steps.length - 1}
+                  effectiveScheduledAt={effectiveScheduledAt}
+                />
+              )
+            })
           )}
         </div>
       )}

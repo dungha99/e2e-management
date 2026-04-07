@@ -52,16 +52,30 @@ export async function GET(
       [carId]
     )
 
+    const VN_7H = 7 * 60 * 60 * 1000
+
     /**
-     * Normalise a pg timestamp (Date object or string) to a UTC ISO string.
-     * pg returns TIMESTAMP WITHOUT TIME ZONE columns as Date objects whose
-     * internal UTC value equals the stored text — i.e. UTC.
+     * scheduled_at is stored as VN local time (Gemini raw output or NOW()+7h),
+     * so pg reads it as UTC but the value already represents VN time.
+     * The component adds VN_OFFSET_MS (14h) to display correctly, so these
+     * timestamps need no adjustment here.
      */
     function toIso(raw: any): string | null {
       if (!raw) return null
       if (raw instanceof Date) return raw.toISOString()
       const d = new Date(String(raw))
       return isNaN(d.getTime()) ? null : d.toISOString()
+    }
+
+    /**
+     * started_at / completed_at / executed_at come from NOW() on Vercel — true UTC.
+     * Shift +7h here so they match the scheduled_at format (VN local time stored as UTC),
+     * making the component's +14h consistent across all timestamps.
+     */
+    function toUtcShiftedIso(raw: any): string | null {
+      const iso = toIso(raw)
+      if (!iso) return null
+      return new Date(new Date(iso).getTime() + VN_7H).toISOString()
     }
 
 
@@ -74,8 +88,8 @@ export async function GET(
           id: row.instance_id,
           status: row.instance_status,
           workflowName: row.workflow_name,
-          startedAt: toIso(row.started_at),
-          completedAt: toIso(row.completed_at),
+          startedAt: toUtcShiftedIso(row.started_at),
+          completedAt: toUtcShiftedIso(row.completed_at),
           triggeredBy: row.triggered_by,
           steps: [],
         })
@@ -97,8 +111,8 @@ export async function GET(
             id: row.exec_id,
             status: row.exec_status,
             scheduledAt: toIso(row.scheduled_at),
-            executedAt: toIso(row.executed_at),
-            completedAt: toIso(row.exec_completed_at),
+            executedAt: toUtcShiftedIso(row.executed_at),
+            completedAt: toUtcShiftedIso(row.exec_completed_at),
             messages: Array.isArray(requestPayload?.messages) ? requestPayload.messages : [],
             errorMessage: row.error_message,
             retryCount: row.retry_count ?? 0,

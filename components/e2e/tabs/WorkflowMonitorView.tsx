@@ -176,7 +176,12 @@ function StepCard({ step, isLast, effectiveScheduledAt }: { step: MonitorStep; i
         {(status === "pending" || status === "retrying") && effectiveScheduledAt && (
           <div className={`mt-1 text-xs flex items-center gap-1 ${status === "retrying" ? "text-orange-600" : "text-amber-600"}`}>
             <span>{status === "retrying" ? "Thử lại lúc:" : "Lên lịch:"}</span>
-            <span className="font-mono">{formatScheduledTime(effectiveScheduledAt)}</span>
+            <span className="font-mono">
+              {exec?.scheduledAt
+                ? formatScheduledTime(effectiveScheduledAt)  // real scheduledAt — VN local time, no offset
+                : formatVnTime(effectiveScheduledAt)          // fallback (startedAt / prev step) — true UTC, +7h
+              }
+            </span>
           </div>
         )}
 

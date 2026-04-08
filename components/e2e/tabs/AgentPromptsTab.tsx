@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Bot, ChevronDown, Pencil, Save, X, RotateCcw, History } from "lucide-react"
+import { Bot, Pencil, Save, X, RotateCcw, Globe } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
@@ -13,6 +13,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
+
+const ADMIN_PIC_IDS = new Set([
+  "9ee91b08-448b-4cf4-8b3d-79c6f1c71fef",
+  "2ffa8389-2641-4d8b-98a6-5dc2dd2d20a4",
+])
 
 interface Agent {
   id: string
@@ -44,6 +49,14 @@ export function AgentPromptsTab({ picId }: AgentPromptsTabProps) {
   const [loadingConfig, setLoadingConfig] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  // Global prompt state (admin PICs only)
+  const isAdmin = !!picId && ADMIN_PIC_IDS.has(picId)
+  const [globalConfig, setGlobalConfig] = useState<{ id: string; version: number; prompt: string; createdAt: string } | null>(null)
+  const [loadingGlobal, setLoadingGlobal] = useState(false)
+  const [editingGlobal, setEditingGlobal] = useState(false)
+  const [globalDraft, setGlobalDraft] = useState("")
+  const [savingGlobal, setSavingGlobal] = useState(false)
 
   // Load agent list once
   useEffect(() => {
@@ -88,6 +101,27 @@ export function AgentPromptsTab({ picId }: AgentPromptsTabProps) {
   useEffect(() => {
     fetchConfig()
   }, [fetchConfig])
+
+  const fetchGlobalConfig = useCallback(async () => {
+    if (!selectedAgentId || !isAdmin || !picId) return
+    setLoadingGlobal(true)
+    setEditingGlobal(false)
+    try {
+      const res = await fetch(
+        `/api/e2e/ai-agents/global-prompt?agentId=${selectedAgentId}&requestingPicId=${encodeURIComponent(picId)}`
+      )
+      const data = await res.json()
+      setGlobalConfig(data.success ? data.config : null)
+    } catch {
+      setGlobalConfig(null)
+    } finally {
+      setLoadingGlobal(false)
+    }
+  }, [selectedAgentId, isAdmin, picId])
+
+  useEffect(() => {
+    fetchGlobalConfig()
+  }, [fetchGlobalConfig])
 
   function startEditing() {
     setDraft(config?.prompt ?? "")
@@ -142,6 +176,30 @@ export function AgentPromptsTab({ picId }: AgentPromptsTabProps) {
       toast({ title: "Lỗi kết nối", variant: "destructive" })
     } finally {
       setDeleting(false)
+    }
+  }
+
+  async function saveGlobalPrompt() {
+    if (!selectedAgentId || !picId || !globalDraft.trim()) return
+    setSavingGlobal(true)
+    try {
+      const res = await fetch("/api/e2e/ai-agents/global-prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentId: selectedAgentId, prompt: globalDraft.trim(), requestingPicId: picId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast({ title: `Global prompt đã lưu v${data.version}` })
+        setEditingGlobal(false)
+        fetchGlobalConfig()
+      } else {
+        toast({ title: "Lưu thất bại", description: data.error, variant: "destructive" })
+      }
+    } catch {
+      toast({ title: "Lỗi kết nối", variant: "destructive" })
+    } finally {
+      setSavingGlobal(false)
     }
   }
 
@@ -300,6 +358,81 @@ export function AgentPromptsTab({ picId }: AgentPromptsTabProps) {
             </div>
           )}
         </>
+      )}
+
+      {/* ── Global Prompt (admin PICs only) ─────────────────────────── */}
+      {isAdmin && selectedAgentId && (
+        <div className="flex flex-col gap-3 pt-3 border-t border-gray-100">
+          {/* Section header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Globe className="h-3.5 w-3.5 text-amber-500" />
+              <span className="text-xs font-semibold text-gray-700">Global Prompt</span>
+              {globalConfig && (
+                <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-xs ml-1">
+                  v{globalConfig.version} · {new Date(globalConfig.createdAt).toLocaleDateString("vi-VN")}
+                </Badge>
+              )}
+            </div>
+            {!editingGlobal && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                onClick={() => { setGlobalDraft(globalConfig?.prompt ?? ""); setEditingGlobal(true) }}
+                disabled={loadingGlobal}
+              >
+                <Pencil className="h-3 w-3 mr-1" />
+                {globalConfig ? "Chỉnh sửa" : "Tạo mới"}
+              </Button>
+            )}
+          </div>
+
+          {loadingGlobal ? (
+            <div className="h-20 animate-pulse rounded-md bg-gray-100" />
+          ) : !editingGlobal ? (
+            globalConfig ? (
+              <div className="rounded-md border border-amber-100 bg-amber-50/40 p-3 text-xs text-gray-700 whitespace-pre-wrap font-mono leading-relaxed max-h-64 overflow-y-auto scrollbar-hide">
+                {globalConfig.prompt}
+              </div>
+            ) : (
+              <div className="rounded-md border border-dashed border-amber-200 bg-amber-50/30 p-4 text-center text-xs text-gray-400">
+                Chưa có global prompt cho <strong>{selectedAgent?.name}</strong>.
+              </div>
+            )
+          ) : (
+            <div className="flex flex-col gap-2">
+              <Textarea
+                className="font-mono text-xs min-h-[280px] resize-none leading-relaxed border-amber-200 focus-visible:ring-amber-400"
+                placeholder="Nhập global system prompt..."
+                value={globalDraft}
+                onChange={(e) => setGlobalDraft(e.target.value)}
+                autoFocus
+              />
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs"
+                  onClick={() => setEditingGlobal(false)}
+                  disabled={savingGlobal}
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  Hủy
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-7 text-xs bg-amber-500 hover:bg-amber-600 text-white"
+                  onClick={saveGlobalPrompt}
+                  disabled={savingGlobal || !globalDraft.trim()}
+                >
+                  <Save className="h-3 w-3 mr-1" />
+                  {savingGlobal ? "Đang lưu..." : "Lưu Global"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   )

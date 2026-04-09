@@ -176,11 +176,11 @@ export function getE2ePool(): Pool {
 export function getFollowupDataPool(): Pool {
   if (!globalForDb.followupDataPool) {
     globalForDb.followupDataPool = new Pool({
-      host: process.env.E2E_DB_HOST,
-      port: parseInt(process.env.E2E_DB_PORT || "5432"),
-      database: "followup_data",
-      user: process.env.E2E_DB_USER,
-      password: process.env.E2E_DB_PASSWORD,
+      host: process.env.FOLLOWUP_DB_HOST,
+      port: parseInt(process.env.FOLLOWUP_DB_PORT || "5432"),
+      database: process.env.FOLLOWUP_DB_NAME,
+      user: process.env.FOLLOWUP_DB_USER,
+      password: process.env.FOLLOWUP_DB_PASSWORD,
       ssl: { rejectUnauthorized: false },
       max: 15,
       idleTimeoutMillis: 10000,

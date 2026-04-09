@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo } from "react"
-import { Bot, Target, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, History, BrainCircuit, Hand, Power, Play, RefreshCw } from "lucide-react"
+import { Bot, Target, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, History, BrainCircuit, Hand, Power, Play } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -213,8 +213,6 @@ export function AiThinkingChat({
   // External Action States
   const [isBlacklisted, setIsBlacklisted] = useState(false)
   const [togglingBlacklist, setTogglingBlacklist] = useState(false)
-  const [retriggeringAi, setRetriggeringAi] = useState(false)
-
   // Fetch Backlist status on mount or carId change
   useEffect(() => {
     async function fetchBlacklistStatus() {
@@ -256,52 +254,6 @@ export function AiThinkingChat({
       toast({ title: "Lỗi", description: "Lỗi hệ thống", variant: "destructive" })
     } finally {
       setTogglingBlacklist(false)
-    }
-  }
-
-  async function retriggerAi() {
-    if (!leadPhone || !carId) {
-      toast({ title: "Lỗi", description: "Không tìm thấy thông tin Lead", variant: "destructive" })
-      return
-    }
-
-    setRetriggeringAi(true)
-    try {
-      const res = await fetch("/api/e2e/retrigger", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: leadPhone, carId }),
-      })
-
-      // Read stream to completion (heartbeat-based streaming)
-      let resultText = ""
-      if (res.body) {
-        const reader = res.body.getReader()
-        const decoder = new TextDecoder()
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          resultText += decoder.decode(value, { stream: true })
-        }
-      } else {
-        resultText = await res.text()
-      }
-
-      // Parse the final JSON from the stream (skip heartbeat newlines)
-      const jsonStr = resultText.trim()
-      const lastJsonStart = jsonStr.lastIndexOf("{")
-      const data = lastJsonStart >= 0 ? JSON.parse(jsonStr.substring(lastJsonStart)) : { success: false, error: "No response" }
-
-      if (data.success) {
-        toast({
-          title: "Thành công ✅",
-          description: `Đã gửi ${data.totalMessagesSent} tin nhắn tự động cho khách hàng.`,
-        })
-      }
-    } catch (err) {
-      console.error("Failed to retrigger:", err)
-    } finally {
-      setRetriggeringAi(false)
     }
   }
 
@@ -813,19 +765,6 @@ export function AiThinkingChat({
               <span className="text-xs text-gray-500">Tự kích hoạt</span>
             </label>
           )}
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs px-3 border-orange-300 text-orange-600 hover:bg-orange-50 shadow-sm"
-            onClick={retriggerAi}
-            disabled={retriggeringAi}
-          >
-            {retriggeringAi
-              ? <><Loader2 className="h-3 w-3 animate-spin mr-1" />Đang xử lý...</>
-              : <><RefreshCw className="h-3 w-3 mr-1" />RE-TRIGGER</>
-            }
-          </Button>
 
           {isBlacklisted ? (
             <Button

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { vucarV2Query } from "@/lib/db"
+import { vucarV2Query, e2eQuery } from "@/lib/db"
 import { fetchZaloChatHistory } from "@/lib/chat-history-service"
 
 export const dynamic = "force-dynamic"
@@ -84,6 +84,20 @@ export async function POST(request: Request) {
         if (!picId) {
           controller.enqueue(encoder.encode(JSON.stringify(
             { success: false, error: "Could not resolve picId for this car" }
+          )))
+          return
+        }
+
+        // --- 1b. Guard: block concurrent retrigger calls for the same car ---
+        const lockCheck = await e2eQuery(
+          `SELECT ai_insight_summary, EXTRACT(EPOCH FROM (NOW() - created_at)) AS age_seconds
+           FROM ai_insights WHERE car_id = $1 ORDER BY created_at DESC LIMIT 1`,
+          [carId]
+        )
+        const lockRow = lockCheck.rows[0]
+        if (lockRow?.ai_insight_summary?.processing === true && parseFloat(lockRow.age_seconds) < 180) {
+          controller.enqueue(encoder.encode(JSON.stringify(
+            { success: false, processing: true, error: "AI đang xử lý cho lead này, vui lòng thử lại sau" }
           )))
           return
         }

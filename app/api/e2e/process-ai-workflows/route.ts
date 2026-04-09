@@ -3,7 +3,7 @@ import { e2eQuery, vucarV2Query } from "@/lib/db"
 import { submitAiFeedback } from "@/lib/insight-feedback-service"
 import { callGemini } from "@/lib/gemini"
 import { getAgentTools } from "@/lib/agent-tools"
-import { storeAgentOutput, getActiveAgentNote, getPicAgentConfig } from "@/lib/ai-agent-service"
+import { storeAgentOutput, getActiveAgentNote, getPicAgentConfig, getCarAgentMemory } from "@/lib/ai-agent-service"
 import { fetchZaloChatHistory } from "@/lib/chat-history-service"
 
 export const dynamic = 'force-dynamic'
@@ -267,8 +267,12 @@ export async function GET() {
 
 
                     const tacticalCommand = execution.description || execution.step_name
-                    const leadContext = await fetchLeadContext(instance.car_id || "")
-                    const prompt = `Lịch sử chat (100 tin nhắn gần nhất):\n${JSON.stringify(recentChat)}\n\nThông tin xe và Lead:\n${leadContext}\n\nTactical Command:\n${tacticalCommand}\n\nTin nhắn dự kiến sắp gửi:\n${JSON.stringify(requestPayload.messages)}\n\nHãy đánh giá và trả về JSON.`
+                    const [leadContext, agentMemory] = await Promise.all([
+                      fetchLeadContext(instance.car_id || ""),
+                      getCarAgentMemory(instance.car_id).catch(() => null),
+                    ])
+                    const memorySection = agentMemory ? `\n${agentMemory}\n\n` : ""
+                    const prompt = `Lịch sử chat (100 tin nhắn gần nhất):\n${JSON.stringify(recentChat)}\n\nThông tin xe và Lead:\n${leadContext}\n${memorySection}Tactical Command:\n${tacticalCommand}\n\nTin nhắn dự kiến sắp gửi:\n${JSON.stringify(requestPayload.messages)}\n\nHãy đánh giá và trả về JSON.`
 
                     const geminiResult = await callGemini(prompt, "gemini-3-flash-preview", systemPrompt, getAgentTools())
 

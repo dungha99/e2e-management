@@ -1,5 +1,5 @@
 import { e2eQuery, vucarV2Query, getE2ePool } from "@/lib/db"
-import { storeAgentOutput, getActiveAgentNote, getPicAgentConfig } from "@/lib/ai-agent-service"
+import { storeAgentOutput, getActiveAgentNote, getPicAgentConfig, getCarAgentMemory } from "@/lib/ai-agent-service"
 import { getAgentTools, executeToolCall } from "@/lib/agent-tools"
 import { searchPicRAG, getLastCustomerMessage, formatRAGExamples } from "@/lib/pic-rag-search"
 
@@ -375,7 +375,8 @@ async function callGeminiForParameters(
   picId: string,
   carId: string,
   phoneNumber: string,
-  ragExamplesContext?: string | null
+  ragExamplesContext?: string | null,
+  agentMemory?: string | null
 ): Promise<any[]> {
   const geminiHost = process.env.GEMINI_HOST || "https://generativelanguage.googleapis.com"
   const geminiApiKey = process.env.GEMINI_API_KEY
@@ -422,12 +423,13 @@ Decided parameters: ${JSON.stringify(prevResult.parameters, null, 2)}
 
 
     const ragSection = ragExamplesContext ? `\n=== RAG EXAMPLES (Similar successful conversations from this PIC) ===\nDưới đây là các ví dụ từ những cuộc hội thoại thành công tương tự, hãy tham khảo phong cách và cách tiếp cận:\n${ragExamplesContext}\n` : ""
+    const memorySection = agentMemory ? `\n${agentMemory}\n` : ""
 
     const userPrompt = `
 ${todayInfo}
 
 ${leadContext}
-${ragSection}
+${memorySection}${ragSection}
 ${previousStepContext}
 
 === CURRENT STEP TO FILL (Step ${idx + 1} of ${steps.length}) ===
@@ -577,7 +579,7 @@ export async function runAutoUseFlow(
     const phoneNumber = phoneResult.rows[0]?.phone || phoneResult.rows[0]?.additional_phone || ""
 
     // 3. Load connector schemas + RAG examples in parallel
-    const [stepSchemas, ragExamplesContext] = await Promise.all([
+    const [stepSchemas, ragExamplesContext, agentMemory] = await Promise.all([
       Promise.all(extractedSteps.map((step) => loadConnectorSchema(step.connectorId))),
       (async () => {
         try {
@@ -600,6 +602,10 @@ export async function runAutoUseFlow(
           return null
         }
       })(),
+      getCarAgentMemory(carId).catch((err) => {
+        console.error("[Auto Use Flow Service] Agent memory fetch failed (non-blocking):", err)
+        return null
+      }),
     ])
 
     // 4. Call Gemini to decide parameters
@@ -610,14 +616,15 @@ export async function runAutoUseFlow(
       picId || "",
       carId,
       phoneNumber,
-      ragExamplesContext
+      ragExamplesContext,
+      agentMemory
     )
 
     storeAgentOutput({
       agentName: "Worker (Parameter/Rule)",
       carId,
       inputPayload: { prompt: geminiResults.map((r: any) => r._prompt).join("\n\n=== NEXT STEP ===\n\n") },
-      outputPayload: geminiResults,
+      outputPayload: geminiResults.map(({ _prompt, ...rest }: any) => rest),
     }).catch((err) => console.error("[Auto Use Flow Service] Failed to store Worker output:", err))
 
     // 5. Build workflow creation payload

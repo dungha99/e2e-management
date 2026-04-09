@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, XCircle, DollarSign, Play, Zap, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp, Info } from "lucide-react"
+import { CheckCircle, XCircle, DollarSign, Play, Zap, MessageCircle, Loader2, Check, X, User, Copy, ChevronDown, ChevronUp, Info, Settings2 } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition, WinCaseHistory, AiInsight, AiInsightHistory } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
@@ -16,6 +16,7 @@ import { fetchAiInsights } from "@/hooks/use-leads"
 import { AiThinkingChat } from "../common/AiThinkingChat"
 import { SendFirstMessageAction } from "../actions/SendFirstMessageAction"
 import { RenameLeadAction } from "../actions/RenameLeadAction"
+import { WorkflowMonitorView } from "@/components/e2e/tabs/WorkflowMonitorView"
 
 // Custom fields configuration for each workflow
 const getWorkflowCustomFields = (workflowName: string): CustomFieldDefinition[] => {
@@ -294,6 +295,8 @@ export function WorkflowTrackerTab({
   onWorkflowActivated
 }: WorkflowTrackerTabProps) {
   // Zalo action status (fetched on mount and after each action)
+  const [activeView, setActiveView] = useState<"tracker" | "monitor">("tracker")
+
   const [firstMessageDone, setFirstMessageDone] = useState(false)
   const [firstMessageFailed, setFirstMessageFailed] = useState(false)
   const [renameDone, setRenameDone] = useState(false)
@@ -702,6 +705,35 @@ ${dealerBidsStr}`
 
   return (
     <>
+      {/* View toggle */}
+      <div className="flex border-b bg-gray-50/60 px-4 pt-3 gap-1 mb-4">
+        <button
+          onClick={() => setActiveView("tracker")}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${
+            activeView === "tracker"
+              ? "border-blue-500 text-blue-600 bg-white"
+              : "border-transparent text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          <Zap className="h-3.5 w-3.5" />
+          Workflow Tracker
+        </button>
+        <button
+          onClick={() => setActiveView("monitor")}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${
+            activeView === "monitor"
+              ? "border-orange-500 text-orange-600 bg-white"
+              : "border-transparent text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          <Settings2 className="h-3.5 w-3.5" />
+          AI Workflow Monitor
+        </button>
+      </div>
+
+      {activeView === "monitor" ? (
+        <WorkflowMonitorView selectedLead={selectedLead} />
+      ) : (<>
       {/* AI Insight Thinking Chat - Above Workflow Tracker */}
       <AiThinkingChat
         insights={aiInsights}
@@ -1329,6 +1361,8 @@ ${dealerBidsStr}`
           }
         }}
       />
+    </>
+    )}
     </>
   )
 }

@@ -45,13 +45,13 @@ export function SendToDealerGroupsDialog({
       const now = new Date()
       const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`
 
-      const carInfo = `Thời gian nhận thông tin: ${timeString}\n` +
-        `Thông tin chi tiết xe: ${selectedLead.brand || ''} ${selectedLead.model || ''} ${selectedLead.variant || ''} ${selectedLead.year || ''}\n` +
-        `Số km đã đi (Odo): ${selectedLead.mileage ? selectedLead.mileage.toLocaleString() : 'N/A'} km\n` +
-        `Khu vực: ${selectedLead.location || 'N/A'}\n` +
-        `Giá mong muốn: ${selectedLead.price_customer || 'N/A'}\n` +
-        `Car_id: ${selectedLead.car_id}\n` +
-        `Vucar hỗ trợ tài chính: 80% giá trị xe, lãi suất từ 500đ/ngày/1 triệu đồng.`
+      const carName = `${selectedLead.brand || ''} ${selectedLead.model || ''} ${selectedLead.variant || ''} ${selectedLead.year || ''}`.trim()
+      const priceCustomer = selectedLead.price_customer
+      const priceText = priceCustomer && parseInt(String(priceCustomer)) > 1000
+        ? `${parseInt(String(priceCustomer)) / 1000000}tr`
+        : "Chưa có giá mong muốn"
+
+      const carInfo = `GỬI DEALER\nThời gian nhận thông tin: ${timeString}\nThông tin chi tiết xe: ${carName}\nSố km đã đi (Odo): ${selectedLead.mileage ? selectedLead.mileage.toLocaleString() : 'N/A'} km\nKhu vực: ${selectedLead.location || 'N/A'}\nBiển số: ${selectedLead.plate || 'N/A'}\nGiá mong muốn: ${priceText}\n-----------------------------------\nMã tin xe: ${selectedLead.car_id}\nTin chi tiết: https://tinxe.vucar.vn/car/${selectedLead.car_id}?utm_source=zalo-mess&utm_campaign=gui-tin-xe\nSale phụ trách: ${selectedLead.pic_name || 'N/A'}`
 
       const imageUrls: string[] = []
       if (selectedLead.additional_images) {

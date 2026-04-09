@@ -1,4 +1,7 @@
-import { e2eQuery, vucarV2Query } from "@/lib/db"
+import { e2eQuery, vucarV2Query, followupDataQuery } from "@/lib/db"
+
+const NOTIFY_MONITOR_URL = "https://new.abitstore.vn/zalo/sendMessageToGroupZalo/6/CaNhanTest/JumNkKmJQtMfB6s"
+const NOTIFY_FROM_NUMBER = "84963041272"
 
 // ============================================================
 // Types
@@ -353,6 +356,74 @@ async function action_notify_manager(
   return { success: true, value: "sent", data: { message, reason, picId: ctx.picId } }
 }
 
+// ── book_inspection sub-functions ────────────────────────────
+
+async function sub_notify_monitor(ctx: ActionContext, description: string): Promise<void> {
+  try {
+    const staffResult = await followupDataQuery(`SELECT group_id FROM staffs LIMIT 1`)
+    const groupId: string | null = staffResult.rows[0]?.group_id ?? null
+    if (!groupId) {
+      console.warn(`[TaskDispatcher] notify_monitor: no group_id found in staffs table`)
+      return
+    }
+    const message = `📋 Đặt lịch kiểm định mới\nXe: ${ctx.carId}\nSĐT: ${ctx.customerPhone}\nLý do: ${description}`
+    const res = await fetch(NOTIFY_MONITOR_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ send_from_number: NOTIFY_FROM_NUMBER, send_to_groupid: groupId, message }),
+    })
+    if (!res.ok) console.error(`[TaskDispatcher] notify_monitor failed: ${res.status}`)
+    else console.log(`[TaskDispatcher] notify_monitor sent to group ${groupId}`)
+  } catch (err) {
+    console.error(`[TaskDispatcher] notify_monitor error:`, err)
+  }
+}
+
+async function sub_deactive_ai(ctx: ActionContext): Promise<void> {
+  await e2eQuery(
+    `INSERT INTO ai_process_blacklist (car_id) VALUES ($1) ON CONFLICT DO NOTHING`,
+    [ctx.carId]
+  )
+  await e2eQuery(
+    `UPDATE workflow_instances SET status = 'terminated', completed_at = NOW()
+     WHERE car_id = $1 AND status = 'running'`,
+    [ctx.carId]
+  )
+  console.log(`[TaskDispatcher] deactive_ai: blacklisted carId=${ctx.carId}`)
+}
+
+/**
+ * Notifies the monitor group that this lead has low gap, high intention,
+ * and is likely to close.
+ */
+async function action_check_intention(
+  _args: Record<string, any>,
+  ctx: ActionContext
+): Promise<ActionResult> {
+  const message = `🔥 Lead có khả năng chốt cao!\nSĐT: ${ctx.customerPhone}\nGap thấp, có thiện chí, có khả năng chốt`
+  await sub_notify_monitor(ctx, message)
+  return { success: true, value: "notified", data: { carId: ctx.carId, phone: ctx.customerPhone } }
+}
+
+/**
+ * Books an inspection for the lead.
+ * On success, automatically runs notify_monitor + deactive_ai.
+ * TODO: implement actual inspection booking logic.
+ */
+async function action_book_inspection(
+  args: Record<string, any>,
+  ctx: ActionContext
+): Promise<ActionResult> {
+  console.log(`[TaskDispatcher] book_inspection: carId=${ctx.carId}`)
+  // TODO: create inspection record / call booking API here
+
+  // Sub-functions always run after booking
+  await sub_notify_monitor(ctx, args.description || "Agent decided to book inspection")
+  await sub_deactive_ai(ctx)
+
+  return { success: true, value: "booked", data: { carId: ctx.carId } }
+}
+
 async function action_no_action(
   args: Record<string, any>,
   _ctx: ActionContext
@@ -363,9 +434,13 @@ async function action_no_action(
 
 /** Registry of all available action handlers */
 const ACTION_HANDLERS: Record<string, ActionHandler> = {
+  // Read actions
   check_inspection_status: action_check_inspection_status,
   check_customer_response: action_check_customer_response,
   get_lead_stage: action_get_lead_stage,
+  // Write/dispatch actions
+  check_intention: action_check_intention,
+  book_inspection: action_book_inspection,
   notify_pic: action_notify_pic,
   create_inspection_task: action_create_inspection_task,
   create_followup_task: action_create_followup_task,

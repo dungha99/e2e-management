@@ -75,25 +75,47 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { carId, trigger = "manual" } = body
-  if (!carId) {
-    return NextResponse.json({ success: false, error: "Missing carId" }, { status: 400 })
+  const { trigger = "manual" } = body
+  if (!body.carId && !body.phone) {
+    return NextResponse.json({ success: false, error: "Missing carId or phone" }, { status: 400 })
   }
 
   try {
-    // --- 1. Resolve picId and phone ---
-    const contactResult = await vucarV2Query(
-      `SELECT l.phone, l.additional_phone, l.pic_id
-       FROM cars c
-       JOIN leads l ON l.id = c.lead_id
-       WHERE c.id = $1 LIMIT 1`,
-      [carId]
-    )
-    const contact = contactResult.rows[0]
-    const picId: string = body.picId || contact?.pic_id || ""
-    const customerPhone: string = contact?.additional_phone || contact?.phone || ""
+    // --- 1. Resolve carId, picId and phone ---
+    let carId: string = body.carId || ""
+    let picId: string = body.picId || ""
+    let customerPhone: string = ""
 
-    // --- 2. Fetch inputs in parallel ---
+    if (body.phone && !carId) {
+      // Resolve carId from phone
+      const byPhone = await vucarV2Query(
+        `SELECT c.id AS car_id, l.pic_id, l.phone, l.additional_phone
+         FROM cars c
+         JOIN leads l ON l.id = c.lead_id
+         WHERE l.phone = $1 OR l.additional_phone = $1
+         ORDER BY c.created_at DESC LIMIT 1`,
+        [body.phone]
+      )
+      if (byPhone.rows.length === 0) {
+        return NextResponse.json({ success: false, error: `No lead found for phone ${body.phone}` }, { status: 404 })
+      }
+      carId = byPhone.rows[0].car_id
+      picId = picId || byPhone.rows[0].pic_id || ""
+      customerPhone = byPhone.rows[0].additional_phone || byPhone.rows[0].phone || body.phone
+    } else {
+      const contactResult = await vucarV2Query(
+        `SELECT l.phone, l.additional_phone, l.pic_id
+         FROM cars c
+         JOIN leads l ON l.id = c.lead_id
+         WHERE c.id = $1 LIMIT 1`,
+        [carId]
+      )
+      const contact = contactResult.rows[0]
+      picId = picId || contact?.pic_id || ""
+      customerPhone = contact?.additional_phone || contact?.phone || ""
+    }
+
+    // --- 2. Fetch all context in parallel ---
     console.log(`[TaskDispatcher] Fetching context for carId=${carId}...`)
     const [leadContext, chatMessages, agentMemory] = await Promise.all([
       fetchLeadContext(carId),
@@ -124,11 +146,10 @@ export async function POST(request: Request) {
 
     // --- 4. Build user prompt ---
     const chatSection = recentChat.length > 0
-      ? `\n\n=== RECENT CHAT HISTORY (last ${recentChat.length} messages) ===\n${
-          recentChat.map((m: any) =>
-            `[${m.dateAction || ""}] ${m.senderName}: ${m.msg_content || m.content || ""}`
-          ).join("\n")
-        }`
+      ? `\n\n=== RECENT CHAT HISTORY (last ${recentChat.length} messages) ===\n${recentChat.map((m: any) =>
+        `[${m.dateAction || ""}] ${m.senderName}: ${m.msg_content || m.content || ""}`
+      ).join("\n")
+      }`
       : "\n\n=== RECENT CHAT HISTORY ===\n(no messages found)"
 
     const memorySection = agentMemory
@@ -140,11 +161,11 @@ export async function POST(request: Request) {
 === LEAD CONTEXT ===
 ${leadContext}${chatSection}${memorySection}
 
-Based on the above lead state, produce the XML dispatch plan.`
+Based on everything above, produce the XML dispatch plan.`
 
     // --- 5. Call Gemini ---
     console.log(`[TaskDispatcher] Calling Gemini for carId=${carId}...`)
-    const rawXml = await callGemini(userPrompt, "gemini-2.5-flash-preview-04-17", systemPrompt)
+    const rawXml = await callGemini(userPrompt, "gemini-3-flash-preview", systemPrompt)
     console.log(`[TaskDispatcher] Gemini raw output (${rawXml.length} chars): ${rawXml.slice(0, 300)}`)
 
     // --- 6. Execute the plan ---

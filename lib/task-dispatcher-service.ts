@@ -246,14 +246,14 @@ async function action_check_customer_response(
   try {
     const WINDOW_MS = 24 * 60 * 60 * 1000
 
-    // Try sale_status.zalo_messages first
+    // Try sale_status.messages_zalo first
     const dbResult = await vucarV2Query(
-      `SELECT ss.zalo_messages FROM cars c
+      `SELECT ss.messages_zalo FROM cars c
        LEFT JOIN sale_status ss ON ss.car_id = c.id
        WHERE c.id = $1 LIMIT 1`,
       [ctx.carId]
     )
-    const msgs: any[] | null = dbResult.rows[0]?.zalo_messages
+    const msgs: any[] | null = dbResult.rows[0]?.messages_zalo
     if (msgs && Array.isArray(msgs) && msgs.length > 0) {
       const responded = msgs.some((m: any) => {
         const isCustomer = m.fromMe === false || (m.uidFrom && m.uidFrom !== 0 && m.uidFrom !== "0")
@@ -264,7 +264,7 @@ async function action_check_customer_response(
       return {
         success: true,
         value: responded ? "responded" : "no_response",
-        data: { source: "zalo_messages_db" },
+        data: { source: "messages_zalo_db" },
       }
     }
 
@@ -360,10 +360,13 @@ async function action_notify_manager(
 
 async function sub_notify_monitor(ctx: ActionContext, description: string): Promise<void> {
   try {
-    const staffResult = await followupDataQuery(`SELECT group_id FROM staffs LIMIT 1`)
+    const staffResult = await followupDataQuery(
+      `SELECT group_id FROM staffs WHERE pic_id = $1 LIMIT 1`,
+      [ctx.picId]
+    )
     const groupId: string | null = staffResult.rows[0]?.group_id ?? null
     if (!groupId) {
-      console.warn(`[TaskDispatcher] notify_monitor: no group_id found in staffs table`)
+      console.warn(`[TaskDispatcher] notify_monitor: no group_id found in staffs for pic_id=${ctx.picId}`)
       return
     }
     const message = `📋 Đặt lịch kiểm định mới\nXe: ${ctx.carId}\nSĐT: ${ctx.customerPhone}\nLý do: ${description}`

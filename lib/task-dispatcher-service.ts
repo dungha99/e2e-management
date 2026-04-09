@@ -393,6 +393,19 @@ async function sub_deactive_ai(ctx: ActionContext): Promise<void> {
 }
 
 /**
+ * Notifies the monitor group that this lead has low gap, high intention,
+ * and is likely to close.
+ */
+async function action_check_intention(
+  _args: Record<string, any>,
+  ctx: ActionContext
+): Promise<ActionResult> {
+  const message = `🔥 Lead có khả năng chốt cao!\nSĐT: ${ctx.customerPhone}\nGap thấp, có thiện chí, có khả năng chốt`
+  await sub_notify_monitor(ctx, message)
+  return { success: true, value: "notified", data: { carId: ctx.carId, phone: ctx.customerPhone } }
+}
+
+/**
  * Books an inspection for the lead.
  * On success, automatically runs notify_monitor + deactive_ai.
  * TODO: implement actual inspection booking logic.
@@ -426,6 +439,7 @@ const ACTION_HANDLERS: Record<string, ActionHandler> = {
   check_customer_response: action_check_customer_response,
   get_lead_stage: action_get_lead_stage,
   // Write/dispatch actions
+  check_intention: action_check_intention,
   book_inspection: action_book_inspection,
   notify_pic: action_notify_pic,
   create_inspection_task: action_create_inspection_task,

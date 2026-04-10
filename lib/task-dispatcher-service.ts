@@ -428,6 +428,94 @@ async function action_book_inspection(
   return { success: true, value: "booked", data: { carId: ctx.carId } }
 }
 
+// ============================================================
+// Stale_price_highest_bid — always-run, not agent-decided
+// ============================================================
+
+/**
+ * Checks whether priceHighestBid was updated in the last 7 days via
+ * GET https://api.vucar.vn/sale-activities.
+ * If not updated (or no activity found), notifies the monitor group.
+ * This function is called unconditionally — outside the XML plan.
+ */
+export async function runStalePriceCheck(ctx: ActionContext): Promise<void> {
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
+
+  try {
+    // 1. Fetch sale activities for this phone
+    const url = `https://api.vucar.vn/sale-activities?phone=${encodeURIComponent(ctx.customerPhone)}`
+    const res = await fetch(url, { method: "GET", headers: { "Content-Type": "application/json" } })
+
+    if (!res.ok) {
+      console.warn(`[StalePrice] sale-activities API returned ${res.status} for phone=${ctx.customerPhone}`)
+      return
+    }
+
+    const data = await res.json()
+    const activities: any[] = data?.activities ?? []
+
+    // 2. Filter for priceHighestBid updates
+    const priceActivities = activities.filter(
+      (a: any) => a.activityType === "STATUS_UPDATED" && a.metadata?.field_name === "priceHighestBid"
+    )
+
+    if (priceActivities.length === 0) {
+      console.log(`[StalePrice] No priceHighestBid activity found for phone=${ctx.customerPhone} — skipping`)
+      return
+    }
+
+    // 3. Find the most recent update
+    const latest = priceActivities.sort(
+      (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )[0]
+
+    const latestDate = new Date(latest.createdAt)
+    const daysSince = Math.floor((Date.now() - latestDate.getTime()) / (24 * 60 * 60 * 1000))
+
+    if (Date.now() - latestDate.getTime() <= SEVEN_DAYS_MS) {
+      console.log(`[StalePrice] priceHighestBid updated ${daysSince} day(s) ago — no alert needed`)
+      return
+    }
+
+    // 4. Not updated in 7 days → notify
+    const latestPrice = latest.metadata?.new_value
+      ? `${Math.round(latest.metadata.new_value / 1_000_000)} triệu`
+      : "N/A"
+
+    const message = `📊 Giá cao nhất chưa được cập nhật trong ${daysSince} ngày!\nSĐT: ${ctx.customerPhone}\nGiá gần nhất: ${latestPrice}\nCập nhật lần cuối: ${latestDate.toLocaleDateString("vi-VN")}`
+    await notifyMonitorGroup(ctx, message)
+    console.log(`[StalePrice] Notified monitor — priceHighestBid last updated ${daysSince} days ago`)
+  } catch (err) {
+    console.error(`[StalePrice] runStalePriceCheck failed for phone=${ctx.customerPhone}:`, err)
+  }
+}
+
+/**
+ * Customer has received or made a voice call — notify monitor group.
+ */
+async function action_call_voice_received(
+  args: Record<string, any>,
+  ctx: ActionContext
+): Promise<ActionResult> {
+  const note = args.note ? ` - ${args.note}` : ""
+  const message = `📞 Khách hàng đã gửi ghi âm hoặc vừa gọi điện!\nSĐT: ${ctx.customerPhone}${note}`
+  await notifyMonitorGroup(ctx, message)
+  return { success: true, value: "notified", data: { carId: ctx.carId, phone: ctx.customerPhone } }
+}
+
+/**
+ * A competitor keyword was detected in the chat — notify monitor group.
+ */
+async function action_competitor_keyword_received(
+  args: Record<string, any>,
+  ctx: ActionContext
+): Promise<ActionResult> {
+  const keyword = args.keyword ? ` ("${args.keyword}")` : ""
+  const message = `⚠️ Khách đề cập có người mua khác cạnh tranh${keyword}!\nSĐT: ${ctx.customerPhone}\nCần xử lý ngay để giữ khách`
+  await notifyMonitorGroup(ctx, message)
+  return { success: true, value: "notified", data: { carId: ctx.carId, phone: ctx.customerPhone } }
+}
+
 async function action_no_action(
   args: Record<string, any>,
   _ctx: ActionContext
@@ -444,6 +532,8 @@ const ACTION_HANDLERS: Record<string, ActionHandler> = {
   get_lead_stage: action_get_lead_stage,
   // Write/dispatch actions
   check_intention: action_check_intention,
+  call_voice_received: action_call_voice_received,
+  competitor_keyword_received: action_competitor_keyword_received,
   book_inspection: action_book_inspection,
   notify_pic: action_notify_pic,
   create_inspection_task: action_create_inspection_task,
@@ -572,6 +662,7 @@ export async function runTaskDispatcher(params: {
   trigger?: string
 }): Promise<PlanExecutionResult | null> {
   const { carId, picId, customerPhone, trigger = "internal" } = params
+  const ctx: ActionContext = { carId, picId, customerPhone }
 
   try {
     const [leadContext, chatMessages, picPrompt, agentNote] = await Promise.all([
@@ -599,8 +690,12 @@ export async function runTaskDispatcher(params: {
     const rawXml = await callGemini(userPrompt, "gemini-3-flash-preview", systemPrompt)
     console.log(`[TaskDispatcher] runTaskDispatcher plan (${rawXml.length} chars): ${rawXml.slice(0, 200)}`)
 
-    const ctx: ActionContext = { carId, picId, customerPhone }
     const result = await executeTaskDispatcherPlan(rawXml, ctx)
+
+    // Run Stale price check after agent produces output — fire-and-forget
+    runStalePriceCheck(ctx).catch(err =>
+      console.error("[TaskDispatcher] runStalePriceCheck failed:", err)
+    )
 
     storeAgentOutput({
       agentName: AGENT_NAME,

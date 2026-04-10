@@ -742,6 +742,8 @@ ${dealerBidsStr}`
         onExecuteConnector={handleExecuteConnector}
         onUseFlow={handleUseFlow}
         carId={selectedLead.car_id || undefined}
+        leadId={selectedLead.id}
+        currentNotes={selectedLead.notes}
         currentUserId={currentUserId}
         leadPhone={selectedLead.phone || selectedLead.additional_phone || undefined}
         onSubmitFeedback={async (feedback) => {

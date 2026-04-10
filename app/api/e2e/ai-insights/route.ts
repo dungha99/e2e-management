@@ -112,6 +112,12 @@ export async function POST(request: Request) {
     }
 
     // --- Step 4: Webhook Triggering Section ---
+    // Do not auto-trigger n8n if there's no existing insight and no user feedback.
+    // The user must explicitly provide input to start the first analysis.
+    if (!existingInsight && !userFeedback) {
+      return NextResponse.json({ success: true, empty: true }, { status: 200 })
+    }
+
     let insightIdToUpdate = existingInsight?.id
 
     if (!insightIdToUpdate) {

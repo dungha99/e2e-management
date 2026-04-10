@@ -477,8 +477,48 @@ export function AiThinkingChat({
     }
   }, [animationKey])
 
-  // Only hide when there's truly nothing to show and not loading
-  if (!isLoading && (!insights || (!insights.analysis && !insights.history?.length))) return null
+  const hasContent = !!(insights?.analysis || insights?.history?.length)
+  if (!hasContent) {
+    return (
+      <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm p-4 space-y-4">
+        {isLoading && (
+          <div className="flex items-center gap-3 px-1">
+            <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center flex-shrink-0 border border-indigo-100">
+              <Loader2 className="h-4 w-4 text-indigo-500 animate-spin" />
+            </div>
+            <span className="text-sm text-indigo-500 animate-pulse">AI đang phân tích...</span>
+          </div>
+        )}
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center flex-shrink-0 border border-indigo-100 shadow-inner">
+            <User className="h-6 w-6 text-indigo-400" />
+          </div>
+          <div className="flex-1 relative">
+            <Textarea
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              disabled={isLoading || isSubmitting}
+              placeholder={isLoading ? "AI đang xử lý, vui lòng chờ..." : "Nhập thông tin để AI phân tích... (Ví dụ: tình huống hiện tại, khó khăn, mong muốn...)"}
+              className="pr-[50px] min-h-[90px] text-sm focus-visible:ring-indigo-500 border-indigo-100 shadow-sm resize-y rounded-xl"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !isLoading && !isSubmitting) {
+                  handleSendFeedback()
+                }
+              }}
+            />
+            <Button
+              size="icon"
+              disabled={!feedback.trim() || isLoading || isSubmitting}
+              onClick={handleSendFeedback}
+              className="absolute bottom-3 right-3 bg-indigo-600 hover:bg-indigo-700 h-9 w-9 text-white rounded-xl shadow-lg"
+            >
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const analysis = insights?.analysis as any
   const targetWorkflowName = insights?.targetWorkflowName

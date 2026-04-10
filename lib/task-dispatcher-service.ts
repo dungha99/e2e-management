@@ -590,14 +590,13 @@ export async function runTaskDispatcher(params: {
 
     const recentChat = chatMessages.slice(-30)
     const chatSection = recentChat.length > 0
-      ? `\n\n=== RECENT CHAT (last ${recentChat.length} messages) ===\n${
-          recentChat.map((m: any) => `[${m.dateAction || ""}] ${m.senderName}: ${m.msg_content || m.content || ""}`).join("\n")
-        }`
+      ? `\n\n=== RECENT CHAT (last ${recentChat.length} messages) ===\n${recentChat.map((m: any) => `[${m.dateAction || ""}] ${m.senderName}: ${m.msg_content || m.content || ""}`).join("\n")
+      }`
       : "\n\n=== RECENT CHAT ===\n(no messages found)"
 
     const userPrompt = `Trigger: ${trigger}\n\n=== LEAD CONTEXT ===\n${leadContext}${chatSection}\n\nBased on everything above, produce the XML dispatch plan.`
 
-    const rawXml = await callGemini(userPrompt, "gemini-2.5-flash-preview-04-17", systemPrompt)
+    const rawXml = await callGemini(userPrompt, "gemini-3-flash-preview", systemPrompt)
     console.log(`[TaskDispatcher] runTaskDispatcher plan (${rawXml.length} chars): ${rawXml.slice(0, 200)}`)
 
     const ctx: ActionContext = { carId, picId, customerPhone }

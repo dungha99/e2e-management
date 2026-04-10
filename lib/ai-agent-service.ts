@@ -179,7 +179,7 @@ export async function getCarAgentMemory(carId: string, limit: number = 20): Prom
         const status = payload?.status || "unknown"
         const reasoning = typeof payload?.reasoning === "string" ? payload.reasoning.slice(0, 150) : ""
         summary = `${status}${reasoning ? ` — ${reasoning}` : ""}`
-      } else if (name === "Task Dispatcher (Stakeholder)") {
+      } else if (name === "Task Dispatcher") {
         const steps: any[] = Array.isArray(payload?.steps) ? payload.steps : []
         const actionNames = steps.map((s) => s.actionName).join(" → ")
         summary = `${steps.length} step(s)${actionNames ? `: ${actionNames}` : ""}`

@@ -478,6 +478,78 @@ export function AiThinkingChat({
   }, [animationKey])
 
   const hasContent = !!(insights?.analysis || insights?.history?.length)
+
+  const actionButtons = (
+    <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-gray-100">
+      {onUseFlow && !isLoading && insights?.analysis && (
+        <Button
+          size="sm"
+          disabled={isAutoFlowing}
+          onClick={() => handleAutoUseFlow(insights.analysis)}
+          className="bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white shadow-sm text-xs h-8 px-3"
+        >
+          {isAutoFlowing
+            ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Đang tạo...</>
+            : <><Bot className="h-3.5 w-3.5 mr-1.5" />Kích hoạt Flow tự động</>
+          }
+        </Button>
+      )}
+      {onUseFlow && (
+        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+          <Checkbox checked={autoActivate} onCheckedChange={(v) => setAutoActivate(!!v)} className="h-3.5 w-3.5" />
+          <span className="text-xs text-gray-500">Tự kích hoạt</span>
+        </label>
+      )}
+      {isBlacklisted ? (
+        <>
+          <Button
+            variant="default"
+            size="sm"
+            className="h-8 text-xs px-3 bg-blue-600 hover:bg-blue-700 shadow-sm"
+            onClick={() => setRerunDialogOpen(true)}
+            disabled={togglingBlacklist}
+          >
+            {togglingBlacklist ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+            RERUN AI
+          </Button>
+          <Dialog open={rerunDialogOpen} onOpenChange={setRerunDialogOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Cập nhật trước khi chạy lại AI</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="rerun-situation">Tình huống và khó khăn hiện tại</Label>
+                  <Textarea id="rerun-situation" placeholder="Mô tả tình huống hiện tại..." value={rerunSituation} onChange={(e) => setRerunSituation(e.target.value)} rows={3} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="rerun-price">Giá cao nhất hiện tại</Label>
+                  <Input id="rerun-price" placeholder="VD: 450 triệu" value={rerunHighestPrice} onChange={(e) => setRerunHighestPrice(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="rerun-next-step">Bước tiếp theo</Label>
+                  <Textarea id="rerun-next-step" placeholder="Bước tiếp theo mong muốn..." value={rerunNextStep} onChange={(e) => setRerunNextStep(e.target.value)} rows={2} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setRerunDialogOpen(false)}>Huỷ</Button>
+                <Button onClick={handleRerunConfirm} disabled={togglingBlacklist}>
+                  {togglingBlacklist ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Xác nhận
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
+      ) : (
+        <Button variant="destructive" size="sm" className="h-8 text-xs px-3 shadow-sm" onClick={() => toggleBlacklist("deactivate")} disabled={togglingBlacklist}>
+          {togglingBlacklist ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Power className="h-3 w-3 mr-1" />}
+          DEACTIVATE AI
+        </Button>
+      )}
+    </div>
+  )
+
   if (!hasContent) {
     return (
       <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm p-4 space-y-4">
@@ -516,6 +588,7 @@ export function AiThinkingChat({
             </Button>
           </div>
         </div>
+        {actionButtons}
       </div>
     )
   }
@@ -849,105 +922,8 @@ export function AiThinkingChat({
           )}
         </div>
 
-        {/* Action Buttons Box (Above Textarea) */}
-        <div className="flex flex-wrap items-center gap-2 mt-2 pt-4 border-t border-gray-100 bg-white/50 p-2 rounded-xl">
-          {onUseFlow && !isLoading && analysis && (
-            <Button
-              size="sm"
-              disabled={isAutoFlowing}
-              onClick={() => handleAutoUseFlow(analysis)}
-              className="bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white shadow-sm text-xs h-8 px-3"
-            >
-              {isAutoFlowing
-                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Đang tạo...</>
-                : <><Bot className="h-3.5 w-3.5 mr-1.5" />Kích hoạt Flow tự động</>
-              }
-            </Button>
-          )}
-
-          {onUseFlow && (
-            <label className="flex items-center gap-1.5 cursor-pointer select-none">
-              <Checkbox
-                checked={autoActivate}
-                onCheckedChange={(v) => setAutoActivate(!!v)}
-                className="h-3.5 w-3.5"
-              />
-              <span className="text-xs text-gray-500">Tự kích hoạt</span>
-            </label>
-          )}
-
-          {isBlacklisted ? (
-            <>
-              <Button
-                variant="default"
-                size="sm"
-                className="h-8 text-xs px-3 bg-blue-600 hover:bg-blue-700 shadow-sm"
-                onClick={() => setRerunDialogOpen(true)}
-                disabled={togglingBlacklist}
-              >
-                {togglingBlacklist ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
-                RERUN AI
-              </Button>
-
-              <Dialog open={rerunDialogOpen} onOpenChange={setRerunDialogOpen}>
-                <DialogContent className="sm:max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Cập nhật trước khi chạy lại AI</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4 py-2">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="rerun-situation">Tình huống và khó khăn hiện tại</Label>
-                      <Textarea
-                        id="rerun-situation"
-                        placeholder="Mô tả tình huống hiện tại..."
-                        value={rerunSituation}
-                        onChange={(e) => setRerunSituation(e.target.value)}
-                        rows={3}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="rerun-price">Giá cao nhất hiện tại</Label>
-                      <Input
-                        id="rerun-price"
-                        placeholder="VD: 450 triệu"
-                        value={rerunHighestPrice}
-                        onChange={(e) => setRerunHighestPrice(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="rerun-next-step">Bước tiếp theo</Label>
-                      <Textarea
-                        id="rerun-next-step"
-                        placeholder="Bước tiếp theo mong muốn..."
-                        value={rerunNextStep}
-                        onChange={(e) => setRerunNextStep(e.target.value)}
-                        rows={2}
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setRerunDialogOpen(false)}>Huỷ</Button>
-                    <Button onClick={handleRerunConfirm} disabled={togglingBlacklist}>
-                      {togglingBlacklist ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                      Xác nhận
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </>
-          ) : (
-            <Button
-              variant="destructive"
-              size="sm"
-              className="h-8 text-xs px-3 shadow-sm"
-              onClick={() => toggleBlacklist("deactivate")}
-              disabled={togglingBlacklist}
-            >
-              {togglingBlacklist ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Power className="h-3 w-3 mr-1" />}
-              DEACTIVATE AI
-            </Button>
-          )}
-        </div>
+        {/* Action Buttons */}
+        {actionButtons}
 
         {/* Feedback Input Area (Sticky at bottom if container grows too large) */}
         <div className="flex items-start gap-3 border-t pt-4 border-gray-100">

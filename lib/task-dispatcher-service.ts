@@ -404,7 +404,7 @@ async function action_check_intention(
   _args: Record<string, any>,
   ctx: ActionContext
 ): Promise<ActionResult> {
-  const message = `🔥 Lead có khả năng chốt cao!\nSĐT: ${ctx.customerPhone}\nGap thấp, có thiện chí, có khả năng chốt`
+  const message = `🔥[HITL] Lead có khả năng chốt cao!\nSĐT: ${ctx.customerPhone}\nGap thấp, có thiện chí, có khả năng chốt`
   await notifyMonitorGroup(ctx, message)
   return { success: true, value: "notified", data: { carId: ctx.carId, phone: ctx.customerPhone } }
 }
@@ -421,7 +421,7 @@ async function action_book_inspection(
   console.log(`[TaskDispatcher] book_inspection: carId=${ctx.carId}`)
   // TODO: create inspection record / call booking API here
 
-  const message = `📋 Đặt lịch kiểm định mới\nXe: ${ctx.carId}\nSĐT: ${ctx.customerPhone}\nLý do: ${args.description || "Agent decided to book inspection"}`
+  const message = `🔴 [HITL] Lịch KTV đã được xác nhận\nĐặt lịch kiểm định mới\nXe: ${ctx.carId}\nSĐT: ${ctx.customerPhone}\nLý do: ${args.description || "Agent decided to book inspection"}`
   await notifyMonitorGroup(ctx, message)
   await deactivateAi(ctx)
 
@@ -482,7 +482,7 @@ export async function runStalePriceCheck(ctx: ActionContext): Promise<void> {
       ? `${Math.round(latest.metadata.new_value / 1_000_000)} triệu`
       : "N/A"
 
-    const message = `📊 Giá cao nhất chưa được cập nhật trong ${daysSince} ngày!\nSĐT: ${ctx.customerPhone}\nGiá gần nhất: ${latestPrice}\nCập nhật lần cuối: ${latestDate.toLocaleDateString("vi-VN")}`
+    const message = `📊 Giá cao nhất chưa được cập nhật trong ${daysSince} ngày!⏸️ Pipeline AI đã tạm dừng.\nAI không được phép dùng giá cũ để đàm phán.\nOps tìm thêm giá đi.\nSĐT: ${ctx.customerPhone}\nGiá gần nhất: ${latestPrice}\nCập nhật lần cuối: ${latestDate.toLocaleDateString("vi-VN")}`
     await notifyMonitorGroup(ctx, message)
     console.log(`[StalePrice] Notified monitor — priceHighestBid last updated ${daysSince} days ago`)
   } catch (err) {
@@ -498,7 +498,7 @@ async function action_call_voice_received(
   ctx: ActionContext
 ): Promise<ActionResult> {
   const note = args.note ? ` - ${args.note}` : ""
-  const message = `📞 Khách hàng đã gửi ghi âm hoặc vừa gọi điện!\nSĐT: ${ctx.customerPhone}${note}`
+  const message = `🔴 [HITL] Có cuộc gọi vừa được log — AI không biết nội dung\n⏸️ Pipeline AI đã tạm dừng.\nAI không có thông tin về nội dung cuộc gọi này.\nNếu tiếp tục mà không cập nhật → AI sẽ gửi tin nhắn sai context.\n👉 Vào lead, điền tóm tắt cuộc gọi vào feedback input. *Pipeline resume sau khi bạn submit.*\nSĐT: ${ctx.customerPhone}${note}`
   await notifyMonitorGroup(ctx, message)
   return { success: true, value: "notified", data: { carId: ctx.carId, phone: ctx.customerPhone } }
 }
@@ -511,7 +511,7 @@ async function action_competitor_keyword_received(
   ctx: ActionContext
 ): Promise<ActionResult> {
   const keyword = args.keyword ? ` ("${args.keyword}")` : ""
-  const message = `⚠️ Khách đề cập có người mua khác cạnh tranh${keyword}!\nSĐT: ${ctx.customerPhone}\nCần xử lý ngay để giữ khách`
+  const message = `⚠️ [HITL] Khách đang tham khảo bên khác rồi\n▶️ Pipeline AI vẫn đang chạy.\nNếu cần điều chỉnh chiến thuật → prompt feedback trực tiếp tại:\n*Không cần action nếu AI đang xử lý tốt.*${keyword}!\nSĐT: ${ctx.customerPhone}\nCần xử lý ngay để giữ khách`
   await notifyMonitorGroup(ctx, message)
   return { success: true, value: "notified", data: { carId: ctx.carId, phone: ctx.customerPhone } }
 }

@@ -6,6 +6,7 @@ export interface EnqueueParams {
   caption?: string
   image_url?: string[]
   action?: string
+  pic_id?: string
 }
 
 export interface QueueItem {
@@ -16,6 +17,7 @@ export interface QueueItem {
   image_url: string[]
   action: string
   attempts: number
+  pic_id: string | null
 }
 
 /** Insert a message into the queue */
@@ -23,8 +25,8 @@ export async function enqueueMessage(params: EnqueueParams): Promise<{ queueId: 
   const pool = getE2ePool()
 
   const { rows } = await pool.query(
-    `INSERT INTO zalo_message_queue (group_name, message, caption, image_url, action)
-     VALUES ($1, $2, $3, $4::jsonb, $5)
+    `INSERT INTO zalo_message_queue (group_name, message, caption, image_url, action, pic_id)
+     VALUES ($1, $2, $3, $4::jsonb, $5, $6)
      RETURNING id`,
     [
       params.group_name,
@@ -32,6 +34,7 @@ export async function enqueueMessage(params: EnqueueParams): Promise<{ queueId: 
       params.caption || " ",
       JSON.stringify(params.image_url || []),
       params.action || "",
+      params.pic_id || null,
     ]
   )
 
@@ -52,7 +55,7 @@ export async function claimNextBatch(): Promise<QueueItem[]> {
          OR (status = 'failed' AND attempts < max_attempts)
       ORDER BY group_name, created_at ASC
     )
-    RETURNING id, group_name, message, caption, image_url, action, attempts
+    RETURNING id, group_name, message, caption, image_url, action, attempts, pic_id
   `)
 
   return rows

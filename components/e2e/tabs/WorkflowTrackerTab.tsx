@@ -471,19 +471,30 @@ export function WorkflowTrackerTab({
   // Shared polling ref for AI insights — accessible from both useEffect and feedback handler
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const isMountedRef = useRef(true)
+  const isFetchInFlightRef = useRef(false)
   // Track which car_id we've already started fetching insights for (prevents duplicate triggers)
   const insightsCarIdRef = useRef<string | null>(null)
 
   // Reusable function to load insights + poll on 202
   const loadAndPollInsights = useCallback((carId: string, phoneNumber: string, userFeedback?: string) => {
     if (!isMountedRef.current) return
+    // Skip if a request is already in-flight (prevents concurrent calls when server is slow)
+    if (isFetchInFlightRef.current) return
 
+    isFetchInFlightRef.current = true
     console.log(`[WorkflowTracker] Fetching AI insights for car ${carId}...${userFeedback ? ' (with feedback)' : ''}`)
     setFetchingAiInsights(true)
 
     fetchAiInsights(carId, phoneNumber, userFeedback)
       .then((result) => {
+        isFetchInFlightRef.current = false
         if (!isMountedRef.current) return
+
+        // No insight exists yet and no feedback — show empty state, stop loading
+        if (result?.empty) {
+          setFetchingAiInsights(false)
+          return
+        }
 
         // Check if still processing — start polling
         if (result?.processing) {
@@ -509,6 +520,7 @@ export function WorkflowTrackerTab({
         setFetchingAiInsights(false)
       })
       .catch((error) => {
+        isFetchInFlightRef.current = false
         if (!isMountedRef.current) return
         console.error("[WorkflowTracker] Failed to fetch AI insights:", error)
         setFetchingAiInsights(false)
@@ -557,7 +569,6 @@ export function WorkflowTrackerTab({
 
     insightsCarIdRef.current = selectedLead.car_id
     loadAndPollInsights(selectedLead.car_id, phoneNumber)
-    // Note: cleanup is handled by the mount/unmount effect above
   }, [activeWorkflowView, selectedLead.car_id, selectedLead.phone, selectedLead.additional_phone, loadAndPollInsights])
 
 
@@ -742,6 +753,8 @@ ${dealerBidsStr}`
         onExecuteConnector={handleExecuteConnector}
         onUseFlow={handleUseFlow}
         carId={selectedLead.car_id || undefined}
+        leadId={selectedLead.id}
+        currentNotes={selectedLead.notes}
         currentUserId={currentUserId}
         leadPhone={selectedLead.phone || selectedLead.additional_phone || undefined}
         onSubmitFeedback={async (feedback) => {
@@ -749,11 +762,12 @@ ${dealerBidsStr}`
           const phoneNumber = selectedLead.phone || selectedLead.additional_phone
           if (!phoneNumber) return
 
-          // Stop any existing polling before starting feedback-triggered load
+          // Stop any existing polling and clear in-flight guard before feedback-triggered load
           if (pollIntervalRef.current) {
             clearInterval(pollIntervalRef.current)
             pollIntervalRef.current = null
           }
+          isFetchInFlightRef.current = false
 
           // Submit feedback and start polling — loading stays active until real result arrives
           loadAndPollInsights(selectedLead.car_id, phoneNumber, feedback)

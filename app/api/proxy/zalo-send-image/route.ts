@@ -12,7 +12,8 @@ export async function POST(request: Request) {
       message,
       caption,
       image_url,
-      action
+      action,
+      pic_id,
     } = body
 
     console.log("[Zalo Proxy API] Received request:", {
@@ -42,6 +43,7 @@ export async function POST(request: Request) {
       caption,
       image_url,
       action,
+      pic_id,
     })
 
     console.log("[Zalo Proxy API] Message enqueued:", { queueId, groupname })

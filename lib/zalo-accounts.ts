@@ -9,9 +9,11 @@ export interface ZaloAccount {
   default_group_id: string | null
   get_groups_key: string
   smownerid: string
+  account_type: string | null
+  b_user_id: string | null
 }
 
-/** Pick the least-recently-used active account (round-robin) */
+/** Pick the least-recently-used active Abit account (round-robin) */
 export async function getNextZaloAccount(): Promise<ZaloAccount> {
   const pool = getE2ePool()
 
@@ -22,10 +24,11 @@ export async function getNextZaloAccount(): Promise<ZaloAccount> {
     WHERE id = (
       SELECT id FROM abit_zalo_accounts
       WHERE is_active = true
+        AND (account_type IS NULL OR account_type = 'abit')
       ORDER BY last_used_at ASC NULLS FIRST
       LIMIT 1
     )
-    RETURNING id, phone, account_name, abitstore_id, dynamic_key, default_group_id, get_groups_key, smownerid
+    RETURNING id, phone, account_name, abitstore_id, dynamic_key, default_group_id, get_groups_key, smownerid, account_type, b_user_id
   `)
 
   if (rows.length === 0) {

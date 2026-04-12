@@ -51,7 +51,7 @@ export function SendToDealerGroupsDialog({
         ? `${parseInt(String(priceCustomer)) / 1000000}tr`
         : "Chưa có giá mong muốn"
 
-      const carInfo = `GỬI DEALER\nThời gian nhận thông tin: ${timeString}\nThông tin chi tiết xe: ${carName}\nSố km đã đi (Odo): ${selectedLead.mileage ? selectedLead.mileage.toLocaleString() : 'N/A'} km\nKhu vực: ${selectedLead.location || 'N/A'}\nBiển số: ${selectedLead.plate || 'N/A'}\nGiá mong muốn: ${priceText}\n-----------------------------------\nMã tin xe: ${selectedLead.car_id}\nTin chi tiết: https://tinxe.vucar.vn/car/${selectedLead.car_id}?utm_source=zalo-mess&utm_campaign=gui-tin-xe\nSale phụ trách: ${selectedLead.pic_name || 'N/A'}`
+      const carInfo = `GỬI DEALER\nThời gian nhận thông tin: ${timeString}\nThông tin chi tiết xe: ${carName}\nSố km đã đi (Odo): ${selectedLead.mileage ? selectedLead.mileage.toLocaleString() : 'N/A'} km\nKhu vực: ${selectedLead.location || 'N/A'}\nGiá mong muốn: ${priceText}\n-----------------------------------\nMã tin xe: ${selectedLead.car_id}\nTin chi tiết: https://tinxe.vucar.vn/car/${selectedLead.car_id}?utm_source=zalo-mess&utm_campaign=gui-tin-xe\nSale phụ trách: ${selectedLead.pic_name || 'N/A'}`
 
       const imageUrls: string[] = []
       if (selectedLead.additional_images) {

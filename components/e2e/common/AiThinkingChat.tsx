@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo } from "react"
-import { Bot, Target, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, History, BrainCircuit, Hand, Power, Play } from "lucide-react"
+import { Bot, Target, Loader2, Sparkles, Send, User, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, History, BrainCircuit, Power, Play } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -12,7 +12,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 interface AiThinkingChatProps {
@@ -37,6 +40,8 @@ interface AiThinkingChatProps {
     }
   }[]) => void
   carId?: string  // Current lead's car_id for default values
+  leadId?: string
+  currentNotes?: string | null
   currentUserId?: string | null
   leadPhone?: string
 }
@@ -190,6 +195,8 @@ export function AiThinkingChat({
   onExecuteConnector,
   onUseFlow,
   carId,
+  leadId,
+  currentNotes,
   currentUserId,
   leadPhone
 }: AiThinkingChatProps) {
@@ -213,6 +220,10 @@ export function AiThinkingChat({
   // External Action States
   const [isBlacklisted, setIsBlacklisted] = useState(false)
   const [togglingBlacklist, setTogglingBlacklist] = useState(false)
+  const [rerunDialogOpen, setRerunDialogOpen] = useState(false)
+  const [rerunSituation, setRerunSituation] = useState("")
+  const [rerunHighestPrice, setRerunHighestPrice] = useState("")
+  const [rerunNextStep, setRerunNextStep] = useState("")
   // Fetch Backlist status on mount or carId change
   useEffect(() => {
     async function fetchBlacklistStatus() {
@@ -251,6 +262,65 @@ export function AiThinkingChat({
       }
     } catch (err) {
       console.error("Failed to toggle blacklist:", err)
+      toast({ title: "Lỗi", description: "Lỗi hệ thống", variant: "destructive" })
+    } finally {
+      setTogglingBlacklist(false)
+    }
+  }
+
+  async function handleRerunConfirm() {
+    if (!carId) return
+    setTogglingBlacklist(true)
+    setRerunDialogOpen(false)
+    try {
+      // 1. Save notes to sale_status
+      const newEntry = [
+        rerunSituation && `Tình huống và khó khăn hiện tại: ${rerunSituation}`,
+        rerunHighestPrice && `Giá cao nhất hiện tại: ${rerunHighestPrice}`,
+        rerunNextStep && `Bước tiếp theo: ${rerunNextStep}`,
+      ].filter(Boolean).join("\n")
+
+      if (newEntry) {
+        const timestamp = new Date().toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })
+        const appendedEntry = `[${timestamp}]\n${newEntry}`
+        const notes = currentNotes
+          ? `${currentNotes}\n\n${appendedEntry}`
+          : appendedEntry
+        await fetch("/api/e2e/update-sale-status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ carId, leadId, notes }),
+        })
+      }
+
+      // 2. Remove from blacklist (rerun AI)
+      const res = await fetch(`/api/e2e/ai-process-status/${carId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "rerun" }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setIsBlacklisted(!!data.isBlacklisted)
+      }
+
+      // 3. Call plan agent with constructed prompt
+      const prompt = [
+        rerunSituation && `Tình huống và khó khăn hiện tại: ${rerunSituation}`,
+        rerunHighestPrice && `Giá cao nhất hiện tại: ${rerunHighestPrice}`,
+        rerunNextStep && `Bước tiếp theo mong muốn: ${rerunNextStep}`,
+      ].filter(Boolean).join("\n")
+
+      if (prompt) {
+        await onSubmitFeedback(prompt)
+      }
+
+      // Reset fields
+      setRerunSituation("")
+      setRerunHighestPrice("")
+      setRerunNextStep("")
+    } catch (err) {
+      console.error("Failed to rerun AI:", err)
       toast({ title: "Lỗi", description: "Lỗi hệ thống", variant: "destructive" })
     } finally {
       setTogglingBlacklist(false)
@@ -385,8 +455,8 @@ export function AiThinkingChat({
     if (isLoading) return
     const analysis = insights?.analysis as any
     if (!analysis || !insights?.aiInsightId) return
-    if (autoActivatedInsightRef.current === insights.aiInsightId) return
-    autoActivatedInsightRef.current = insights.aiInsightId
+    if (autoActivatedInsightRef.current === insights?.aiInsightId) return
+    autoActivatedInsightRef.current = insights?.aiInsightId
     handleAutoUseFlow(analysis)
   }, [insights?.aiInsightId, isLoading])
 
@@ -407,8 +477,121 @@ export function AiThinkingChat({
     }
   }, [animationKey])
 
-  // Only hide when there's truly nothing to show and not loading
-  if (!isLoading && (!insights || (!insights.analysis && !insights.history?.length))) return null
+  const hasContent = !!(insights?.analysis || insights?.history?.length)
+
+  const actionButtons = (
+    <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-gray-100">
+      {onUseFlow && !isLoading && insights?.analysis && (
+        <Button
+          size="sm"
+          disabled={isAutoFlowing}
+          onClick={() => handleAutoUseFlow(insights.analysis)}
+          className="bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white shadow-sm text-xs h-8 px-3"
+        >
+          {isAutoFlowing
+            ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Đang tạo...</>
+            : <><Bot className="h-3.5 w-3.5 mr-1.5" />Kích hoạt Flow tự động</>
+          }
+        </Button>
+      )}
+      {onUseFlow && (
+        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+          <Checkbox checked={autoActivate} onCheckedChange={(v) => setAutoActivate(!!v)} className="h-3.5 w-3.5" />
+          <span className="text-xs text-gray-500">Tự kích hoạt</span>
+        </label>
+      )}
+      {isBlacklisted ? (
+        <>
+          <Button
+            variant="default"
+            size="sm"
+            className="h-8 text-xs px-3 bg-blue-600 hover:bg-blue-700 shadow-sm"
+            onClick={() => setRerunDialogOpen(true)}
+            disabled={togglingBlacklist}
+          >
+            {togglingBlacklist ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+            RERUN AI
+          </Button>
+          <Dialog open={rerunDialogOpen} onOpenChange={setRerunDialogOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Cập nhật trước khi chạy lại AI</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="rerun-situation">Tình huống và khó khăn hiện tại</Label>
+                  <Textarea id="rerun-situation" placeholder="Mô tả tình huống hiện tại..." value={rerunSituation} onChange={(e) => setRerunSituation(e.target.value)} rows={3} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="rerun-price">Giá cao nhất hiện tại</Label>
+                  <Input id="rerun-price" placeholder="VD: 450 triệu" value={rerunHighestPrice} onChange={(e) => setRerunHighestPrice(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="rerun-next-step">Bước tiếp theo</Label>
+                  <Textarea id="rerun-next-step" placeholder="Bước tiếp theo mong muốn..." value={rerunNextStep} onChange={(e) => setRerunNextStep(e.target.value)} rows={2} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setRerunDialogOpen(false)}>Huỷ</Button>
+                <Button onClick={handleRerunConfirm} disabled={togglingBlacklist}>
+                  {togglingBlacklist ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Xác nhận
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
+      ) : (
+        <Button variant="destructive" size="sm" className="h-8 text-xs px-3 shadow-sm" onClick={() => toggleBlacklist("deactivate")} disabled={togglingBlacklist}>
+          {togglingBlacklist ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Power className="h-3 w-3 mr-1" />}
+          DEACTIVATE AI
+        </Button>
+      )}
+    </div>
+  )
+
+  if (!hasContent) {
+    return (
+      <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm p-4 space-y-4">
+        {isLoading && (
+          <div className="flex items-center gap-3 px-1">
+            <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center flex-shrink-0 border border-indigo-100">
+              <Loader2 className="h-4 w-4 text-indigo-500 animate-spin" />
+            </div>
+            <span className="text-sm text-indigo-500 animate-pulse">AI đang phân tích...</span>
+          </div>
+        )}
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center flex-shrink-0 border border-indigo-100 shadow-inner">
+            <User className="h-6 w-6 text-indigo-400" />
+          </div>
+          <div className="flex-1 relative">
+            <Textarea
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              disabled={isLoading || isSubmitting}
+              placeholder={isLoading ? "AI đang xử lý, vui lòng chờ..." : "Nhập thông tin để AI phân tích... (Ví dụ: tình huống hiện tại, khó khăn, mong muốn...)"}
+              className="pr-[50px] min-h-[90px] text-sm focus-visible:ring-indigo-500 border-indigo-100 shadow-sm resize-y rounded-xl"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !isLoading && !isSubmitting) {
+                  handleSendFeedback()
+                }
+              }}
+            />
+            <Button
+              size="icon"
+              disabled={!feedback.trim() || isLoading || isSubmitting}
+              onClick={handleSendFeedback}
+              className="absolute bottom-3 right-3 bg-indigo-600 hover:bg-indigo-700 h-9 w-9 text-white rounded-xl shadow-lg"
+            >
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </Button>
+          </div>
+        </div>
+        {actionButtons}
+      </div>
+    )
+  }
 
   const analysis = insights?.analysis as any
   const targetWorkflowName = insights?.targetWorkflowName
@@ -456,7 +639,7 @@ export function AiThinkingChat({
                 </DialogHeader>
                 <ScrollArea className="flex-1 mt-4 pr-4">
                   <div className="whitespace-pre-wrap text-sm text-gray-700 leading-relaxed font-mono bg-gray-50 p-4 rounded-xl border border-gray-100 italic">
-                    {insights.currentDiary}
+                    {insights?.currentDiary}
                   </div>
                 </ScrollArea>
               </DialogContent>
@@ -629,14 +812,14 @@ export function AiThinkingChat({
                   <span className="text-[10px] text-gray-400 font-medium">Was this analysis helpful?</span>
                   <div className="flex items-center gap-1.5">
                     <button
-                      onClick={() => insights.aiInsightId && handleRate(insights.aiInsightId, false, true)}
-                      className={`p-2 hover:bg-green-50 rounded-lg transition-all ${(localRatings[`current-${insights.aiInsightId}`] ?? insights.is_positive) === true ? 'text-green-600 bg-green-50 ring-1 ring-green-200 shadow-sm' : 'text-gray-400 hover:text-green-500'}`}
+                      onClick={() => insights?.aiInsightId && handleRate(insights.aiInsightId, false, true)}
+                      className={`p-2 hover:bg-green-50 rounded-lg transition-all ${(localRatings[`current-${insights?.aiInsightId}`] ?? insights?.is_positive) === true ? 'text-green-600 bg-green-50 ring-1 ring-green-200 shadow-sm' : 'text-gray-400 hover:text-green-500'}`}
                     >
                       <ThumbsUp className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => insights.aiInsightId && handleRate(insights.aiInsightId, false, false)}
-                      className={`p-2 hover:bg-red-50 rounded-lg transition-all ${(localRatings[`current-${insights.aiInsightId}`] ?? insights.is_positive) === false ? 'text-red-500 bg-red-50 ring-1 ring-red-200 shadow-sm' : 'text-gray-400 hover:text-red-400'}`}
+                      onClick={() => insights?.aiInsightId && handleRate(insights.aiInsightId, false, false)}
+                      className={`p-2 hover:bg-red-50 rounded-lg transition-all ${(localRatings[`current-${insights?.aiInsightId}`] ?? insights?.is_positive) === false ? 'text-red-500 bg-red-50 ring-1 ring-red-200 shadow-sm' : 'text-gray-400 hover:text-red-400'}`}
                     >
                       <ThumbsDown className="h-4 w-4" />
                     </button>
@@ -739,57 +922,8 @@ export function AiThinkingChat({
           )}
         </div>
 
-        {/* Action Buttons Box (Above Textarea) */}
-        <div className="flex flex-wrap items-center gap-2 mt-2 pt-4 border-t border-gray-100 bg-white/50 p-2 rounded-xl">
-          {onUseFlow && !isLoading && analysis && (
-            <Button
-              size="sm"
-              disabled={isAutoFlowing}
-              onClick={() => handleAutoUseFlow(analysis)}
-              className="bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white shadow-sm text-xs h-8 px-3"
-            >
-              {isAutoFlowing
-                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Đang tạo...</>
-                : <><Bot className="h-3.5 w-3.5 mr-1.5" />Kích hoạt Flow tự động</>
-              }
-            </Button>
-          )}
-
-          {onUseFlow && (
-            <label className="flex items-center gap-1.5 cursor-pointer select-none">
-              <Checkbox
-                checked={autoActivate}
-                onCheckedChange={(v) => setAutoActivate(!!v)}
-                className="h-3.5 w-3.5"
-              />
-              <span className="text-xs text-gray-500">Tự kích hoạt</span>
-            </label>
-          )}
-
-          {isBlacklisted ? (
-            <Button
-              variant="default"
-              size="sm"
-              className="h-8 text-xs px-3 bg-blue-600 hover:bg-blue-700 shadow-sm"
-              onClick={() => toggleBlacklist("rerun")}
-              disabled={togglingBlacklist}
-            >
-              {togglingBlacklist ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
-              RERUN AI
-            </Button>
-          ) : (
-            <Button
-              variant="destructive"
-              size="sm"
-              className="h-8 text-xs px-3 shadow-sm"
-              onClick={() => toggleBlacklist("deactivate")}
-              disabled={togglingBlacklist}
-            >
-              {togglingBlacklist ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Power className="h-3 w-3 mr-1" />}
-              DEACTIVATE AI
-            </Button>
-          )}
-        </div>
+        {/* Action Buttons */}
+        {actionButtons}
 
         {/* Feedback Input Area (Sticky at bottom if container grows too large) */}
         <div className="flex items-start gap-3 border-t pt-4 border-gray-100">

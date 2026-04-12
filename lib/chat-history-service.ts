@@ -8,7 +8,7 @@ const VUCAR_ZALO_GET_MSG_CONNECTOR_ID = "3579bf8f-0d19-4e10-ab89-21a6133f8e04"
  * Fetch Zalo chat history with 3-source fallback:
  *   Source 1: AkaBiz CRM API (via n8n shopId)
  *   Source 2: Vucar Zalo Get Message API (via leads.zalo_account)
- *   Source 3: sale_status.zalo_messages (DB)
+ *   Source 3: sale_status.messages_zalo (DB)
  *
  * All sources normalize to objects containing at minimum:
  *   senderName  — "Vucar ..." = PIC, otherwise = customer
@@ -144,15 +144,15 @@ export async function fetchZaloChatHistory({
     console.warn(`[ChatHistoryService] Source 2 (Vucar Zalo API) failed:`, err)
   }
 
-  // --- Source 3: sale_status.zalo_messages (DB) ---
+  // --- Source 3: sale_status.messages_zalo (DB) ---
   try {
     const dbResult = await vucarV2Query(
-      `SELECT ss.zalo_messages FROM cars c
+      `SELECT ss.messages_zalo FROM cars c
        LEFT JOIN sale_status ss ON ss.car_id = c.id
        WHERE c.id = $1 LIMIT 1`,
       [carId]
     )
-    const zaloMessages: any[] | null = dbResult.rows[0]?.zalo_messages
+    const zaloMessages: any[] | null = dbResult.rows[0]?.messages_zalo
     if (zaloMessages && Array.isArray(zaloMessages) && zaloMessages.length > 0) {
       const messages = zaloMessages.slice(-limit).map((msg: any) => {
         const isFromCustomer = msg.fromMe === false || (msg.uidFrom && msg.uidFrom !== 0 && msg.uidFrom !== "0")
@@ -163,11 +163,11 @@ export async function fetchZaloChatHistory({
           content: msg.text || msg.body || msg.content || "",
         }
       })
-      console.log(`[ChatHistoryService] Source: zalo_messages DB — ${messages.length} messages`)
+      console.log(`[ChatHistoryService] Source: messages_zalo DB — ${messages.length} messages`)
       return messages
     }
   } catch (err) {
-    console.warn(`[ChatHistoryService] Source 3 (zalo_messages DB) failed:`, err)
+    console.warn(`[ChatHistoryService] Source 3 (messages_zalo DB) failed:`, err)
   }
 
   console.warn(`[ChatHistoryService] All sources failed for carId=${carId}, phone=${phone}`)

@@ -2,7 +2,7 @@
 
 import { HITLLead, StepProgress } from "./types"
 import { ZaloErrorBadges } from "./ZaloErrorBadges"
-import { MapPin, Clock, Copy, Phone, History, CheckCircle2, XCircle, MinusCircle, MoreVertical, Bell, PhoneCall, Send, MessageCircle, Loader2, User, ExternalLink } from "lucide-react"
+import { MapPin, Clock, Copy, Phone, History, CheckCircle2, XCircle, MinusCircle, MoreVertical, Bell, PhoneCall, Send, MessageCircle, Loader2, User, ExternalLink, CheckSquare, Gavel } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { vi } from "date-fns/locale"
 import { useState } from "react"
@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { ChatMessage } from "@/components/e2e/types"
+import { CreateBiddingAndSendDialog } from "./CreateBiddingAndSendDialog"
 
 interface HITLLeadCardProps {
   lead: HITLLead
@@ -110,6 +111,7 @@ export function HITLLeadCard({ lead, onResolve, onDetail }: HITLLeadCardProps) {
   const [biddingHistoryOpen, setBiddingHistoryOpen] = useState(false)
   const [biddingHistory, setBiddingHistory] = useState<any[]>([])
   const [loadingBids, setLoadingBids] = useState(false)
+  const [createBiddingOpen, setCreateBiddingOpen] = useState(false)
   const { toast } = useToast()
 
   const timeAgo = formatDistanceToNow(new Date(triggered_at), { addSuffix: true, locale: vi })
@@ -545,12 +547,28 @@ export function HITLLeadCard({ lead, onResolve, onDetail }: HITLLeadCardProps) {
                     {actionLoading === "send_first" && <Loader2 className="w-3 h-3 ml-auto animate-spin" />}
                   </DropdownMenuItem>
                   <DropdownMenuItem
+                    onClick={(e) => { e.stopPropagation(); setCreateBiddingOpen(true) }}
+                    disabled={!!actionLoading}
+                  >
+                    <Gavel className="w-3.5 h-3.5 mr-2 text-blue-600" />
+                    <span>Tạo Bidding & Gửi khách</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
                     onClick={(e) => { e.stopPropagation(); handleRenameLead() }}
                     disabled={!!actionLoading}
                   >
                     <User className="w-3.5 h-3.5 mr-2 text-indigo-500" />
                     <span>Đổi tên lead</span>
                     {actionLoading === "rename" && <Loader2 className="w-3 h-3 ml-auto animate-spin" />}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={(e) => { e.stopPropagation(); onResolve(lead.id) }}
+                    disabled={!!actionLoading}
+                    className="text-emerald-700 focus:text-emerald-700 focus:bg-emerald-50"
+                  >
+                    <CheckSquare className="w-3.5 h-3.5 mr-2 text-emerald-600" />
+                    <span>Resolve</span>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
@@ -584,6 +602,13 @@ export function HITLLeadCard({ lead, onResolve, onDetail }: HITLLeadCardProps) {
           </div>
         </div>
       </div>
+
+      {/* ── Create Bidding & Send Dialog ─────────────────────────────── */}
+      <CreateBiddingAndSendDialog
+        open={createBiddingOpen}
+        onOpenChange={setCreateBiddingOpen}
+        lead={lead}
+      />
 
       {/* ── Zalo Chat Dialog ─────────────────────────────────────────── */}
       <Dialog open={zaloChatOpen} onOpenChange={setZaloChatOpen}>

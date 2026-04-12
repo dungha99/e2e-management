@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Lead, BiddingHistory, WorkflowInstanceWithDetails, CustomFieldDefinition, WinCaseHistory, AiInsight, AiInsightHistory } from "../types"
 import { formatPrice, parseShorthandPrice, formatPriceForEdit } from "../utils"
 import { ActivateWorkflowDialog } from "../dialogs/ActivateWorkflowDialog"
+import { ActivateWF1Dialog } from "../dialogs/ActivateWF1Dialog"
 import { SendScriptDialog } from "../dialogs/SendScriptDialog"
 import { ExecuteConnectorDialog } from "../dialogs/ExecuteConnectorDialog"
 import { UseFlowWizardDialog, FlowStep } from "../dialogs/UseFlowWizardDialog"
@@ -377,6 +378,11 @@ export function WorkflowTrackerTab({
     parentInstanceId: string
     isFromWF0?: boolean
   } | null>(null)
+
+  // State for WF1 activation dialog
+  const [wf1DialogOpen, setWf1DialogOpen] = useState(false)
+  const [wf1WorkflowId, setWf1WorkflowId] = useState("")
+  const [wf1ParentInstanceId, setWf1ParentInstanceId] = useState<string | null>(null)
 
   // State for AI insights
   const [aiInsights, setAiInsights] = useState<any>(null)
@@ -1251,6 +1257,12 @@ ${dealerBidsStr}`
                           // Get tooltip from allWorkflows
                           const targetWorkflow = workflowInstancesData.allWorkflows.find(w => w.id === transition.to_workflow_id)
                           if (isWF0 || currentInstance?.instance.id) {
+                            if (transition.to_workflow_name === "WF1") {
+                              setWf1WorkflowId(transition.to_workflow_id)
+                              setWf1ParentInstanceId(parentId || null)
+                              setWf1DialogOpen(true)
+                              return
+                            }
                             setSelectedTransition({
                               workflowId: transition.to_workflow_id,
                               workflowName: transition.to_workflow_name,
@@ -1339,6 +1351,16 @@ ${dealerBidsStr}`
           dialogTitle={pendingConnector.title}
         />
       )}
+
+      {/* WF1 Activation Dialog */}
+      <ActivateWF1Dialog
+        open={wf1DialogOpen}
+        onOpenChange={setWf1DialogOpen}
+        selectedLead={selectedLead}
+        targetWorkflowId={wf1WorkflowId}
+        parentInstanceId={wf1ParentInstanceId}
+        onSuccess={() => { if (onWorkflowActivated) onWorkflowActivated() }}
+      />
 
       {/* Workflow Activation Dialog */}
       {selectedTransition && (

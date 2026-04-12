@@ -38,6 +38,7 @@ import { CallBotAction } from "../actions/CallBotAction"
 import { BookInspectionAction } from "../actions/BookInspectionAction"
 import { FollowUpAction } from "../actions/FollowUpAction"
 import { SendNotificationAction } from "../actions/SendNotificationAction"
+import { CreateBiddingAction } from "../actions/CreateBiddingAction"
 
 interface LeadDetailPanelProps {
   selectedAccount: string | null
@@ -579,6 +580,9 @@ export function LeadDetailPanel({
               >
                 <User className="h-4 w-4" />
               </Button>
+
+              {/* Create Bidding & Send */}
+              <CreateBiddingAction lead={selectedLead} />
 
               {/* Secondary Actions - Important actions with colored background */}
               <CallBotAction onCallBot={onCallBot} loading={callingBot} />

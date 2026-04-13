@@ -125,9 +125,13 @@ export async function fetchZaloChatHistory({
             const data = await res.json()
             const rawMessages: any[] = data?.data || []
             if (rawMessages.length > 0) {
+              const toVnIso = (utcMs: number) =>
+                new Date(utcMs + 7 * 60 * 60 * 1000).toISOString().replace("Z", "+07:00")
               const messages = rawMessages.slice(-limit).map((msg: any) => ({
                 senderName: msg.is_self ? "Vucar PIC" : "Customer",
-                dateAction: msg.created_at || new Date(parseInt(msg.timestamp) * 1000).toISOString(),
+                dateAction: msg.created_at
+                  ? toVnIso(new Date(msg.created_at).getTime())
+                  : toVnIso(parseInt(msg.timestamp) * 1000),
                 msg_content: msg.content || "",
                 content: msg.content || "",
               }))

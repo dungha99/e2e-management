@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { getNextZaloAccount, buildAbitstoreUrl } from "@/lib/zalo-accounts"
-import { claimNextBatch, markSent, markFailed } from "@/lib/zalo-queue"
+import { claimNextBatch, markSent, markFailed, recoverStalledItems } from "@/lib/zalo-queue"
 import { resolveGroupId, cacheGroupMapping } from "@/lib/zalo-groups"
 import { getNextVucarAccount, VUCAR_SEND_BASE_URL } from "@/lib/vucar-zalo-accounts"
 import { resolveVucarGroupId, cacheVucarGroupMapping } from "@/lib/vucar-zalo-groups"
@@ -9,6 +9,11 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
+    const recovered = await recoverStalledItems()
+    if (recovered > 0) {
+      console.log(`[Zalo Queue] Recovered ${recovered} stalled item(s)`)
+    }
+
     const batch = await claimNextBatch()
 
     if (batch.length === 0) {

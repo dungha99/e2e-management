@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { cn } from "@/lib/utils"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -14,7 +14,7 @@ import {
 } from "recharts"
 import { 
   ArrowLeft, TrendingUp, Users, CheckCircle2, Clock, 
-  BarChart3, Shield, UserCheck, Loader2 
+  BarChart3, Shield, UserCheck, Loader2, MessageSquare
 } from "lucide-react"
 import { DateRangePickerWithPresets } from "@/components/e2e/common/DateRangePickerWithPresets"
 import { DrilldownPanel } from "./DrilldownPanel"
@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Button } from "@/components/ui/button"
 
 // Colors
 const STAGE_COLORS: Record<string, string> = {
@@ -33,14 +34,23 @@ const STAGE_COLORS: Record<string, string> = {
   totalAi: "#94a3b8",
   summary: "#94a3b8",
   contacted: "#60a5fa",
+  CONTACTED: "#60a5fa",
   qualified: "#3b82f6",
   negotiation: "#fbbf24",
+  NEGOTIATION: "#fbbf24",
   inspection: "#a78bfa",
+  INSPECTION: "#a78bfa",
   completed: "#34d399",
+  COMPLETED: "#34d399",
   deposited: "#2dd4bf",
+  DEPOSIT_PAID: "#2dd4bf",
   closed: "#10b981",
   failed: "#f87171",
+  FAILED: "#f87171",
   unknown: "#94a3b8",
+  UNKNOWN: "#94a3b8",
+  UNDEFINED: "#94a3b8",
+  CANNOT_CONTACT: "#f87171",
 }
 
 const SENTIMENT_COLORS: Record<string, string> = {
@@ -68,14 +78,23 @@ const STAGE_LABELS: Record<string, string> = {
   totalAi: "Total AI Leads",
   summary: "Có AI Summary",
   contacted: "Contacted",
+  CONTACTED: "Contacted",
   qualified: "Strong Qualified",
   negotiation: "Negotiation",
+  NEGOTIATION: "Negotiation",
   inspection: "Inspection",
+  INSPECTION: "Inspection",
   completed: "Completed",
+  COMPLETED: "Completed",
   deposited: "Deposited",
+  DEPOSIT_PAID: "Deposited",
   closed: "Closed (CRM)",
   failed: "Failed",
+  FAILED: "Failed",
   unknown: "Unknown",
+  UNKNOWN: "Unknown",
+  UNDEFINED: "Undefined",
+  CANNOT_CONTACT: "Cannot Contact",
 }
 
 function formatNumber(n: number | null | undefined): string {
@@ -449,7 +468,7 @@ function ConversionSection({ data, onDrilldown }: { data: any, onDrilldown: (tit
 // ============================================================================
 function SlaSection({ data }: { data: any }) {
   const { sla } = data
-  const { milestones, breachRates } = sla
+  const { milestones } = sla
 
   return (
     <div className="space-y-6">
@@ -471,7 +490,6 @@ function SlaSection({ data }: { data: any }) {
           suffix="h"
         />
       </div>
-      {/* SLA Milestones */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">SLA Milestones</CardTitle>
@@ -515,12 +533,11 @@ function SlaSection({ data }: { data: any }) {
           </Table>
         </CardContent>
       </Card>
-
-
     </div>
   )
 }
 
+// ============================================================================
 // SECTION 4: AI Quality
 // ============================================================================
 function QualitySection({ data, onDrilldown, filters }: { data: any, onDrilldown: (title: string, ids: string[]) => void, filters?: any }) {
@@ -534,7 +551,7 @@ function QualitySection({ data, onDrilldown, filters }: { data: any, onDrilldown
       label: "Giảm Giá Thành Công (D3)", 
       value: `${quality.leadsWithPriceReduction} (${formatPercent(quality.avgPriceReductionPercent)})`, 
       desc: "price_customer giảm qua ≥2 snapshots",
-      carIds: [] // Needs refinement if we want to drill into price reduction
+      carIds: [] 
     },
   ]
 
@@ -543,7 +560,6 @@ function QualitySection({ data, onDrilldown, filters }: { data: any, onDrilldown
 
   return (
     <div className="space-y-8">
-      {/* Existing KPI Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {mainMetrics.map((m, idx) => (
           <Card 
@@ -560,18 +576,14 @@ function QualitySection({ data, onDrilldown, filters }: { data: any, onDrilldown
         ))}
       </div>
 
-      {/* Seller Sentiment Subsection */}
       <div className="space-y-6 pt-4 border-t">
         <div className="flex items-center gap-2">
           <Shield className="w-5 h-5 text-indigo-500" />
           <h3 className="text-lg font-bold">Seller Sentiment & Escalation</h3>
         </div>
 
-        {/* S3: Escalation Risk Cards */}
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4">
-            <BotAtRiskCard filters={filters} />
-          </div>
+          <BotAtRiskCard filters={filters} />
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <Card 
@@ -618,7 +630,6 @@ function QualitySection({ data, onDrilldown, filters }: { data: any, onDrilldown
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* S1: Sentiment Distribution */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium">Phân bổ Sentiment (S1)</CardTitle>
@@ -656,7 +667,6 @@ function QualitySection({ data, onDrilldown, filters }: { data: any, onDrilldown
             </CardContent>
           </Card>
 
-          {/* S4: Negotiation Quality by Sentiment */}
           <Card className="lg:col-span-2">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium">Sentiment × Chất lượng đàm phán (S4)</CardTitle>
@@ -691,7 +701,6 @@ function QualitySection({ data, onDrilldown, filters }: { data: any, onDrilldown
           </Card>
         </div>
 
-        {/* S2: Sentiment x Stage Cross-tab */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Cross-tab: Sentiment × Stage (S2)</CardTitle>
@@ -730,10 +739,8 @@ function QualitySection({ data, onDrilldown, filters }: { data: any, onDrilldown
             </div>
           </CardContent>
         </Card>
-
       </div>
 
-      {/* Convergence Speed */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Price Convergence Speed (D11)</CardTitle>
@@ -789,10 +796,6 @@ function PicSection({ data }: { data: any }) {
     return (a[sortBy] - b[sortBy]) * mul
   })
 
-  const SortIcon = ({ col }: { col: string }) => (
-    <span className="ml-1 text-xs">{sortBy === col ? (sortDir === "desc" ? "↓" : "↑") : ""}</span>
-  )
-
   return (
     <Card>
       <CardHeader>
@@ -800,153 +803,308 @@ function PicSection({ data }: { data: any }) {
         <CardDescription>Click cột để sort. Dữ liệu filter theo thời gian.</CardDescription>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>PIC</TableHead>
-              <TableHead className="text-right cursor-pointer select-none whitespace-nowrap" onClick={() => handleSort("totalAssignedLeads")}>
-                Assigned Leads<SortIcon col="totalAssignedLeads" />
-              </TableHead>
-              <TableHead className="text-right cursor-pointer select-none whitespace-nowrap" onClick={() => handleSort("totalAiLeads")}>
-                AI Leads<SortIcon col="totalAiLeads" />
-              </TableHead>
-              <TableHead className="text-right cursor-pointer select-none whitespace-nowrap" onClick={() => handleSort("aiUtilizationRate")}>
-                AI Util %<SortIcon col="aiUtilizationRate" />
-              </TableHead>
-              <TableHead className="text-right cursor-pointer select-none whitespace-nowrap" onClick={() => handleSort("aiLeadWins")}>
-                AI Wins<SortIcon col="aiLeadWins" />
-              </TableHead>
-              <TableHead className="text-right cursor-pointer select-none whitespace-nowrap" onClick={() => handleSort("aiLeadWinRate")}>
-                AI Win Rate %<SortIcon col="aiLeadWinRate" />
-              </TableHead>
-              <TableHead className="text-right cursor-pointer select-none whitespace-nowrap" onClick={() => handleSort("slaInfoCollectedRate")}>
-                SLA Info ≤24h<SortIcon col="slaInfoCollectedRate" />
-              </TableHead>
-              <TableHead className="text-right cursor-pointer select-none whitespace-nowrap" onClick={() => handleSort("slaInspectionBookedRate")}>
-                SLA Insp ≤48h<SortIcon col="slaInspectionBookedRate" />
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sorted.map((p: any) => (
-              <TableRow key={p.picId}>
-                <TableCell className="font-medium max-w-[160px] truncate">{p.picName}</TableCell>
-                <TableCell className="text-right font-medium text-slate-600">{p.totalAssignedLeads}</TableCell>
-                <TableCell className="text-right">{p.totalAiLeads}</TableCell>
-                <TableCell className="text-right">{formatPercent(p.aiUtilizationRate)}</TableCell>
-                <TableCell className="text-right font-bold text-emerald-600">{p.aiLeadWins}</TableCell>
-                <TableCell className="text-right">
-                  <span className={p.aiLeadWinRate > 5 ? "text-emerald-500 font-bold" : ""}>
-                    {formatPercent(p.aiLeadWinRate)}
-                  </span>
-                </TableCell>
-                <TableCell className="text-right">
-                  <span className={p.slaInfoCollectedRate >= 80 ? "text-emerald-500" : p.slaInfoCollectedRate >= 50 ? "text-amber-500" : "text-destructive"}>
-                    {formatPercent(p.slaInfoCollectedRate)}
-                  </span>
-                </TableCell>
-                <TableCell className="text-right">
-                  <span className={p.slaInspectionBookedRate >= 80 ? "text-emerald-500" : p.slaInspectionBookedRate >= 50 ? "text-amber-500" : "text-destructive"}>
-                    {formatPercent(p.slaInspectionBookedRate)}
-                  </span>
-                </TableCell>
-              </TableRow>
-            ))}
-            {sorted.length === 0 && (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                  Không có dữ liệu PIC
-                </TableCell>
+                <TableHead className="cursor-pointer" onClick={() => handleSort("picName")}>PIC Name {sortBy === "picName" && (sortDir === "desc" ? "↓" : "↑")}</TableHead>
+                <TableHead className="text-right cursor-pointer" onClick={() => handleSort("totalAssignedLeads")}>Assigned (D0) {sortBy === "totalAssignedLeads" && (sortDir === "desc" ? "↓" : "↑")}</TableHead>
+                <TableHead className="text-right cursor-pointer" onClick={() => handleSort("totalQualifiedLeads")}>Qualified {sortBy === "totalQualifiedLeads" && (sortDir === "desc" ? "↓" : "↑")}</TableHead>
+                <TableHead className="text-right cursor-pointer" onClick={() => handleSort("totalAiLeads")}>AI Leads {sortBy === "totalAiLeads" && (sortDir === "desc" ? "↓" : "↑")}</TableHead>
+                <TableHead className="text-right cursor-pointer" onClick={() => handleSort("aiUtilizationRate")}>Utl % (D0) {sortBy === "aiUtilizationRate" && (sortDir === "desc" ? "↓" : "↑")}</TableHead>
+                <TableHead className="text-right cursor-pointer" onClick={() => handleSort("aiUtlOverQualifiedRate")}>Utl % (Qual) {sortBy === "aiUtlOverQualifiedRate" && (sortDir === "desc" ? "↓" : "↑")}</TableHead>
+                <TableHead className="text-right cursor-pointer" onClick={() => handleSort("aiLeadWins")}>AI Wins {sortBy === "aiLeadWins" && (sortDir === "desc" ? "↓" : "↑")}</TableHead>
+                <TableHead className="text-right cursor-pointer" onClick={() => handleSort("aiLeadWinRate")}>AI Win % {sortBy === "aiLeadWinRate" && (sortDir === "desc" ? "↓" : "↑")}</TableHead>
+                <TableHead className="text-right cursor-pointer" onClick={() => handleSort("slaInfoCollectedRate")}>Info % {sortBy === "slaInfoCollectedRate" && (sortDir === "desc" ? "↓" : "↑")}</TableHead>
+                <TableHead className="text-right cursor-pointer" onClick={() => handleSort("slaInspectionBookedRate")}>Insp % {sortBy === "slaInspectionBookedRate" && (sortDir === "desc" ? "↓" : "↑")}</TableHead>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {sorted.map((p: any) => (
+                <TableRow key={p.picId}>
+                  <TableCell className="font-medium whitespace-nowrap">{p.picName}</TableCell>
+                  <TableCell className="text-right">{formatNumber(p.totalAssignedLeads)}</TableCell>
+                  <TableCell className="text-right">{formatNumber(p.totalQualifiedLeads)}</TableCell>
+                  <TableCell className="text-right font-semibold">{formatNumber(p.totalAiLeads)}</TableCell>
+                  <TableCell className="text-right">
+                    <Badge variant="outline" className="font-mono text-[10px]">{formatPercent(p.aiUtilizationRate)}</Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Badge variant="secondary" className="font-mono text-[10px] bg-blue-50 text-blue-700 border-blue-200">{formatPercent(p.aiUtlOverQualifiedRate)}</Badge>
+                  </TableCell>
+                  <TableCell className="text-right">{formatNumber(p.aiLeadWins)}</TableCell>
+                  <TableCell className="text-right">{formatPercent(p.aiLeadWinRate)}</TableCell>
+                  <TableCell className="text-right">{formatPercent(p.slaInfoCollectedRate)}</TableCell>
+                  <TableCell className="text-right">{formatPercent(p.slaInspectionBookedRate)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </CardContent>
     </Card>
   )
 }
 
 // ============================================================================
-// Main Dashboard
+// SECTION 6: User Context (Feedback)
 // ============================================================================
-export interface AiFunnelDashboardProps {
-  data: any
-  loading?: boolean
-  filters?: { dateRange: any; picId: string }
-  onFilterChange?: (newFilters: { dateRange?: any; picId?: string }) => void
-  hideHeader?: boolean
+function FeedbackSection({ data, onDrilldown }: { data: any, onDrilldown: (title: string, ids: string[]) => void }) {
+  const { feedback } = data
+  if (!feedback) return null
+
+  const distributionData = (feedback.distribution || []).map((s: any) => ({
+    ...s,
+    label: STAGE_LABELS[s.stage] || s.stage,
+    fill: STAGE_COLORS[s.stage] || "#94a3b8",
+  }))
+
+  return (
+    <div className="space-y-6">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <StatCard 
+          title="Tổng Feedback Records" 
+          value={formatNumber(feedback.metrics?.totalRecords)} 
+          icon={MessageSquare} 
+          subtitle="Loại system-generated bị loại bỏ"
+        />
+        <StatCard 
+          title="Tổng xe có Feedback" 
+          value={formatNumber(feedback.metrics?.totalCars)} 
+          icon={CheckCircle2} 
+          color="text-emerald-500"
+          subtitle="Distinct car_id"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Stage Distribution Chart */}
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <CardTitle className="text-base">Phân bổ theo Stage</CardTitle>
+            <CardDescription>% xe có feedback tại mỗi stage</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={distributionData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="count"
+                  >
+                    {distributionData.map((entry: any, index: number) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }}
+                    formatter={(value: number, name: string, props: any) => [`${value} xe (${props.payload.pct}%)`, STAGE_LABELS[name] || name]}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="grid grid-cols-2 gap-2 mt-4">
+              {distributionData.slice(0, 10).map((d: any) => (
+                <div key={d.stage} className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: d.fill }} />
+                  <span className="text-[10px] truncate">{STAGE_LABELS[d.stage] || d.stage}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Feedback Details - New Vertical List UI */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Chi tiết Feedback mới nhất</CardTitle>
+            <CardDescription>Danh sách thực tế từ các xe đang chăm sóc</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="max-h-[600px] overflow-y-auto px-6 pb-6 space-y-4">
+              {(feedback.details || []).map((item: any, idx: number) => (
+                <div 
+                  key={idx} 
+                  className="p-4 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-all cursor-pointer group"
+                  onClick={() => onDrilldown(`Feedback: ${item.carId}`, [item.carId])}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Badge 
+                        variant="secondary" 
+                        className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5"
+                        style={{ 
+                          backgroundColor: `${STAGE_COLORS[item.stage]}15`, 
+                          color: STAGE_COLORS[item.stage],
+                          borderColor: `${STAGE_COLORS[item.stage]}40`
+                        }}
+                      >
+                        {STAGE_LABELS[item.stage] || item.stage}
+                      </Badge>
+                      <div className="h-1 w-1 rounded-full bg-muted-foreground/30" />
+                      <span className="text-[11px] font-medium text-muted-foreground">{item.picName}</span>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground">
+                      {new Date(item.createdAt).toLocaleDateString('vi-VN', { 
+                        day: '2-digit', 
+                        month: '2-digit', 
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">
+                      {item.feedback}
+                    </p>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-dashed flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="text-[10px] font-mono text-muted-foreground uppercase">ID: {item.carId.slice(0, 8)}...</span>
+                  </div>
+                </div>
+              ))}
+              
+              {(!feedback.details || feedback.details.length === 0) && (
+                <div className="py-20 text-center opacity-30 text-sm">
+                  Chưa có dữ liệu feedback trong khoảng thời gian này
+                </div>
+              )}
+            </div>
+            {feedback.details?.length > 0 && (
+              <div className="p-4 border-t bg-muted/10">
+                <p className="text-[10px] text-center text-muted-foreground italic">
+                  Đang hiển thị {feedback.details.length} feedback records mới nhất
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
 }
 
-export function AiFunnelDashboard({ 
-  data, 
-  loading = false, 
-  filters, 
-  onFilterChange,
-  hideHeader = false
-}: AiFunnelDashboardProps) {
-  const [drilldown, setDrilldown] = useState<{ title: string, subtitle?: string, carIds: string[] } | null>(null)
+export function AiFunnelDashboard() {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [dateRange, setDateRange] = useState<{ from: Date, to: Date }>({
+    from: new Date(new Date().setDate(new Date().getDate() - 30)),
+    to: new Date(),
+  })
+  const [filterPicId, setFilterPicId] = useState<string>("all")
+  const [filterSource, setFilterSource] = useState<string>("all")
+  const [drilldown, setDrilldown] = useState<{ title: string, ids: string[] } | null>(null)
 
-  const handleDrilldown = (title: string, carIds: string[], subtitle?: string) => {
-    if (!carIds || carIds.length === 0) return
-    setDrilldown({ title, subtitle, carIds })
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({
+        startDate: dateRange.from.toISOString(),
+        endDate: dateRange.to.toISOString(),
+        picId: filterPicId,
+        source: filterSource,
+      })
+      const res = await fetch(`/api/ai-funnel/dashboard?${params}`)
+      const json = await res.json()
+      setData(json)
+    } catch (err) {
+      console.error("Fetch error:", err)
+    } finally {
+      setLoading(false)
+    }
+  }, [dateRange, filterPicId, filterSource])
+
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
+
+  const handleDrilldown = (title: string, ids: string[]) => {
+    if (ids.length > 0) setDrilldown({ title, ids })
+  }
+
+  const filters = {
+    startDate: dateRange.from.toISOString(),
+    endDate: dateRange.to.toISOString(),
+    picId: filterPicId,
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <DrilldownPanel
-        isOpen={!!drilldown}
-        onClose={() => setDrilldown(null)}
-        title={drilldown?.title || ""}
-        subtitle={drilldown?.subtitle}
-        carIds={drilldown?.carIds || []}
-      />
-
+    <div className="flex flex-col min-h-screen bg-background">
       {/* Header */}
-      {!hideHeader && (
-        <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-          <div className="max-w-7xl mx-auto flex items-center gap-4 px-4 py-3">
-            <button
-              onClick={() => window.history.back()}
-              className="rounded-md p-1.5 hover:bg-muted transition-colors"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <div>
-              <h1 className="text-lg font-semibold leading-none">AI Funnel Dashboard</h1>
-              <p className="text-[10px] text-muted-foreground mt-1">Metrics từ AI leads pipeline</p>
-            </div>
+      <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-6">
+        <div className="flex flex-1 items-center gap-4">
+          <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 gap-1.5 px-3 py-1">
+            <TrendingUp className="h-4 w-4" />
+            <span className="font-bold tracking-tight uppercase text-[10px]">AI Performance Dashboard v2</span>
+          </Badge>
+          <div className="h-4 w-[1px] bg-border mx-2" />
+          <h1 className="text-lg font-semibold tracking-tight">Analytics & Intelligence</h1>
+        </div>
 
-            <div className="ml-auto flex items-center gap-2">
-              {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mr-2" />}
-              
-              <DateRangePickerWithPresets
-                dateRange={filters?.dateRange}
-                onDateRangeChange={(range) => onFilterChange?.({ dateRange: range })}
-                className="w-[260px] h-9 text-xs"
-              />
-            </div>
-          </div>
-        </header>
-      )}
+        <div className="flex items-center gap-3">
+          {/* Source Filter */}
+          <Select value={filterSource} onValueChange={setFilterSource}>
+            <SelectTrigger className="w-[140px] h-9 text-xs">
+              <SelectValue placeholder="Source" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Sources</SelectItem>
+              {data?.sourceList?.map((s: string) => (
+                <SelectItem key={s} value={s}>{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-      {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 py-6 relative">
-        {loading && !data && (
-          <div className="flex flex-col items-center justify-center py-20 gap-3">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-muted-foreground text-sm">Đang tải dashboard...</p>
-          </div>
+          {/* PIC Filter */}
+          <Select value={filterPicId} onValueChange={setFilterPicId}>
+            <SelectTrigger className="w-[180px] h-9 text-xs">
+              <SelectValue placeholder="Filter by PIC" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tất cả PIC</SelectItem>
+              {data?.picList?.map((p: any) => (
+                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <DateRangePickerWithPresets
+            dateRange={{ from: dateRange.from, to: dateRange.to }}
+            onDateRangeChange={(d: any) => d?.from && d?.to && setDateRange({ from: d.from, to: d.to })}
+          />
+        </div>
+      </header>
+
+      <main className="flex-1 p-6 space-y-6">
+        {drilldown && (
+          <DrilldownPanel
+            isOpen={!!drilldown}
+            title={drilldown.title}
+            carIds={drilldown.ids}
+            onClose={() => setDrilldown(null)}
+          />
         )}
 
-        {!data && !loading && (
-          <div className="text-center py-20">
-            <p className="text-muted-foreground">Không có dữ liệu dashboard</p>
+        {loading && !data ? (
+          <div className="flex h-[400px] items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-primary opacity-20" />
           </div>
-        )}
-
-        {data && (
-          <Tabs defaultValue="volume">
-            <TabsList className="w-full justify-start overflow-x-auto flex-nowrap">
+        ) : !data ? (
+          <div className="text-center py-20 opacity-50">No data found</div>
+        ) : (
+          <Tabs defaultValue="quality" className="space-y-6">
+            <TabsList className="bg-muted/50 p-1 border">
+               <TabsTrigger value="quality" className="gap-1.5">
+                <Shield className="h-3.5 w-3.5" />
+                AI Quality
+              </TabsTrigger>
               <TabsTrigger value="volume" className="gap-1.5">
                 <Users className="h-3.5 w-3.5" />
                 Volume
@@ -959,13 +1117,13 @@ export function AiFunnelDashboard({
                 <Clock className="h-3.5 w-3.5" />
                 SLA & Speed
               </TabsTrigger>
-              <TabsTrigger value="quality" className="gap-1.5">
-                <Shield className="h-3.5 w-3.5" />
-                AI Quality
-              </TabsTrigger>
-              <TabsTrigger value="pic" className="gap-1.5">
+               <TabsTrigger value="pic" className="gap-1.5">
                 <UserCheck className="h-3.5 w-3.5" />
                 Theo PIC
+              </TabsTrigger>
+              <TabsTrigger value="feedback" className="gap-1.5">
+                <MessageSquare className="h-3.5 w-3.5" />
+                User Context
               </TabsTrigger>
             </TabsList>
 
@@ -987,6 +1145,10 @@ export function AiFunnelDashboard({
 
             <TabsContent value="pic" className="mt-6">
               <PicSection data={data} />
+            </TabsContent>
+
+            <TabsContent value="feedback" className="mt-6">
+              <FeedbackSection data={data} onDrilldown={handleDrilldown} />
             </TabsContent>
           </Tabs>
         )}

@@ -1,23 +1,27 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, Search } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Lead, DealerGroup } from "../types"
 import { formatCarInfo } from "../utils"
+
+interface ConnectionPartner {
+  b_user_id: string
+  user_name: string
+}
 
 interface SendToDealerGroupsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   selectedLead: Lead | null
   onSuccess?: () => void
-  dealerGroups: DealerGroup[]
-  loadingDealerGroups: boolean
 }
 
 export function SendToDealerGroupsDialog({
@@ -25,15 +29,65 @@ export function SendToDealerGroupsDialog({
   onOpenChange,
   selectedLead,
   onSuccess,
-  dealerGroups,
-  loadingDealerGroups
 }: SendToDealerGroupsDialogProps) {
   const { toast } = useToast()
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([])
-  const [sendingToGroups, setSendingToGroups] = useState(false)
-  const [dealerGroupSearch, setDealerGroupSearch] = useState("")
 
-  // Dealer groups data is now passed from parent component
+  const [connectionPartners, setConnectionPartners] = useState<ConnectionPartner[]>([])
+  const [loadingPartners, setLoadingPartners] = useState(false)
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string>("")
+
+  const [dealerGroups, setDealerGroups] = useState<DealerGroup[]>([])
+  const [loadingGroups, setLoadingGroups] = useState(false)
+
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([])
+  const [groupSearch, setGroupSearch] = useState("")
+  const [sendingToGroups, setSendingToGroups] = useState(false)
+
+  // Fetch connection partners when dialog opens
+  useEffect(() => {
+    if (!open || !selectedLead?.pic_id) return
+
+    setConnectionPartners([])
+    setSelectedPartnerId("")
+    setDealerGroups([])
+    setSelectedGroupIds([])
+    setGroupSearch("")
+
+    setLoadingPartners(true)
+    fetch(`/api/e2e/staff-connections?pic_id=${selectedLead.pic_id}`)
+      .then(r => r.json())
+      .then(data => {
+        setConnectionPartners(data.partners || [])
+      })
+      .catch(err => {
+        console.error("[SendToDealerGroups] Error fetching partners:", err)
+        toast({ title: "Lỗi", description: "Không thể tải danh sách kết nối", variant: "destructive" })
+      })
+      .finally(() => setLoadingPartners(false))
+  }, [open, selectedLead?.pic_id])
+
+  // Fetch dealer groups when a partner is selected
+  useEffect(() => {
+    if (!selectedPartnerId) {
+      setDealerGroups([])
+      return
+    }
+
+    setDealerGroups([])
+    setSelectedGroupIds([])
+    setLoadingGroups(true)
+
+    fetch(`/api/e2e/vucar-dealer-groups?b_user_id=${selectedPartnerId}`)
+      .then(r => r.json())
+      .then(data => {
+        setDealerGroups(data.groups || [])
+      })
+      .catch(err => {
+        console.error("[SendToDealerGroups] Error fetching groups:", err)
+        toast({ title: "Lỗi", description: "Không thể tải danh sách nhóm dealer", variant: "destructive" })
+      })
+      .finally(() => setLoadingGroups(false))
+  }, [selectedPartnerId])
 
   async function handleSendToGroups() {
     if (!selectedLead?.car_id || selectedGroupIds.length === 0) return
@@ -57,28 +111,31 @@ export function SendToDealerGroupsDialog({
       if (selectedLead.additional_images) {
         Object.values(selectedLead.additional_images).forEach(images => {
           if (Array.isArray(images)) {
-            images.forEach(img => {
-              if (img.url) {
-                imageUrls.push(img.url)
-              }
+            images.forEach((img: any) => {
+              if (img.url) imageUrls.push(img.url)
             })
           }
         })
       }
 
-      const sendResponse = await fetch("/api/e2e/send-to-groups", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          groupIds: selectedGroupIds,
-          message: carInfo,
-          imageUrls: imageUrls,
-          phone: selectedLead.phone || "0986755669"
-        }),
-      })
+      // Enqueue one message per selected group via the queue (uses vucar API at send time)
+      const enqueuePromises = selectedGroups.map(group =>
+        fetch("/api/proxy/zalo-send-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            groupname: group.groupName,
+            message: carInfo,
+            image_url: imageUrls,
+            pic_id: selectedLead.pic_id,
+          }),
+        })
+      )
 
-      const sendResult = await sendResponse.json()
+      const enqueueResults = await Promise.all(enqueuePromises)
+      const queuedCount = enqueueResults.filter(r => r.ok).length
 
+      // Create bidding records for groups that match a dealer
       const biddingPromises = selectedGroups
         .filter(group => group.dealerId)
         .map(group =>
@@ -89,24 +146,22 @@ export function SendToDealerGroupsDialog({
               car_id: selectedLead.car_id,
               dealer_id: group.dealerId,
               price: 1,
-              comment: "Đã gửi thông tin xe"
+              comment: "Đã gửi thông tin xe",
             }),
           })
         )
 
       await Promise.all(biddingPromises)
 
-      const sendSuccess = sendResult.successCount || 0
-
-      if (sendSuccess > 0) {
+      if (queuedCount > 0) {
         toast({
-          title: "Thành công",
-          description: `Đã gửi thông tin xe và ${imageUrls.length} ảnh đến ${sendSuccess} nhóm dealer`,
+          title: "Đã thêm vào hàng chờ",
+          description: `${queuedCount} nhóm sẽ nhận thông tin xe và ${imageUrls.length} ảnh`,
         })
       } else {
         toast({
-          title: "Gửi thất bại",
-          description: "Không thể gửi tin nhắn đến các nhóm",
+          title: "Lỗi",
+          description: "Không thể thêm tin nhắn vào hàng chờ",
           variant: "destructive",
         })
       }
@@ -115,30 +170,25 @@ export function SendToDealerGroupsDialog({
       onOpenChange(false)
       setSelectedGroupIds([])
     } catch (error) {
-      console.error("[E2E] Error sending to groups:", error)
-      toast({
-        title: "Lỗi",
-        description: "Không thể gửi thông tin xe",
-        variant: "destructive",
-      })
+      console.error("[SendToDealerGroups] Error:", error)
+      toast({ title: "Lỗi", description: "Không thể gửi thông tin xe", variant: "destructive" })
     } finally {
       setSendingToGroups(false)
     }
   }
 
   function handleOpenChange(newOpen: boolean) {
-    if (newOpen) {
+    if (!newOpen) {
       setSelectedGroupIds([])
-      setDealerGroupSearch("")
+      setGroupSearch("")
+      setSelectedPartnerId("")
     }
     onOpenChange(newOpen)
   }
 
   const filteredGroups = dealerGroups
-    .filter(group => group.dealerId) // Only show groups that match active dealers
-    .filter(group =>
-      group.groupName.toLowerCase().includes(dealerGroupSearch.toLowerCase())
-    )
+    .filter(group => group.dealerId)
+    .filter(group => group.groupName.toLowerCase().includes(groupSearch.toLowerCase()))
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -150,27 +200,59 @@ export function SendToDealerGroupsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="px-6 pb-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Tìm kiếm nhóm dealer..."
-              value={dealerGroupSearch}
-              onChange={(e) => setDealerGroupSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
+        {/* Partner selector */}
+        <div className="px-6 pb-2">
+          {loadingPartners ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Đang tải danh sách kết nối...
+            </div>
+          ) : connectionPartners.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Không có kết nối nào cho PIC này</p>
+          ) : (
+            <div className="space-y-1">
+              <Label className="text-sm font-medium">Gửi từ tài khoản</Label>
+              <Select value={selectedPartnerId} onValueChange={setSelectedPartnerId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Chọn người gửi..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {connectionPartners.map(p => (
+                    <SelectItem key={p.b_user_id} value={p.b_user_id}>
+                      {p.user_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
 
+        {/* Group search */}
+        {selectedPartnerId && (
+          <div className="px-6 pb-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Tìm kiếm nhóm dealer..."
+                value={groupSearch}
+                onChange={(e) => setGroupSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Group list */}
         <div className="flex-1 overflow-y-auto px-6">
-          {loadingDealerGroups ? (
+          {!selectedPartnerId ? null : loadingGroups ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
               <span className="ml-3 text-muted-foreground">Đang tải danh sách nhóm...</span>
             </div>
           ) : filteredGroups.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
-              <p>{dealerGroupSearch ? "Không tìm thấy nhóm phù hợp" : "Không tìm thấy nhóm dealer nào"}</p>
+              <p>{groupSearch ? "Không tìm thấy nhóm phù hợp" : "Không tìm thấy nhóm dealer nào"}</p>
             </div>
           ) : (
             <div className="space-y-2 pb-4">
@@ -208,22 +290,18 @@ export function SendToDealerGroupsDialog({
               Đã chọn: <span className="font-semibold">{selectedGroupIds.length}</span> nhóm
             </div>
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={sendingToGroups}
-              >
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={sendingToGroups}>
                 Hủy
               </Button>
               <Button
                 onClick={handleSendToGroups}
-                disabled={selectedGroupIds.length === 0 || sendingToGroups}
+                disabled={selectedGroupIds.length === 0 || sendingToGroups || !selectedPartnerId}
                 className="bg-emerald-600 hover:bg-emerald-700"
               >
                 {sendingToGroups ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Đang gửi...
+                    Đang xử lý...
                   </>
                 ) : (
                   `Gửi đến ${selectedGroupIds.length} nhóm`

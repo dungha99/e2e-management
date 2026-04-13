@@ -341,11 +341,6 @@ export function E2EManagement({
 
   // Send to dealer groups state
   const [sendDealerDialogOpen, setSendDealerDialogOpen] = useState(false)
-  const [dealerGroups, setDealerGroups] = useState<Array<{ groupId: string, groupName: string, dealerId: string | null }>>([])
-  const [loadingDealerGroups, setLoadingDealerGroups] = useState(false)
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([])
-  const [sendingToGroups, setSendingToGroups] = useState(false)
-  const [dealerGroupSearch, setDealerGroupSearch] = useState("")
 
   // Detail dialog state
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
@@ -683,146 +678,8 @@ export function E2EManagement({
 
 
 
-  async function fetchDealerGroups() {
-    setLoadingDealerGroups(true)
-    try {
-      const response = await fetch("/api/e2e/dealer-groups")
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch dealer groups")
-      }
-
-      const data = await response.json()
-      console.log("[E2E] Dealer groups data:", data)
-
-      setDealerGroups(data.groups || [])
-    } catch (error) {
-      console.error("[E2E] Error fetching dealer groups:", error)
-      toast({
-        title: "Lỗi",
-        description: "Không thể tải danh sách nhóm dealer",
-        variant: "destructive",
-      })
-      setDealerGroups([])
-    } finally {
-      setLoadingDealerGroups(false)
-    }
-  }
-
   function handleOpenSendDealerDialog() {
     setSendDealerDialogOpen(true)
-    setSelectedGroupIds([])
-    setDealerGroupSearch("")
-    fetchDealerGroups()
-  }
-
-  async function handleSendToGroups() {
-    if (!selectedLead?.car_id || selectedGroupIds.length === 0) return
-
-    setSendingToGroups(true)
-    try {
-      // Get selected groups with dealer IDs
-      const selectedGroups = dealerGroups.filter(g => selectedGroupIds.includes(g.groupId))
-
-      // Get current time
-      const now = new Date()
-      const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`
-
-      // Prepare car information message using the template
-      const carInfo = `Thời gian nhận thông tin: ${timeString}\n` +
-        `Thông tin chi tiết xe: ${selectedLead.brand || ''} ${selectedLead.model || ''} ${selectedLead.year || ''}\n` +
-        `Số km đã đi (Odo): ${selectedLead.mileage ? selectedLead.mileage.toLocaleString() : 'N/A'} km\n` +
-        `Khu vực: ${selectedLead.location || 'N/A'}\n` +
-        `Giá mong muốn: ${selectedLead.price_customer || 'N/A'}\n` +
-        `Car_id: ${selectedLead.car_id}\n` +
-        `Vucar hỗ trợ tài chính: 80% giá trị xe, lãi suất từ 500đ/ngày/1 triệu đồng.`
-
-      // Extract image URLs from additional_images
-      const imageUrls: string[] = []
-      console.log("[E2E] selectedLead.additional_images:", selectedLead.additional_images)
-
-      if (selectedLead.additional_images) {
-        // Get images from all categories (paper, inside, outside, etc.)
-        Object.values(selectedLead.additional_images).forEach(images => {
-          if (Array.isArray(images)) {
-            images.forEach(img => {
-              if (img.url) {
-                imageUrls.push(img.url)
-              }
-            })
-          }
-        })
-      }
-
-      console.log("[E2E] Extracted imageUrls:", imageUrls)
-      console.log("[E2E] Number of images:", imageUrls.length)
-
-      // Send messages and images to groups via Zalo API
-      const sendResponse = await fetch("/api/e2e/send-to-groups", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          groupIds: selectedGroupIds,
-          message: carInfo,
-          imageUrls: imageUrls, // Send all images
-          phone: selectedLead.phone || "0986755669"
-        }),
-      })
-
-      const sendResult = await sendResponse.json()
-
-      // Create bidding records for groups that have dealer IDs
-      const biddingPromises = selectedGroups
-        .filter(group => group.dealerId) // Only groups with matching dealers
-        .map(group =>
-          fetch("/api/e2e/bidding-history/create", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              car_id: selectedLead.car_id,
-              dealer_id: group.dealerId,
-              price: 1, // Price 1 means "sent info only"
-              comment: "Đã gửi thông tin xe"
-            }),
-          })
-        )
-
-      const biddingResults = await Promise.all(biddingPromises)
-
-      // Check results
-      const sendSuccess = sendResult.successCount || 0
-
-      if (sendSuccess > 0) {
-        toast({
-          title: "Thành công",
-          description: `Đã gửi thông tin xe và ${imageUrls.length} ảnh đến ${sendSuccess} nhóm dealer`,
-        })
-      } else {
-        toast({
-          title: "Gửi thất bại",
-          description: "Không thể gửi tin nhắn đến các nhóm",
-          variant: "destructive",
-        })
-      }
-
-      // Refresh bidding history
-      if (selectedLead.car_id) {
-        fetchBiddingHistory(selectedLead.car_id)
-      }
-
-      // Close dialog
-      setSendDealerDialogOpen(false)
-      setSelectedGroupIds([])
-    } catch (error) {
-      console.error("[E2E] Error sending to groups:", error)
-      toast({
-        title: "Lỗi",
-        description: "Không thể gửi thông tin xe",
-        variant: "destructive",
-      })
-    } finally {
-      setSendingToGroups(false)
-    }
   }
 
 
@@ -2629,8 +2486,6 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
         onOpenChange={setSendDealerDialogOpen}
         selectedLead={selectedLead}
         onSuccess={refetchLeads}
-        dealerGroups={dealerGroups}
-        loadingDealerGroups={loadingDealerGroups}
       />
 
       {/* Image Gallery Modal */}

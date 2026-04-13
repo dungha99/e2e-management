@@ -25,6 +25,7 @@ interface QdrantResult {
     chunk_index?: number;
     full_document?: string;
     car_info?: string;
+    outcome?: string;
   };
 }
 
@@ -86,7 +87,7 @@ async function embedText(text: string): Promise<number[]> {
 async function searchQdrant(vector: number[], limit: number = 20): Promise<QdrantResult[]> {
   const endpoint = process.env.Qdrant_Cluster_Endpoint;
   const apiKey = process.env.Qdrant_API_Key;
-  const collectionName = process.env.Qdrant_Cluster_Name || "vucar_lead_history_v2";
+  const collectionName = process.env.Qdrant_Cluster_Name || "vucar_deals_v3";
 
   if (!endpoint || !apiKey) {
     throw new Error("Qdrant configuration is missing (Qdrant_Cluster_Endpoint or Qdrant_API_Key)");
@@ -137,18 +138,16 @@ function buildSimilarLeadsContext(results: QdrantResult[]): string {
   // Sort deduped results by score descending (already sorted from Qdrant, but ensure after dedup)
   const deduped = Array.from(bestByLeadId.values()).sort((a, b) => b.score - a.score);
 
-  // Parse sale_stage and classify
+  // Classify by outcome field: COMPLETED = WIN, FAILED = FAILED
   const failed: QdrantResult[] = [];
   const win: QdrantResult[] = [];
 
   for (const result of deduped) {
-    const fullDoc = result.payload?.full_document || "";
-    const stageMatch = fullDoc.match(/\[sale_stage\]:\s*(\w+)/);
-    const saleStage = stageMatch ? stageMatch[1].toUpperCase() : "";
+    const outcome = (result.payload?.outcome || "").toUpperCase();
 
-    if (saleStage === "FAILED") {
+    if (outcome === "FAILED") {
       if (failed.length < 3) failed.push(result);
-    } else {
+    } else if (outcome === "COMPLETED") {
       if (win.length < 3) win.push(result);
     }
 

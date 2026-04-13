@@ -71,8 +71,8 @@ function extractStepsFromAnalysis(analysis: any): ExtractedStep[] {
     const isBidding = action.includes("tạo phiên đấu giá") ||
       action.includes("tạo phiên") ||
       action.includes("đấu giá") ||
-      action.includes("bidding")
-
+      action.includes("bidding") ||
+      action.includes("create_auction")
     if (isScript || isBidding) {
       steps.push({
         stepName: isScript ? CONNECTOR_MAP.script.stepName : CONNECTOR_MAP.bidding.stepName,

@@ -206,7 +206,7 @@ export function AiThinkingChat({
   const [isAutoFlowing, setIsAutoFlowing] = useState(false)
   const isAutoFlowingRef = useRef(false)
   const isSubmittingRef = useRef(false)
-  const [autoActivate, setAutoActivate] = useState(false)
+  const [autoActivate, setAutoActivate] = useState(true)
   const autoActivateRef = useRef(false)
   const autoActivatedInsightRef = useRef<string | null>(null)
   const [expandedIndices, setExpandedIndices] = useState<number[]>([])
@@ -443,8 +443,8 @@ export function AiThinkingChat({
 
   // Reset checkbox and ref when lead changes
   useEffect(() => {
-    setAutoActivate(false)
-    autoActivateRef.current = false
+    setAutoActivate(true)
+    autoActivateRef.current = true
     autoActivatedInsightRef.current = null
   }, [carId])
 

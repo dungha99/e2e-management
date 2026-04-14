@@ -5,7 +5,7 @@ import { findSimilarLeads } from "@/lib/vector-search"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { carId, sourceInstanceId, phoneNumber, userFeedback } = body
+    const { carId, sourceInstanceId, phoneNumber, userFeedback, retrigger } = body
 
     // Validation
     if (!carId || !phoneNumber) {
@@ -277,6 +277,7 @@ export async function POST(request: Request) {
       currentContext,        // template sentence used as the vector search query
       similarLeadsContext,  // formatted text string of win/failed cases
       chat_history: chatHistory,
+      retrigger: retrigger === true,
     }
 
     // Optional: Validate payload against input_schema if provided

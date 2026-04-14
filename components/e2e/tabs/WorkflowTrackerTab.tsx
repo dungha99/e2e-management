@@ -482,7 +482,7 @@ export function WorkflowTrackerTab({
   const insightsCarIdRef = useRef<string | null>(null)
 
   // Reusable function to load insights + poll on 202
-  const loadAndPollInsights = useCallback((carId: string, phoneNumber: string, userFeedback?: string) => {
+  const loadAndPollInsights = useCallback((carId: string, phoneNumber: string, userFeedback?: string, retrigger?: boolean) => {
     if (!isMountedRef.current) return
     // Skip if a request is already in-flight (prevents concurrent calls when server is slow)
     if (isFetchInFlightRef.current) return
@@ -491,7 +491,7 @@ export function WorkflowTrackerTab({
     console.log(`[WorkflowTracker] Fetching AI insights for car ${carId}...${userFeedback ? ' (with feedback)' : ''}`)
     setFetchingAiInsights(true)
 
-    fetchAiInsights(carId, phoneNumber, userFeedback)
+    fetchAiInsights(carId, phoneNumber, userFeedback, retrigger)
       .then((result) => {
         isFetchInFlightRef.current = false
         if (!isMountedRef.current) return
@@ -763,7 +763,7 @@ ${dealerBidsStr}`
         currentNotes={selectedLead.notes}
         currentUserId={currentUserId}
         leadPhone={selectedLead.phone || selectedLead.additional_phone || undefined}
-        onSubmitFeedback={async (feedback) => {
+        onSubmitFeedback={async (feedback, retrigger) => {
           if (!selectedLead.car_id) return
           const phoneNumber = selectedLead.phone || selectedLead.additional_phone
           if (!phoneNumber) return
@@ -776,7 +776,7 @@ ${dealerBidsStr}`
           isFetchInFlightRef.current = false
 
           // Submit feedback and start polling — loading stays active until real result arrives
-          loadAndPollInsights(selectedLead.car_id, phoneNumber, feedback)
+          loadAndPollInsights(selectedLead.car_id, phoneNumber, feedback, retrigger)
         }}
         onRate={async (id, isHistory, isPositive) => {
           if (!aiInsights) return

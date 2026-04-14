@@ -29,7 +29,7 @@ import {
 interface AiThinkingChatProps {
   insights: AiInsight | null
   isLoading: boolean
-  onSubmitFeedback: (feedback: string) => Promise<void>
+  onSubmitFeedback: (feedback: string, retrigger: boolean) => Promise<void>
   onRate?: (id: string, isHistory: boolean, isPositive: boolean | null) => Promise<void>
   onSendScript?: (scriptText: string) => void
   onExecuteConnector?: (connectorName: string, defaultValues: Record<string, any>, title: string) => void
@@ -214,11 +214,7 @@ export function AiThinkingChat({
   const [isAutoFlowing, setIsAutoFlowing] = useState(false)
   const isAutoFlowingRef = useRef(false)
   const isSubmittingRef = useRef(false)
-  const [autoActivate, setAutoActivate] = useState(true)
-  const autoActivateRef = useRef(true)
-  const autoActivatedInsightRef = useRef<string | null>(null)
-  // Only true after user explicitly clicks send — prevents auto-activate on page load
-  const pendingAutoActivateRef = useRef(false)
+  const [autoActivate, setAutoActivate] = useState(false)
   const [expandedIndices, setExpandedIndices] = useState<number[]>([])
   const [hasAnimated, setHasAnimated] = useState<string | null>(null) // Tracks last animated unique state
   const [showHistory, setShowHistory] = useState(false) // Toggle for chat history visibility
@@ -330,7 +326,7 @@ export function AiThinkingChat({
       ].filter(Boolean).join("\n")
 
       if (prompt) {
-        await onSubmitFeedback(prompt)
+        await onSubmitFeedback(prompt, autoActivate)
       }
 
       // Reset fields
@@ -350,9 +346,8 @@ export function AiThinkingChat({
     if (isSubmittingRef.current) return
     isSubmittingRef.current = true
     setIsSubmitting(true)
-    pendingAutoActivateRef.current = true
     try {
-      await onSubmitFeedback(feedback)
+      await onSubmitFeedback(feedback, autoActivate)
       setFeedback("")
     } finally {
       isSubmittingRef.current = false
@@ -394,7 +389,6 @@ export function AiThinkingChat({
     if (isSubmittingRef.current) return
     isSubmittingRef.current = true
     setIsSubmitting(true)
-    pendingAutoActivateRef.current = true
     setIsInputModalOpen(false)
 
     try {
@@ -405,7 +399,7 @@ export function AiThinkingChat({
         `BƯỚC TIẾP THEO: ${structNextStep}`
       ].join("\n")
 
-      await onSubmitFeedback(formattedFeedback)
+      await onSubmitFeedback(formattedFeedback, autoActivate)
 
       // Clear fields
       setStructSituation("")
@@ -488,17 +482,9 @@ export function AiThinkingChat({
     }
   }, [insights, isLoading])
 
-  // Keep ref in sync with checkbox state
+  // Reset checkbox when lead changes
   useEffect(() => {
-    autoActivateRef.current = autoActivate
-  }, [autoActivate])
-
-  // Reset checkbox and ref when lead changes
-  useEffect(() => {
-    setAutoActivate(true)
-    autoActivateRef.current = true
-    autoActivatedInsightRef.current = null
-    pendingAutoActivateRef.current = false
+    setAutoActivate(false)
   }, [carId])
 
   const structInputDialog = (
@@ -597,18 +583,6 @@ export function AiThinkingChat({
     </Dialog>
   )
 
-  // Auto-activate workflow only after user explicitly sends feedback (not on page load)
-  useEffect(() => {
-    if (!autoActivateRef.current) return
-    if (!pendingAutoActivateRef.current) return
-    if (isLoading) return
-    const analysis = insights?.analysis as any
-    if (!analysis || !insights?.aiInsightId) return
-    if (autoActivatedInsightRef.current === insights?.aiInsightId) return
-    autoActivatedInsightRef.current = insights?.aiInsightId
-    pendingAutoActivateRef.current = false
-    handleAutoUseFlow(analysis)
-  }, [insights?.aiInsightId, isLoading])
 
   const animationKey = insights ? `${insights.aiInsightId}-${insights.created_at}` : null
 

@@ -41,6 +41,20 @@ export async function enqueueMessage(params: EnqueueParams): Promise<{ queueId: 
   return { queueId: rows[0].id }
 }
 
+/** Reset stale 'processing' rows that never completed back to 'failed' so they can be retried */
+export async function recoverStalledItems(timeoutMinutes = 5): Promise<number> {
+  const pool = getE2ePool()
+  const { rowCount } = await pool.query(
+    `UPDATE zalo_message_queue
+     SET status = 'failed', error_message = 'processing timeout (stalled)'
+     WHERE status = 'processing'
+       AND started_at < NOW() - ($1 || ' minutes')::INTERVAL
+       AND attempts < max_attempts`,
+    [timeoutMinutes]
+  )
+  return rowCount ?? 0
+}
+
 /** Claim one message per group_name (oldest first) for processing */
 export async function claimNextBatch(): Promise<QueueItem[]> {
   const pool = getE2ePool()

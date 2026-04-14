@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { getNextZaloAccount, buildAbitstoreUrl } from "@/lib/zalo-accounts"
-import { claimNextBatch, markSent, markFailed } from "@/lib/zalo-queue"
+import { claimNextBatch, markSent, markFailed, recoverStalledItems } from "@/lib/zalo-queue"
 import { resolveGroupId, cacheGroupMapping } from "@/lib/zalo-groups"
 import { getNextVucarAccount, VUCAR_SEND_BASE_URL } from "@/lib/vucar-zalo-accounts"
 import { resolveVucarGroupId, cacheVucarGroupMapping } from "@/lib/vucar-zalo-groups"
@@ -9,6 +9,11 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
+    const recovered = await recoverStalledItems()
+    if (recovered > 0) {
+      console.log(`[Zalo Queue] Recovered ${recovered} stalled item(s)`)
+    }
+
     const batch = await claimNextBatch()
 
     if (batch.length === 0) {
@@ -19,11 +24,20 @@ export async function GET() {
 
     const results = []
 
+    // Pre-select one vucar account per unique pic_id for this entire batch.
+    // Round-robin advances once per batch (at claim time), not once per message.
+    const vucarAccountByPicId = new Map<string, Awaited<ReturnType<typeof getNextVucarAccount>>>()
+    for (const item of batch) {
+      if (item.pic_id && !vucarAccountByPicId.has(item.pic_id)) {
+        vucarAccountByPicId.set(item.pic_id, await getNextVucarAccount(item.pic_id))
+      }
+    }
+
     for (const item of batch) {
       try {
         // --- Vucar path: pic_id present and has staff connections ---
         if (item.pic_id) {
-          const vucarAccount = await getNextVucarAccount(item.pic_id)
+          const vucarAccount = vucarAccountByPicId.get(item.pic_id) ?? null
 
           if (vucarAccount) {
             const groupId = await resolveVucarGroupId(item.group_name, vucarAccount)

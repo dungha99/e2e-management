@@ -38,7 +38,9 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
-    const filterPicId = searchParams.get('picId')
+    const filterPicIdRaw = searchParams.get('picId')
+    const filterPicIds = filterPicIdRaw && filterPicIdRaw !== 'all' ? filterPicIdRaw.split(',') : []
+    const filterSource = searchParams.get('source')
 
     // ============================================================
     // Step 1: Get AI lead car_ids from ai_agent_outputs (E2E DB)
@@ -64,6 +66,9 @@ export async function GET(request: Request) {
         sla: { milestones: [], breachRates: [] },
         quality: {},
         byPic: [],
+        picList: [],
+        sourceList: [],
+        weeklyTrends: []
       })
     }
 
@@ -91,6 +96,8 @@ export async function GET(request: Request) {
         c.lead_id,
         c.additional_images,
         l.pic_id,
+        l.phone,
+        l.source,
         ss.stage as crm_stage,
         ss.qualified as crm_qualified
       FROM cars c
@@ -104,21 +111,16 @@ export async function GET(request: Request) {
       WHERE c.id = ANY($1::uuid[])
     `, [aiCarIds])
 
-    const carToLeadMap = new Map<string, string>()
-    const leadToCarMap = new Map<string, string>()
-    const carMetadataMap = new Map<string, { crmStage: string | null, crmQualified: string | null, picId: string | null, leadId: string | null, additionalImages: any }>()
+    const carMetadataMap = new Map<string, { crmStage: string | null, crmQualified: string | null, picId: string | null, leadId: string | null, additionalImages: any, source: string | null }>()
 
     for (const row of vucarV2Res.rows) {
-      if (row.car_id && row.lead_id) {
-        carToLeadMap.set(row.car_id, row.lead_id)
-        leadToCarMap.set(row.lead_id, row.car_id)
-      }
       carMetadataMap.set(row.car_id, {
         crmStage: row.crm_stage,
         crmQualified: row.crm_qualified,
         picId: row.pic_id,
         leadId: row.lead_id,
-        additionalImages: row.additional_images
+        additionalImages: row.additional_images,
+        source: row.source
       })
     }
 
@@ -149,7 +151,7 @@ export async function GET(request: Request) {
     interface LeadData {
       carId: string
       hasSummary: boolean
-      latestStage: string | null // final_stage combining AI + CRM
+      latestStage: string | null
       aiStage: string | null
       crmStage: string | null
       crmQualified: string | null
@@ -167,22 +169,21 @@ export async function GET(request: Request) {
       spUpdatedAt: string | null
       workflowStartedAt: Date | null
       picId: string | null
+      source: string | null
       snapshots: any[]
       sellerSentiment: string | null
     }
 
     const leadsMap = new Map<string, LeadData>()
 
-    // Merge CRM metadata and E2E summaries
     const summaryByLeadMap = new Map<string, any>()
     for (const row of summaryResRows) {
-      // Since it's ordered by updated_at DESC, the first one seen is the most recent
       if (!summaryByLeadMap.has(row.lead_id)) {
         summaryByLeadMap.set(row.lead_id, row)
       }
     }
 
-      for (const carId of aiCarIds) {
+    for (const carId of aiCarIds) {
       const crm = carMetadataMap.get(carId)
       const leadId = crm?.leadId
       const summaryRow = leadId ? summaryByLeadMap.get(leadId) : null
@@ -192,13 +193,9 @@ export async function GET(request: Request) {
       const snapshots = getSnapshots(spResult)
       const latestSnapshot = snapshots.length > 0 ? snapshots[snapshots.length - 1] : null
 
-      // Determine AI stage (normalize contact → contacted)
       let aiStage = latestSnapshot?.stage ?? null
       if (aiStage === 'contacted' || aiStage === 'contact') aiStage = 'contacted'
 
-      // ============================================================
-      // SLA Timestamp Extraction (Waterfall logic)
-      // ============================================================
       let infoCollectedAt = latestSnapshot?.info_collected_at ?? null
       let priceSharedAt = latestSnapshot?.price_shared_at ?? null
       let priceVucarOfferedAt = latestSnapshot?.price_vucar_offered_at ?? null
@@ -222,11 +219,9 @@ export async function GET(request: Request) {
         }
       }
 
-      // Determine CRM stage
       const crmStage = crm?.crmStage ?? null
       const crmQualified = crm?.crmQualified ?? null
 
-      // Final stage
       let finalStage = aiStage
       if (crmStage === 'COMPLETED') finalStage = 'completed'
       else if (crmStage === 'DEPOSIT_PAID') finalStage = 'deposited'
@@ -268,21 +263,23 @@ export async function GET(request: Request) {
         spUpdatedAt: summaryRow?.sp_updated_at ?? null,
         workflowStartedAt: workflowStartMap.get(carId) ?? null,
         picId: crm?.picId ?? null,
+        source: crm?.source ?? null,
         snapshots,
         sellerSentiment,
       } as any)
     }
 
-    // Also add AI leads without summary
+    // AI leads without summary
     for (const car_id of aiCarIds) {
       if (!leadsMap.has(car_id)) {
+        const crm = carMetadataMap.get(car_id)
         leadsMap.set(car_id, {
           carId: car_id,
           hasSummary: false,
           latestStage: null,
           aiStage: null,
-          crmStage: null,
-          crmQualified: null,
+          crmStage: crm?.crmStage ?? null,
+          crmQualified: crm?.crmQualified ?? null,
           qualified: null,
           hadCarImage: false,
           isStrongQualified: false,
@@ -296,7 +293,8 @@ export async function GET(request: Request) {
           spCreatedAt: null,
           spUpdatedAt: null,
           workflowStartedAt: workflowStartMap.get(car_id) ?? null,
-          picId: null,
+          picId: crm?.picId ?? null,
+          source: crm?.source ?? null,
           snapshots: [],
           sellerSentiment: null,
         })
@@ -308,38 +306,61 @@ export async function GET(request: Request) {
     // ============================================================
     // PRE-CALC: Total Assigned Leads for Baselines
     // ============================================================
-    // PIC Assigned Leads filter theo time
     let totalAssignedQuery = `
-      SELECT pic_id, COUNT(id) as total_assigned
-      FROM leads
-      WHERE pic_id IS NOT NULL
+      SELECT 
+        l.pic_id, 
+        l.source, 
+        COUNT(l.id) as total_assigned,
+        COUNT(l.id) FILTER (WHERE ss.qualified IN ('STRONG_QUALIFIED', 'WEAK_QUALIFIED')) as qualified_assigned
+      FROM leads l
+      LEFT JOIN cars c ON c.lead_id = l.id
+      LEFT JOIN sale_status ss ON ss.car_id = c.id
+      WHERE l.pic_id IS NOT NULL
     `
     const assignedParams: any[] = []
     if (startDate && endDate) {
-      totalAssignedQuery += ` AND created_at >= $1 AND created_at <= $2`
+      totalAssignedQuery += ` AND l.created_at >= $1 AND l.created_at <= $2`
       assignedParams.push(startDate, endDate)
     }
-    totalAssignedQuery += ` GROUP BY pic_id`
     
-    const assignedRes = await vucarV2Query(totalAssignedQuery, assignedParams)
-    const assignedPerPicMap = new Map<string, number>()
-    for (const row of assignedRes.rows) {
-      assignedPerPicMap.set(row.pic_id, parseInt(row.total_assigned))
+    // Apply source filter to baseline if specified
+    if (filterSource && filterSource !== 'all') {
+      const idx = assignedParams.length + 1
+      totalAssignedQuery += ` AND l.source = $${idx}`
+      assignedParams.push(filterSource)
     }
 
-    // Get total assigned for this filtered PIC (or all)
+    totalAssignedQuery += ` GROUP BY l.pic_id, l.source`
+    const assignedRes = await vucarV2Query(totalAssignedQuery, assignedParams)
+    
+    const assignedPerPicMap = new Map<string, { total: number, qualified: number }>()
     let totalAssignedLeadsCount = 0
-    if (filterPicId && filterPicId !== 'all') {
-      totalAssignedLeadsCount = assignedPerPicMap.get(filterPicId) || 0
-    } else {
-      for (const count of assignedPerPicMap.values()) {
-        totalAssignedLeadsCount += count
+    let totalQualifiedAssignedCount = 0
+
+    for (const row of assignedRes.rows) {
+      const total = parseInt(row.total_assigned)
+      const qualified = parseInt(row.qualified_assigned)
+      const picId = row.pic_id
+      
+      const existing = assignedPerPicMap.get(picId) || { total: 0, qualified: 0 }
+      assignedPerPicMap.set(picId, {
+        total: existing.total + total,
+        qualified: existing.qualified + qualified
+      })
+      
+      // If we are filtering by PIC, only add up that PIC, otherwise add all
+      if (filterPicIds.length === 0 || filterPicIds.includes(picId)) {
+        totalAssignedLeadsCount += total
+        totalQualifiedAssignedCount += qualified
       }
     }
 
-    const leadsMapFiltered = filterPicId && filterPicId !== 'all' 
-      ? unfilteredLeads.filter(l => l.picId === filterPicId)
-      : unfilteredLeads
+    // Final filter on AI leads
+    const leadsMapFiltered = unfilteredLeads.filter(l => {
+      const picMatch = filterPicIds.length === 0 || filterPicIds.includes(l.picId || '')
+      const sourceMatch = !filterSource || filterSource === 'all' || l.source === filterSource
+      return picMatch && sourceMatch
+    })
 
     const leadsWithSummary = leadsMapFiltered.filter(l => l.hasSummary)
     const allLeadsFiltered = leadsMapFiltered
@@ -350,15 +371,14 @@ export async function GET(request: Request) {
     // ============================================================
     const totalAiLeadsIds = allLeadsFiltered.map(l => l.carId)
     const aiLeadsWithSummaryIds = leadsWithSummary.map(l => l.carId)
-    const activeIds = leadsWithSummary.filter(l => l.latestStage && activeStages.includes(l.latestStage)).map(l => l.carId)
-    const closedIds = leadsWithSummary.filter(l => l.latestStage === 'completed' || l.latestStage === 'deposited').map(l => l.carId)
+    const activeIds = allLeadsFiltered.filter(l => l.latestStage && activeStages.includes(l.latestStage)).map(l => l.carId)
+    const closedIds = allLeadsFiltered.filter(l => l.crmStage === 'COMPLETED' || l.crmStage === 'DEPOSIT_PAID').map(l => l.carId)
 
     const totalAiLeads = totalAiLeadsIds.length
     const aiLeadsWithSummary = aiLeadsWithSummaryIds.length
     const activeLeads = activeIds.length
     const closedLeads = closedIds.length
 
-    // Stage distribution (snapshot mới nhất)
     const stageCounts: Record<string, { count: number, carIds: string[] }> = {}
     for (const l of leadsWithSummary) {
       const stage = l.latestStage || 'unknown'
@@ -376,7 +396,6 @@ export async function GET(request: Request) {
       }))
     ]
 
-    // Qualified distribution
     const strongQualifiedIds = leadsWithSummary.filter(l => l.hadCarImage).map(l => l.carId)
     const weakQualifiedIds = leadsWithSummary.filter(l => !l.hadCarImage).map(l => l.carId)
     const strongQualified = strongQualifiedIds.length
@@ -385,7 +404,6 @@ export async function GET(request: Request) {
     // ============================================================
     // SECTION 2: Funnel Conversion
     // ============================================================
-    // Stage reach rate: count unique car_ids that EVER appeared at each stage
     const stageReachCounts: Record<string, Set<string>> = {
       contacted: new Set(),
       negotiation: new Set(),
@@ -394,19 +412,13 @@ export async function GET(request: Request) {
 
     for (const l of leadsWithSummary) {
       stageReachCounts['contacted'].add(l.carId)
-
       for (const snap of l.snapshots) {
-        let stage = snap.stage
-        if (stage === 'negotiation' || snap.price_customer != null) {
-          stageReachCounts['negotiation'].add(l.carId)
-        }
-        if (stage === 'inspection' || snap.inspection_booked_at != null) {
-          stageReachCounts['inspection'].add(l.carId)
-        }
+        if (snap.stage === 'negotiation' || snap.price_customer != null) stageReachCounts['negotiation'].add(l.carId)
+        if (snap.stage === 'inspection' || snap.inspection_booked_at != null) stageReachCounts['inspection'].add(l.carId)
       }
     }
 
-    const closedSet = new Set(leadsWithSummary.filter(l => l.latestStage === 'completed' || l.latestStage === 'deposited').map(l => l.carId))
+    const closedSet = new Set(closedIds)
     
     const stageReachRates = [
       { stage: 'totalAssigned', count: totalAssignedLeadsCount, rate: 100, carIds: [] },
@@ -419,7 +431,6 @@ export async function GET(request: Request) {
       { stage: 'closed', count: closedSet.size, rate: totalAssignedLeadsCount > 0 ? Math.round((closedSet.size / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: Array.from(closedSet) }
     ]
 
-    // Stage-to-stage conversion
     const contactedCount = stageReachCounts['contacted'].size
     const negotiationCount = stageReachCounts['negotiation'].size
     const inspectionCount = stageReachCounts['inspection'].size
@@ -432,28 +443,21 @@ export async function GET(request: Request) {
       { from: 'inspection', to: 'closed', fromCount: inspectionCount, toCount: closedSet.size, rate: inspectionCount > 0 ? Math.round((closedSet.size / inspectionCount) * 1000) / 10 : 0 },
     ]
 
-    // Negotiation analysis
     const leadsWithPrice = leadsWithSummary.filter(l => l.priceCustomer != null || l.priceVucarOffered != null)
     const leadsWithMultiRounds = leadsWithPrice.filter(l => l.negotiationRounds >= 2)
     const leadsWithSinglePrice = leadsWithPrice.filter(l => l.negotiationRounds < 2)
 
-    // Price reduction calculation
     const priceReductions: number[] = []
     for (const l of leadsWithSummary) {
       if (l.snapshots.length < 2) continue
-      const prices = l.snapshots
-        .map((s: any) => s.price_customer ? parseInt(s.price_customer) : null)
-        .filter((p: number | null): p is number => p != null)
+      const prices = l.snapshots.map((s: any) => s.price_customer ? parseInt(s.price_customer) : null).filter((p: number | null): p is number => p != null)
       if (prices.length >= 2 && prices[0] > prices[prices.length - 1]) {
-        const reduction = (prices[0] - prices[prices.length - 1]) / prices[0]
-        priceReductions.push(reduction)
+        priceReductions.push((prices[0] - prices[prices.length - 1]) / prices[0])
       }
     }
 
     const maxNegotiationRounds = Math.max(0, ...leadsWithSummary.map(l => l.negotiationRounds))
-    const avgPriceReduction = priceReductions.length > 0
-      ? Math.round(priceReductions.reduce((a, b) => a + b, 0) / priceReductions.length * 1000) / 10
-      : 0
+    const avgPriceReduction = priceReductions.length > 0 ? Math.round(priceReductions.reduce((a, b) => a + b, 0) / priceReductions.length * 1000) / 10 : 0
 
     const negotiationAnalysis = {
       leadsWithActualNegotiation: leadsWithMultiRounds.length,
@@ -468,142 +472,62 @@ export async function GET(request: Request) {
     // ============================================================
     // SECTION 3: SLA & Speed
     // ============================================================
-    const slaMilestones: {
-      name: string
-      values: number[]
-      target: number
-      unit: string
-    }[] = [
+    const slaMilestones: { name: string, values: number[], target: number, unit: string }[] = [
       { name: 'Time to Info Collected', values: [], target: 24, unit: 'hours' },
       { name: 'Time to Price Shared', values: [], target: 24, unit: 'hours' },
       { name: 'Time to Vucar Price Offered', values: [], target: 4, unit: 'hours' },
       { name: 'Time to Inspection Booked', values: [], target: 48, unit: 'hours' },
-      { name: 'Lead Cycle Time (active)', values: [], target: 480, unit: 'hours' }, // 20 days
+      { name: 'Lead Cycle Time (active)', values: [], target: 480, unit: 'hours' },
     ]
-
-    let breachInfoCollected = 0, totalInfoCollected = 0
-    let breachInspectionBooked = 0, totalInspectionBooked = 0
-    let breachPriceResponse = 0, totalPriceResponse = 0
 
     for (const l of leadsWithSummary) {
       const startedAt = l.workflowStartedAt
-
-      // Time to info collected
       if (l.infoCollectedAt && startedAt) {
         const hours = (new Date(l.infoCollectedAt).getTime() - startedAt.getTime()) / 3600000
-          if (hours >= 0) {
-            slaMilestones[0].values.push(hours)
-            totalInfoCollected++
-            if (hours > 24) breachInfoCollected++
-          } else {
-            console.warn(`[AI Funnel] Negative delta for Info Collected. car_id: ${l.carId}, started_at: ${startedAt.toISOString()}, info_collected_at: ${l.infoCollectedAt}`)
-          }
-        }
-
-        // Time to price shared
-        if (l.priceSharedAt && startedAt) {
-          // Parse to UTC properly to avoid timezone mismatch
-          const delta = new Date(l.priceSharedAt).getTime() - startedAt.getTime()
-          const hours = delta / 3600000
-          if (hours >= 0) {
-              slaMilestones[1].values.push(hours)
-          } else {
-              console.warn(`[AI Funnel] Negative delta for Price Shared. car_id: ${l.carId}`)
-          }
-        }
-
-        // Time to Vucar price offered (from price_shared_at)
-        if (l.priceVucarOfferedAt && l.priceSharedAt) {
-          const delta = new Date(l.priceVucarOfferedAt).getTime() - new Date(l.priceSharedAt).getTime()
-          const hours = delta / 3600000
-          if (hours >= 0) {
-            slaMilestones[2].values.push(hours)
-            totalPriceResponse++
-            if (hours > 4) breachPriceResponse++
-          } else {
-              console.warn(`[AI Funnel] Negative delta for Vucar Price Offered. car_id: ${l.carId}`)
-          }
-        }
-
-        // Time to inspection booked (from info_collected_at)
-        if (l.inspectionBookedAt && l.infoCollectedAt) {
-          const delta = new Date(l.inspectionBookedAt).getTime() - new Date(l.infoCollectedAt).getTime()
-          const hours = delta / 3600000
-          if (hours >= 0) {
-            slaMilestones[3].values.push(hours)
-            totalInspectionBooked++
-            if (hours > 48) breachInspectionBooked++
-          } else {
-              console.warn(`[AI Funnel] Negative delta for Inspection Booked. car_id: ${l.carId}`)
-          }
-        }
-
-        // Lead cycle time
-        if (l.spCreatedAt && l.spUpdatedAt) {
-          const delta = new Date(l.spUpdatedAt).getTime() - new Date(l.spCreatedAt).getTime()
-          const hours = delta / 3600000
-          if (hours >= 0) slaMilestones[4].values.push(hours)
-        }
-    }
-
-    // Calculate median and P90
-    function calcStats(values: number[]) {
-      if (values.length === 0) return { median: null, p90: null, avg: null, count: 0 }
-      const sorted = [...values].sort((a, b) => a - b)
-      const median = sorted[Math.floor(sorted.length / 2)]
-      const p90 = sorted[Math.floor(sorted.length * 0.9)]
-      const avg = values.reduce((a, b) => a + b, 0) / values.length
-      return {
-        median: Math.round(median * 10) / 10,
-        p90: Math.round(p90 * 10) / 10,
-        avg: Math.round(avg * 10) / 10,
-        count: values.length,
+        if (hours >= 0) slaMilestones[0].values.push(hours)
+      }
+      if (l.priceSharedAt && startedAt) {
+        const hours = (new Date(l.priceSharedAt).getTime() - startedAt.getTime()) / 3600000
+        if (hours >= 0) slaMilestones[1].values.push(hours)
+      }
+      if (l.priceVucarOfferedAt && l.priceSharedAt) {
+        const hours = (new Date(l.priceVucarOfferedAt).getTime() - new Date(l.priceSharedAt).getTime()) / 3600000
+        if (hours >= 0) slaMilestones[2].values.push(hours)
+      }
+      if (l.inspectionBookedAt && l.infoCollectedAt) {
+        const hours = (new Date(l.inspectionBookedAt).getTime() - new Date(l.infoCollectedAt).getTime()) / 3600000
+        if (hours >= 0) slaMilestones[3].values.push(hours)
+      }
+      if (l.spCreatedAt && l.spUpdatedAt) {
+        const hours = (new Date(l.spUpdatedAt).getTime() - new Date(l.spCreatedAt).getTime()) / 3600000
+        if (hours >= 0) slaMilestones[4].values.push(hours)
       }
     }
 
-    const slaResults = slaMilestones.map(m => ({
-      name: m.name,
-      target: m.target,
-      unit: m.unit,
-      ...calcStats(m.values),
-    }))
-
-    const breachRates: any[] = []
+    function calcStats(values: number[]) {
+      if (values.length === 0) return { median: null, p90: null, avg: null, count: 0 }
+      const sorted = [...values].sort((a, b) => a - b)
+      return {
+        median: Math.round(sorted[Math.floor(sorted.length / 2)] * 10) / 10,
+        p90: Math.round(sorted[Math.floor(sorted.length * 0.9)] * 10) / 10,
+        avg: Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10,
+        count: values.length,
+      }
+    }
+    const slaResults = slaMilestones.map(m => ({ name: m.name, target: m.target, unit: m.unit, ...calcStats(m.values) }))
 
     // ============================================================
     // SECTION 4: AI Quality
     // ============================================================
-    const activeOrNegotiatingLeads = leadsWithSummary.filter(l =>
-      l.latestStage && ['negotiation', 'inspection'].includes(l.latestStage)
-    )
-    const avgNegotiationRounds = activeOrNegotiatingLeads.length > 0
-      ? Math.round((activeOrNegotiatingLeads.reduce((sum, l) => sum + l.negotiationRounds, 0) / activeOrNegotiatingLeads.length) * 10) / 10
-      : 0
+    const activeOrNegotiatingLeads = leadsWithSummary.filter(l => l.latestStage && activeStages.includes(l.latestStage))
+    const avgNegotiationRounds = activeOrNegotiatingLeads.length > 0 ? Math.round((activeOrNegotiatingLeads.reduce((sum, l) => sum + l.negotiationRounds, 0) / activeOrNegotiatingLeads.length) * 10) / 10 : 0
+    const priceGaps = leadsWithSummary.filter(l => l.priceCustomer != null && l.priceVucarOffered != null).map(l => l.priceCustomer! - l.priceVucarOffered!)
+    const avgPriceGap = priceGaps.length > 0 ? Math.round(priceGaps.reduce((a, b) => a + b, 0) / priceGaps.length) : null
 
-    // Price gap
-    const priceGaps: number[] = []
-    for (const l of leadsWithSummary) {
-      if (l.priceCustomer != null && l.priceVucarOffered != null) {
-        priceGaps.push(l.priceCustomer - l.priceVucarOffered)
-      }
-    }
-    const avgPriceGap = priceGaps.length > 0
-      ? Math.round(priceGaps.reduce((a, b) => a + b, 0) / priceGaps.length)
-      : null
-
-    // D6 - Ghosting Rate
     const nowMs = Date.now()
-    let ghostedActiveLeads = 0
-    for (const l of leadsWithSummary) {
-      if (l.latestStage && activeStages.includes(l.latestStage)) {
-        if (l.spUpdatedAt && nowMs - new Date(l.spUpdatedAt).getTime() > 48 * 3600000) {
-          ghostedActiveLeads++
-        }
-      }
-    }
+    const ghostedActiveLeads = leadsWithSummary.filter(l => l.latestStage && activeStages.includes(l.latestStage) && l.spUpdatedAt && (nowMs - new Date(l.spUpdatedAt).getTime() > 48 * 3600000)).length
     const ghostingRate = activeLeads > 0 ? (ghostedActiveLeads / activeLeads) * 100 : 0
 
-    // D11 - Price convergence speed
     let convergenceRounds = { round1: 0, round2: 0, round3Plus: 0 }
     let totalConverged = 0
     for (const l of leadsWithSummary) {
@@ -612,353 +536,249 @@ export async function GET(request: Request) {
         const pc = snap.price_customer ? parseInt(snap.price_customer) : null
         const pv = snap.price_vucar_offered ? parseInt(snap.price_vucar_offered) : null
         if (pc != null || pv != null) pricesSeen++
-        if (pc != null && pv != null && pc > 0) {
-          const gap = (pc - pv) / pc
-          if (gap <= 0.05) {
-            totalConverged++
-            if (pricesSeen === 1) convergenceRounds.round1++
-            else if (pricesSeen === 2) convergenceRounds.round2++
-            else convergenceRounds.round3Plus++
-            break // Counted for this lead
-          }
+        if (pc != null && pv != null && pc > 0 && ((pc - pv) / pc <= 0.05)) {
+          totalConverged++
+          if (pricesSeen === 1) convergenceRounds.round1++
+          else if (pricesSeen === 2) convergenceRounds.round2++
+          else convergenceRounds.round3Plus++
+          break
         }
       }
     }
 
-    // D13 - Reactivation rate
-    let everGhosted = 0
-    let recoveredGhosts = 0
+    let everGhosted = 0, recoveredGhosts = 0
     for (const l of leadsWithSummary) {
-      let hasGap = false
-      let recovered = false
+      let hasGap = false, recovered = false
       for (let i = 1; i < l.snapshots.length; i++) {
-        const t1 = new Date(l.snapshots[i - 1].created_at || l.spCreatedAt).getTime()
-        const t2 = new Date(l.snapshots[i].created_at || l.spUpdatedAt).getTime()
-        if (t2 - t1 > 48 * 3600000) {
-          hasGap = true
-          recovered = true
+        if ((new Date(l.snapshots[i].created_at || l.spUpdatedAt).getTime() - new Date(l.snapshots[i - 1].created_at || l.spCreatedAt).getTime()) > 48 * 3600000) {
+          hasGap = true; recovered = true
         }
       }
-      
-      const isCurrentlyGhosted = l.latestStage && activeStages.includes(l.latestStage) && l.spUpdatedAt && (nowMs - new Date(l.spUpdatedAt).getTime() > 48 * 3600000)
-      if (hasGap || isCurrentlyGhosted) {
-        everGhosted++
-        if (recovered) recoveredGhosts++
+      if (hasGap || (l.latestStage && activeStages.includes(l.latestStage) && l.spUpdatedAt && (nowMs - new Date(l.spUpdatedAt).getTime() > 48 * 3600000))) {
+        everGhosted++; if (recovered) recoveredGhosts++
       }
     }
     const reactivationRate = everGhosted > 0 ? (recoveredGhosts / everGhosted) * 100 : 0
 
-    // AI-CRM sync accuracy
-    let syncMatch = 0, syncTotal = 0
-    for (const l of leadsWithSummary) {
-      if (!l.crmStage || !l.aiStage) continue
-      syncTotal++
-      const crmMapped = l.crmStage === 'COMPLETED' ? 'completed'
-        : l.crmStage === 'DEPOSIT_PAID' ? 'deposited'
-        : l.crmStage === 'FAILED' ? 'failed'
-        : l.crmStage?.toLowerCase()
-      if (crmMapped === l.aiStage || (crmMapped === l.latestStage)) syncMatch++
-    }
-
-    // ============================================================
-    // SECTION: Seller Sentiment (S-metrics)
-    // ============================================================
     const leadsWithSentiment = leadsWithSummary.filter(l => l.sellerSentiment)
     const totalWithSentiment = leadsWithSentiment.length
-    
-    // S1: Distribution
-    const sentimentCounts: Record<string, { count: number, carIds: string[] }> = {
-      willing: { count: 0, carIds: [] },
-      hesitant: { count: 0, carIds: [] },
-      want_human: { count: 0, carIds: [] },
-      angry: { count: 0, carIds: [] },
-      ghosting: { count: 0, carIds: [] },
-      bot_detected: { count: 0, carIds: [] }
-    }
-    leadsWithSentiment.forEach(l => {
-      const s = l.sellerSentiment!
-      if (sentimentCounts[s]) {
-        sentimentCounts[s].count++
-        sentimentCounts[s].carIds.push(l.carId)
-      }
-    })
+    const sentimentCounts: Record<string, { count: number, carIds: string[] }> = { willing: {count:0,carIds:[]}, hesitant: {count:0,carIds:[]}, want_human: {count:0,carIds:[]}, angry: {count:0,carIds:[]}, ghosting: {count:0,carIds:[]}, bot_detected: {count:0,carIds:[]} }
+    leadsWithSentiment.forEach(l => { if (sentimentCounts[l.sellerSentiment!]) { sentimentCounts[l.sellerSentiment!].count++; sentimentCounts[l.sellerSentiment!].carIds.push(l.carId) } })
 
-    // S2: Sentiment x Stage Cross-tab
     const sentimentStageMap: Record<string, Record<string, number>> = {}
-    const sentimentStages = ['contacted', 'negotiation', 'inspection', 'failed', 'completed', 'deposited']
     leadsWithSentiment.forEach(l => {
-      const s = l.sellerSentiment!
-      const stage = l.latestStage || 'unknown'
+      const s = l.sellerSentiment!, stage = l.latestStage || 'unknown'
       if (!sentimentStageMap[stage]) sentimentStageMap[stage] = {}
       sentimentStageMap[stage][s] = (sentimentStageMap[stage][s] || 0) + 1
     })
 
-    // S3: Escalation signal rate
-    const angryIds = sentimentCounts.angry.carIds
-    const wantHumanIds = sentimentCounts.want_human.carIds
-    const botDetectedIds = sentimentCounts.bot_detected.carIds
-    const angryCount = angryIds.length
-    const wantHumanCount = wantHumanIds.length
-    const botDetectedCount = botDetectedIds.length
-    const escalationCount = angryCount + wantHumanCount + botDetectedCount
-    const escalationRate = totalWithSentiment > 0 ? Math.round((escalationCount / totalWithSentiment) * 1000) / 10 : 0
-
-    // S4: Sentiment x Negotiation quality
-    const sentimentNegotiation: Record<string, { avgRounds: number, avgPriceGap: number, count: number }> = {}
-    leadsWithSentiment.forEach(l => {
-      const s = l.sellerSentiment!
-      if (!sentimentNegotiation[s]) sentimentNegotiation[s] = { avgRounds: 0, avgPriceGap: 0, count: 0 }
-      const sn = sentimentNegotiation[s]
-      sn.count++
-      sn.avgRounds += l.negotiationRounds
-      if (l.priceCustomer && l.priceVucarOffered) {
-        sn.avgPriceGap += (l.priceCustomer - l.priceVucarOffered)
-      }
-    })
-    Object.values(sentimentNegotiation).forEach(sn => {
-      if (sn.count > 0) {
-        sn.avgRounds = Math.round((sn.avgRounds / sn.count) * 10) / 10
-        sn.avgPriceGap = Math.round(sn.avgPriceGap / sn.count)
-      }
-    })
-
-    // Removed S5 (Hesitant Conversion) as requested
-
-    // S6: Ghosting detection rate (proxy)
-    const activeLeadsForGhosting = leadsWithSummary.filter(l => 
-      l.latestStage && ['contacted', 'negotiation', 'inspection'].includes(l.latestStage)
-    )
-    const ghostedActive = activeLeadsForGhosting.filter(l => {
-        if (!l.spUpdatedAt) return false
-        const lastUpdate = new Date(l.spUpdatedAt).getTime()
-        const now = new Date().getTime()
-        return (now - lastUpdate) > (48 * 3600000)
-    })
-    const ghostingProxyRate = activeLeadsForGhosting.length > 0 
-      ? Math.round((ghostedActive.length / activeLeadsForGhosting.length) * 1000) / 10 
-      : 0
-
-    const sentiment = {
-      distribution: Object.entries(sentimentCounts).map(([name, val]) => ({ name, value: val.count, pct: totalWithSentiment > 0 ? Math.round((val.count / totalWithSentiment) * 100) : 0, carIds: val.carIds })),
-      escalation: {
-        rate: escalationRate,
-        angry: angryCount,
-        angryIds,
-        wantHuman: wantHumanCount,
-        wantHumanIds,
-        botDetected: botDetectedCount,
-        botDetectedIds,
-        total: totalWithSentiment
-      },
-      crossTab: sentimentStageMap,
-      negotiationQuality: sentimentNegotiation,
-      ghostingProxy: {
-        rate: ghostingProxyRate,
-        count: ghostedActive.length,
-        totalActive: activeLeadsForGhosting.length
-      }
-    }
-
+    const escCount = (sentimentCounts.angry.count + sentimentCounts.want_human.count + sentimentCounts.bot_detected.count)
     const quality = {
       strongQualifiedRate: aiLeadsWithSummary > 0 ? Math.round((strongQualified / aiLeadsWithSummary) * 1000) / 10 : 0,
       avgNegotiationRounds,
       leadsWithPriceReduction: priceReductions.length,
-      priceReductionRate: leadsWithPrice.length > 0 ? Math.round((priceReductions.length / leadsWithPrice.length) * 1000) / 10 : 0,
       avgPriceReductionPercent: avgPriceReduction,
       avgPriceGap,
-      priceGapCount: priceGaps.length,
-      ghostingRate: Math.round(ghostingRate * 10) / 10,
-      ghostedActiveLeads,
-      reactivationRate: Math.round(reactivationRate * 10) / 10,
+      ghostingRate,
+      reactivationRate,
       convergenceTotal: totalConverged,
       convergenceRounds,
-      sentiment
+      sentiment: {
+        distribution: Object.entries(sentimentCounts).map(([name, val]) => ({ name, value: val.count, pct: totalWithSentiment > 0 ? Math.round((val.count / totalWithSentiment) * 100) : 0, carIds: val.carIds })),
+        escalation: { rate: totalWithSentiment > 0 ? Math.round((escCount / totalWithSentiment) * 1000) / 10 : 0, total: totalWithSentiment, escalated: escCount, angry: sentimentCounts.angry.count, wantHuman: sentimentCounts.want_human.count, botDetected: sentimentCounts.bot_detected.count }
+      }
     }
 
     // ============================================================
-    // SECTION 5: By PIC (Leaderboard)
+    // SECTION 5: PIC Leaderboard
     // ============================================================
-    const picIds = [...new Set(unfilteredLeads.map(l => l.picId).filter(Boolean))] as string[]
+    const picIdSet = new Set(unfilteredLeads.map(l => l.picId).filter(Boolean))
+    const picIdsForList = Array.from(picIdSet) as string[]
     let picNameMap = new Map<string, string>()
-    if (picIds.length > 0) {
-      const picRes = await vucarV2Query(`
-        SELECT id, user_name FROM users WHERE id = ANY($1::uuid[])
-      `, [picIds])
-      for (const row of picRes.rows) {
-        picNameMap.set(row.id, row.user_name)
-      }
+    if (picIdsForList.length > 0) {
+      const picRes = await vucarV2Query(`SELECT id, user_name FROM users WHERE id = ANY($1::uuid[])`, [picIdsForList])
+      for (const row of picRes.rows) picNameMap.set(row.id, row.user_name)
     }
 
-
-    const picDataMap = new Map<string, {
-      picId: string
-      picName: string
-      totalAiLeads: number
-      aiLeadWins: number
-      slaInfoCollectedMet: number
-      slaInfoCollectedTotal: number
-      slaInspectionBookedMet: number
-      slaInspectionBookedTotal: number
-    }>()
-
+    const picDataMap = new Map<string, any>()
     for (const l of unfilteredLeads) {
-      const pid = l.picId || 'unassigned'
-      if (!picDataMap.has(pid)) {
-        picDataMap.set(pid, {
-          picId: pid,
-          picName: picNameMap.get(pid) || (pid === 'unassigned' ? 'Chưa assign' : pid.slice(0, 8)),
-          totalAiLeads: 0,
-          aiLeadWins: 0,
-          slaInfoCollectedMet: 0,
-          slaInfoCollectedTotal: 0,
-          slaInspectionBookedMet: 0,
-          slaInspectionBookedTotal: 0,
-        })
+      if (!l.picId) continue
+      if (!picDataMap.has(l.picId)) {
+        picDataMap.set(l.picId, { picId: l.picId, picName: picNameMap.get(l.picId) || 'Unknown', totalAiLeads: 0, aiLeadWins: 0, slaInfoCollectedMet: 0, slaInfoCollectedTotal: 0, slaInspectionBookedMet: 0, slaInspectionBookedTotal: 0 })
       }
-      const pd = picDataMap.get(pid)!
+      const pd = picDataMap.get(l.picId)
       pd.totalAiLeads++
-      if (l.latestStage === 'completed' || l.latestStage === 'deposited') {
-        pd.aiLeadWins++
-      }
-
-      // SLA
+      if (l.latestStage === 'completed' || l.latestStage === 'deposited') pd.aiLeadWins++
       if (l.infoCollectedAt && l.workflowStartedAt) {
-        const hours = (new Date(l.infoCollectedAt).getTime() - l.workflowStartedAt.getTime()) / 3600000
-        if (hours >= 0) {
-          pd.slaInfoCollectedTotal++
-          if (hours <= 24) pd.slaInfoCollectedMet++
-        }
+        const h = (new Date(l.infoCollectedAt).getTime() - l.workflowStartedAt.getTime()) / 3600000
+        if (h >= 0) { pd.slaInfoCollectedTotal++; if (h <= 24) pd.slaInfoCollectedMet++ }
       }
       if (l.inspectionBookedAt && l.infoCollectedAt) {
-        const hours = (new Date(l.inspectionBookedAt).getTime() - new Date(l.infoCollectedAt).getTime()) / 3600000
-        if (hours >= 0) {
-          pd.slaInspectionBookedTotal++
-          if (hours <= 48) pd.slaInspectionBookedMet++
-        }
+        const h = (new Date(l.inspectionBookedAt).getTime() - new Date(l.infoCollectedAt).getTime()) / 3600000
+        if (h >= 0) { pd.slaInspectionBookedTotal++; if (h <= 48) pd.slaInspectionBookedMet++ }
       }
     }
 
+    const byPic = Array.from(picDataMap.values()).map(pd => {
+      const assigned = assignedPerPicMap.get(pd.picId) || { total: 0, qualified: 0 }
+      return {
+        ...pd,
+        totalAssignedLeads: assigned.total,
+        totalQualifiedLeads: assigned.qualified,
+        aiLeadWinRate: pd.totalAiLeads > 0 ? Math.round((pd.aiLeadWins / pd.totalAiLeads) * 1000) / 10 : 0,
+        aiUtilizationRate: assigned.total > 0 ? Math.round((pd.totalAiLeads / assigned.total) * 1000) / 10 : 0,
+        aiUtlOverQualifiedRate: assigned.qualified > 0 ? Math.round((pd.totalAiLeads / assigned.qualified) * 1000) / 10 : 0,
+        slaInfoCollectedRate: pd.slaInfoCollectedTotal > 0 ? Math.round((pd.slaInfoCollectedMet / pd.slaInfoCollectedTotal) * 1000) / 10 : 0,
+        slaInspectionBookedRate: pd.slaInspectionBookedTotal > 0 ? Math.round((pd.slaInspectionBookedMet / pd.slaInspectionBookedTotal) * 1000) / 10 : 0,
+      }
+    })
+
+    const PIC_FOR_LIST = Array.from(picNameMap.entries()).map(([id, name]) => ({ id, name })).sort((a,b) => a.name.localeCompare(b.name))
+
+    const trendsMap: Map<string, any> = new Map()
+    for (const l of unfilteredLeads) {
+      if (!l.workflowStartedAt) continue
+      const d = new Date(l.workflowStartedAt); d.setUTCHours(0,0,0,0); d.setUTCDate(d.getUTCDate() - (d.getUTCDay() === 0 ? 6 : d.getUTCDay() - 1))
+      const key = d.toISOString().split('T')[0]
+      if (!trendsMap.has(key)) trendsMap.set(key, { week: key, totalLeads: 0, strongQualified: 0, summaryLeads: 0 })
+      const tw = trendsMap.get(key)
+      tw.totalLeads++
+      if (l.hasSummary) tw.summaryLeads++
+      if (l.isStrongQualified) tw.strongQualified++
+    }
+    const weeklyTrends = Array.from(trendsMap.values()).sort((a,b) => a.week.localeCompare(b.week)).map(tw => ({
+      ...tw,
+      strongQualifiedRate: tw.summaryLeads > 0 ? Math.round((tw.strongQualified / tw.summaryLeads) * 100) : 0
+    }))
+
+    const sourceListRes = await vucarV2Query(`SELECT DISTINCT source FROM leads WHERE source IS NOT NULL AND source != ''`)
+    const sourceList = sourceListRes.rows.map(r => r.source).sort()
+
     // ============================================================
-    // SECTION 5: Weekly Trends
+    // SECTION 6: User Feedback (User Context)
     // ============================================================
-    const weeksMap: Map<string, any> = new Map()
-    const getWeekKey = (date: Date) => {
-      const d = new Date(date)
-      d.setUTCHours(0, 0, 0, 0)
-      d.setUTCDate(d.getUTCDate() - (d.getUTCDay() === 0 ? 6 : d.getUTCDay() - 1)) // Monday
-      return d.toISOString().split('T')[0]
+    const FEEDBACK_SYSTEM_FILTERS = `
+      AND o.user_feedback NOT LIKE '[Phân tích Chat]%'
+      AND o.user_feedback NOT LIKE '[Auto-Evaluation]%'
+      AND o.user_feedback NOT LIKE 'Negative Rating'
+    `
+    
+    // 6.1 Feedback Metrics
+    let feedbackMetricsQuery = `
+      SELECT
+          COUNT(*)                    AS total_feedback_records,
+          COUNT(DISTINCT a.car_id)    AS total_cars_with_feedback
+      FROM old_ai_insights o
+      JOIN ai_insights a ON o.ai_insight_id = a.id
+      WHERE o.user_feedback IS NOT NULL
+        ${FEEDBACK_SYSTEM_FILTERS}
+    `
+    const feedbackParams: any[] = []
+    if (startDate && endDate) {
+      feedbackMetricsQuery += ` AND o.created_at >= $1 AND o.created_at <= $2`
+      feedbackParams.push(startDate, endDate)
     }
 
-    for (const [carId, startedAt] of workflowStartMap) {
-      if (!startedAt) continue
-      const week = getWeekKey(startedAt)
-      if (!weeksMap.has(week)) {
-        weeksMap.set(week, { 
-          week, 
-          totalLeads: 0, 
-          withSummary: 0, 
-          strongQualified: 0,
-          everNegotiation: 0,
-          slaPriceShared: [],
-          slaVucarOffered: [],
+    const feedbackMetricsRes = await e2eQuery(feedbackMetricsQuery, feedbackParams)
+    const totalFeedbackRecords = parseInt(feedbackMetricsRes.rows[0]?.total_feedback_records || '0')
+    const totalCarsWithFeedback = parseInt(feedbackMetricsRes.rows[0]?.total_cars_with_feedback || '0')
+
+    // 6.2 Latest Feedback per Car
+    let latestFeedbackQuery = `
+      SELECT DISTINCT ON (a.car_id)
+          a.car_id,
+          o.user_feedback,
+          o.created_at
+      FROM old_ai_insights o
+      JOIN ai_insights a ON o.ai_insight_id = a.id
+      WHERE o.user_feedback IS NOT NULL
+        ${FEEDBACK_SYSTEM_FILTERS}
+    `
+    const latestFeedbackParams: any[] = []
+    if (startDate && endDate) {
+      latestFeedbackQuery += ` AND o.created_at >= $1 AND o.created_at <= $2`
+      latestFeedbackParams.push(startDate, endDate)
+    }
+    latestFeedbackQuery += ` ORDER BY a.car_id, o.created_at DESC`
+
+    const latestFeedbackRes = await e2eQuery(latestFeedbackQuery, latestFeedbackParams)
+    const feedbackDetailsRaw = latestFeedbackRes.rows
+
+    // 6.3 Cross-DB: Get Stages for Feedback Cars
+    const feedbackCarIds = feedbackDetailsRaw.map(r => r.car_id)
+    let feedbackByStage: Record<string, { count: number, carIds: string[] }> = {}
+    let feedbackDetails: any[] = []
+
+    if (feedbackCarIds.length > 0) {
+      const fbCrmRes = await vucarV2Query(`
+        SELECT 
+          c.id as car_id,
+          ss.stage,
+          u.user_name as pic_name
+        FROM cars c
+        LEFT JOIN leads l ON l.id = c.lead_id
+        LEFT JOIN users u ON u.id = l.pic_id
+        LEFT JOIN LATERAL (
+          SELECT stage FROM sale_status
+          WHERE car_id = c.id
+          ORDER BY updated_at DESC
+          LIMIT 1
+        ) ss ON true
+        WHERE c.id = ANY($1::uuid[])
+      `, [feedbackCarIds])
+
+      const fbCrmMap = new Map<string, { stage: string, picName: string }>()
+      for (const row of fbCrmRes.rows) {
+        fbCrmMap.set(row.car_id, {
+          stage: row.stage || 'UNKNOWN',
+          picName: row.pic_name || 'Unknown'
         })
       }
-      const w = weeksMap.get(week)
-      w.totalLeads++
-      
-      const l = leadsMap.get(carId)
-      if (l) {
-        if (l.hasSummary) w.withSummary++
-        if (l.isStrongQualified) w.strongQualified++
+
+      for (const row of feedbackDetailsRaw) {
+        const crmInfo = fbCrmMap.get(row.car_id)
+        const stage = crmInfo?.stage || 'UNKNOWN'
         
-        // SLA data
-        if (l.priceSharedAt) {
-          const delta = new Date(l.priceSharedAt).getTime() - startedAt.getTime()
-          const hours = delta / 3600000
-          if (hours >= 0) w.slaPriceShared.push(hours)
-        }
-        if (l.priceVucarOfferedAt && l.priceSharedAt) {
-          const delta = new Date(l.priceVucarOfferedAt).getTime() - new Date(l.priceSharedAt).getTime()
-          const hours = delta / 3600000
-          if (hours >= 0) w.slaVucarOffered.push(hours)
-        }
-        
-        // Ever Negotiation logic (simplified for trends)
-        if (l.aiStage === 'negotiation' || l.priceCustomer != null) {
-          w.everNegotiation++
-        }
+        // Distribution
+        if (!feedbackByStage[stage]) feedbackByStage[stage] = { count: 0, carIds: [] }
+        feedbackByStage[stage].count++
+        feedbackByStage[stage].carIds.push(row.car_id)
+
+        // Details for table
+        feedbackDetails.push({
+          carId: row.car_id,
+          feedback: row.user_feedback,
+          createdAt: row.created_at,
+          stage: stage,
+          picName: crmInfo?.picName || 'Unknown'
+        })
       }
     }
 
-    const weeklyTrends = Array.from(weeksMap.values())
-      .sort((a, b) => a.week.localeCompare(b.week))
-      .map(w => {
-        const sortedShared = [...w.slaPriceShared].sort((a, b) => a - b)
-        const sortedOffered = [...w.slaVucarOffered].sort((a, b) => a - b)
-        
-        return {
-          week: w.week,
-          totalLeads: w.totalLeads,
-          summaryRate: w.totalLeads > 0 ? Math.round((w.withSummary / w.totalLeads) * 100) : 0,
-          strongQualifiedRate: w.withSummary > 0 ? Math.round((w.strongQualified / w.withSummary) * 100) : 0,
-          negotiationRate: w.withSummary > 0 ? Math.round((w.everNegotiation / w.withSummary) * 100) : 0,
-          medianTimeToPriceShared: sortedShared.length > 0 ? Math.round(sortedShared[Math.floor(sortedShared.length / 2)] * 10) / 10 : null,
-          medianTimeToVucarOffered: sortedOffered.length > 0 ? Math.round(sortedOffered[Math.floor(sortedOffered.length / 2)] * 10) / 10 : null,
-        }
-      })
-
-
-    const byPic = Array.from(picDataMap.values()).map(p => ({
-        ...p,
-        totalAssignedLeads: assignedPerPicMap.get(p.picId) || 0,
-        aiUtilizationRate: assignedPerPicMap.get(p.picId) ? Math.round((p.totalAiLeads / assignedPerPicMap.get(p.picId)!) * 1000) / 10 : 0,
-        aiLeadWinRate: p.totalAiLeads > 0 ? Math.round((p.aiLeadWins / p.totalAiLeads) * 1000) / 10 : 0,
-        slaInfoCollectedRate: p.slaInfoCollectedTotal > 0 ? Math.round((p.slaInfoCollectedMet / p.slaInfoCollectedTotal) * 1000) / 10 : 0,
-        slaInspectionBookedRate: p.slaInspectionBookedTotal > 0 ? Math.round((p.slaInspectionBookedMet / p.slaInspectionBookedTotal) * 1000) / 10 : 0,
-      }))
-      .filter(p => p.totalAiLeads > 0 || p.totalAssignedLeads > 0)
-      .sort((a, b) => b.totalAiLeads - a.totalAiLeads)
-
-    // Prepare PIC List for frontend filter
-    const picListFlat = Array.from(picNameMap.entries()).map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name))
+    const feedbackDistribution = Object.entries(feedbackByStage).map(([stage, info]) => ({
+      stage,
+      count: info.count,
+      carIds: info.carIds,
+      pct: totalCarsWithFeedback > 0 ? Math.round((info.count / totalCarsWithFeedback) * 1000) / 10 : 0
+    })).sort((a,b) => b.count - a.count)
 
     return NextResponse.json({
-      volume: {
-        totalAiLeads,
-        totalAiLeadsIds,
-        aiLeadsWithSummary,
-        aiLeadsWithSummaryIds,
-        active: activeLeads,
-        activeIds,
-        closed: closedLeads,
-        closedIds,
-        stageDistribution,
-        qualifiedDistribution: {
-          strongQualified,
-          strongQualifiedIds,
-          weakQualified,
-          weakQualifiedIds,
-          strongQualifiedRate: aiLeadsWithSummary > 0 ? Math.round((strongQualified / aiLeadsWithSummary) * 1000) / 10 : 0,
-          weakQualifiedRate: aiLeadsWithSummary > 0 ? Math.round((weakQualified / aiLeadsWithSummary) * 1000) / 10 : 0,
-        },
-      },
-      conversion: {
-        stageReachRates,
-        stageToStage,
-        negotiationAnalysis,
-      },
-      sla: {
-        milestones: slaResults,
-        breachRates,
-      },
+      volume: { totalAiLeads, totalAiLeadsIds, aiLeadsWithSummary, aiLeadsWithSummaryIds, active: activeLeads, activeIds, closed: closedLeads, closedIds, stageDistribution, qualifiedDistribution: { strongQualified, strongQualifiedIds, weakQualified, weakQualifiedIds, strongQualifiedRate: quality.strongQualifiedRate } },
+      conversion: { stageReachRates, stageToStage, negotiationAnalysis },
+      sla: { milestones: slaResults, breachRates: [] },
       quality,
       byPic,
-      picList: picListFlat,
-      weeklyTrends
+      picList: PIC_FOR_LIST,
+      sourceList,
+      weeklyTrends,
+      feedback: {
+        metrics: { totalRecords: totalFeedbackRecords, totalCars: totalCarsWithFeedback },
+        distribution: feedbackDistribution,
+        details: feedbackDetails
+      }
     })
   } catch (error: any) {
     console.error("[AI Funnel Dashboard API] Error:", error)
-    return NextResponse.json({ error: "Failed to fetch dashboard data", details: error?.message }, { status: 500 })
+    return NextResponse.json({ error: "Internal Server Error", details: error.message }, { status: 500 })
   }
 }

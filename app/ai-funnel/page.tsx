@@ -16,6 +16,7 @@ function DashboardPageContent() {
     to: endOfDay(new Date())
   })
   const [picId, setPicId] = useState<string>("all")
+  const [source, setSource] = useState<string>("all")
 
   useEffect(() => {
     setLoading(true)
@@ -28,6 +29,9 @@ function DashboardPageContent() {
     }
     if (picId && picId !== "all") {
       params.append("picId", picId)
+    }
+    if (source && source !== "all") {
+      params.append("source", source)
     }
     
     const queryString = params.toString()
@@ -46,7 +50,7 @@ function DashboardPageContent() {
         setError(err.message)
         setLoading(false)
       })
-  }, [dateRange, picId])
+  }, [dateRange, picId, source])
 
   if (loading && !data) {
     return (
@@ -80,10 +84,11 @@ function DashboardPageContent() {
     <AiFunnelDashboard 
       data={data} 
       loading={loading}
-      filters={{ dateRange, picId }}
+      filters={{ dateRange, picId, source }}
       onFilterChange={(newFilters: any) => {
         if (newFilters.dateRange !== undefined) setDateRange(newFilters.dateRange)
         if (newFilters.picId !== undefined) setPicId(newFilters.picId)
+        if (newFilters.source !== undefined) setSource(newFilters.source)
       }}
     />
   )

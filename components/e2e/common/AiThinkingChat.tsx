@@ -206,9 +206,11 @@ export function AiThinkingChat({
   const [isAutoFlowing, setIsAutoFlowing] = useState(false)
   const isAutoFlowingRef = useRef(false)
   const isSubmittingRef = useRef(false)
-  const [autoActivate, setAutoActivate] = useState(false)
-  const autoActivateRef = useRef(false)
+  const [autoActivate, setAutoActivate] = useState(true)
+  const autoActivateRef = useRef(true)
   const autoActivatedInsightRef = useRef<string | null>(null)
+  // Only true after user explicitly clicks send — prevents auto-activate on page load
+  const pendingAutoActivateRef = useRef(false)
   const [expandedIndices, setExpandedIndices] = useState<number[]>([])
   const [hasAnimated, setHasAnimated] = useState<string | null>(null) // Tracks last animated unique state
   const [showHistory, setShowHistory] = useState(false) // Toggle for chat history visibility
@@ -332,6 +334,7 @@ export function AiThinkingChat({
     if (isSubmittingRef.current) return
     isSubmittingRef.current = true
     setIsSubmitting(true)
+    pendingAutoActivateRef.current = true
     try {
       await onSubmitFeedback(feedback)
       setFeedback("")
@@ -443,20 +446,22 @@ export function AiThinkingChat({
 
   // Reset checkbox and ref when lead changes
   useEffect(() => {
-    setAutoActivate(false)
-    autoActivateRef.current = false
+    setAutoActivate(true)
+    autoActivateRef.current = true
     autoActivatedInsightRef.current = null
+    pendingAutoActivateRef.current = false
   }, [carId])
 
-  // Auto-activate workflow when a new plan arrives from n8n
-  // autoActivateRef is read inside but NOT a dependency — checkbox toggling alone never triggers this
+  // Auto-activate workflow only after user explicitly sends feedback (not on page load)
   useEffect(() => {
     if (!autoActivateRef.current) return
+    if (!pendingAutoActivateRef.current) return
     if (isLoading) return
     const analysis = insights?.analysis as any
     if (!analysis || !insights?.aiInsightId) return
     if (autoActivatedInsightRef.current === insights?.aiInsightId) return
     autoActivatedInsightRef.current = insights?.aiInsightId
+    pendingAutoActivateRef.current = false
     handleAutoUseFlow(analysis)
   }, [insights?.aiInsightId, isLoading])
 

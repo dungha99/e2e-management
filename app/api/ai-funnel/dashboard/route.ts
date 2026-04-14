@@ -420,8 +420,48 @@ export async function GET(request: Request) {
 
     const closedSet = new Set(closedIds)
     
+    // Fetch phones for assigned leads
+    let assignedPhonesQuery = `
+      SELECT DISTINCT l.phone
+      FROM leads l
+      WHERE l.pic_id IS NOT NULL AND l.phone IS NOT NULL AND l.phone != ''
+    `
+    const assignedPhonesParams: any[] = []
+    if (startDate && endDate) {
+      assignedPhonesQuery += ` AND l.created_at >= $1 AND l.created_at <= $2`
+      assignedPhonesParams.push(startDate, endDate)
+    }
+    if (filterPicIds.length > 0) {
+      const idx = assignedPhonesParams.length + 1
+      assignedPhonesQuery += ` AND l.pic_id = ANY($${idx}::uuid[])`
+      assignedPhonesParams.push(filterPicIds)
+    }
+    if (filterSource && filterSource !== 'all') {
+      const idx = assignedPhonesParams.length + 1
+      assignedPhonesQuery += ` AND l.source = $${idx}`
+      assignedPhonesParams.push(filterSource)
+    }
+
+    const assignedPhonesRes = await vucarV2Query(assignedPhonesQuery, assignedPhonesParams)
+    const assignedPhones = assignedPhonesRes.rows.map((r: any) => r.phone).filter(Boolean)
+
+    let auto1stSuccessCount = 0
+
+    if (assignedPhones.length > 0) {
+      const zaloActionRes = await e2eQuery(`
+        SELECT COALESCE(payload->>'phone', payload->>'customer_phone') AS phone
+        FROM zalo_action
+        WHERE action_type = 'firstMessage' AND status = 'success'
+          AND COALESCE(payload->>'phone', payload->>'customer_phone') = ANY($1::text[])
+        GROUP BY COALESCE(payload->>'phone', payload->>'customer_phone')
+      `, [assignedPhones])
+      
+      auto1stSuccessCount = zaloActionRes.rows.length
+    }
+
     const stageReachRates = [
       { stage: 'totalAssigned', count: totalAssignedLeadsCount, rate: 100, carIds: [] },
+      { stage: 'auto1stSuccess', count: auto1stSuccessCount, rate: totalAssignedLeadsCount > 0 ? Math.round((auto1stSuccessCount / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: [] },
       { stage: 'totalAi', count: totalAiLeads, rate: totalAssignedLeadsCount > 0 ? Math.round((totalAiLeads / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: totalAiLeadsIds },
       { stage: 'summary', count: aiLeadsWithSummary, rate: totalAssignedLeadsCount > 0 ? Math.round((aiLeadsWithSummary / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: aiLeadsWithSummaryIds },
       { stage: 'contacted', count: stageReachCounts['contacted'].size, rate: totalAssignedLeadsCount > 0 ? Math.round((stageReachCounts['contacted'].size / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: Array.from(stageReachCounts['contacted']) },
@@ -436,7 +476,8 @@ export async function GET(request: Request) {
     const inspectionCount = stageReachCounts['inspection'].size
 
     const stageToStage = [
-      { from: 'totalAssigned', to: 'totalAi', fromCount: totalAssignedLeadsCount, toCount: totalAiLeads, rate: totalAssignedLeadsCount > 0 ? Math.round((totalAiLeads / totalAssignedLeadsCount) * 1000) / 10 : 0 },
+      { from: 'totalAssigned', to: 'auto1stSuccess', fromCount: totalAssignedLeadsCount, toCount: auto1stSuccessCount, rate: totalAssignedLeadsCount > 0 ? Math.round((auto1stSuccessCount / totalAssignedLeadsCount) * 1000) / 10 : 0 },
+      { from: 'auto1stSuccess', to: 'totalAi', fromCount: auto1stSuccessCount, toCount: totalAiLeads, rate: auto1stSuccessCount > 0 ? Math.round((totalAiLeads / auto1stSuccessCount) * 1000) / 10 : 0 },
       { from: 'totalAi', to: 'summary', fromCount: totalAiLeads, toCount: aiLeadsWithSummary, rate: totalAiLeads > 0 ? Math.round((aiLeadsWithSummary / totalAiLeads) * 1000) / 10 : 0 },
       { from: 'contacted', to: 'negotiation', fromCount: contactedCount, toCount: negotiationCount, rate: contactedCount > 0 ? Math.round((negotiationCount / contactedCount) * 1000) / 10 : 0 },
       { from: 'negotiation', to: 'inspection', fromCount: negotiationCount, toCount: inspectionCount, rate: negotiationCount > 0 ? Math.round((inspectionCount / negotiationCount) * 1000) / 10 : 0 },

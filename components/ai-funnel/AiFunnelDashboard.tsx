@@ -46,6 +46,7 @@ import { TooltipProvider, Tooltip as UITooltip, TooltipContent, TooltipTrigger }
 
 // Colors
 const STAGE_COLORS: Record<string, string> = {
+  auto1stSuccess: "#8b5cf6",
   totalAi: "#94a3b8",
   summary: "#94a3b8",
   contacted: "#60a5fa",
@@ -90,6 +91,7 @@ const PIE_COLORS = ["#10b981", "#f59e0b", "#6366f1", "#ef4444", "#94a3b8", "#f43
 
 const STAGE_LABELS: Record<string, string> = {
   totalAssigned: "Total Assigned Leads",
+  auto1stSuccess: "Auto 1st Success",
   totalAi: "Total AI Leads",
   summary: "Có AI Summary",
   contacted: "Contacted",
@@ -114,6 +116,7 @@ const STAGE_LABELS: Record<string, string> = {
 
 const STAGE_LOGIC: Record<string, string> = {
   totalAssigned: "Tổng số leads được marketing chuyển vào CRM (baseline).",
+  auto1stSuccess: "Số leads được assigned có hành động gửi firstMessage tự động ghi nhận thành công.",
   totalAi: "Unique leads đã bắt đầu vào AI Workflow ít nhất 1 lần.",
   summary: "Leads AI đã xử lý và tạo được Profile/Summary đầu tiên.",
   contacted: "Leads đã có tương tác thật sự (Contacted stage trong snapshots).",

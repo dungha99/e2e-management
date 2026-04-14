@@ -30,54 +30,79 @@ export function FollowUpAction({ lead, onSuccess, disabled = false, className, i
 
         setIsLoading(true)
         try {
-            const response = await fetch('https://n8n.vucar.vn/webhook/7c06fc96-f8dc-4c5d-af17-57c2bab57864', {
+            const response = await fetch('/api/e2e/followup-v2', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ phone }),
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    phone,
+                    contactName: lead.name || lead.display_name || "",
+                }),
             })
 
-            if (response.ok) {
-                toast({
-                    title: "Thành công",
-                    description: "Đã gửi yêu cầu Follow up",
-                })
-
-                // Log activity
-                try {
-                    await fetch('/api/e2e/log-activity', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            leadId: lead.id,
-                            activityType: 'BOT_FOLLOW_UP_SENT',
-                            actorType: 'USER',
-                            metadata: {
-                                field_name: 'bot_follow_up',
-                                new_value: 'Triggered manually',
-                                channel: 'SYSTEM'
-                            },
-                            field: 'bot_follow_up'
-                        }),
-                    })
-                } catch (logError) {
-                    console.error('[Follow Up] Failed to log activity:', logError)
-                }
-
-                if (onSuccess) {
-                    onSuccess()
-                }
-            } else {
+            if (!response.ok || !response.body) {
                 throw new Error('Gửi yêu cầu thất bại')
+            }
+
+            // Read streaming response
+            const reader = response.body.getReader()
+            const decoder = new TextDecoder()
+            let resultJson: any = null
+
+            while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+                const chunk = decoder.decode(value, { stream: true }).trim()
+                if (chunk) {
+                    try {
+                        resultJson = JSON.parse(chunk)
+                    } catch {
+                        // heartbeat newline — ignore
+                    }
+                }
+            }
+
+            if (!resultJson) {
+                throw new Error('Không nhận được phản hồi')
+            }
+
+            if (!resultJson.success) {
+                throw new Error(resultJson.error || 'Gửi tin nhắn thất bại')
+            }
+
+            toast({
+                title: "Thành công",
+                description: "Đã gửi yêu cầu Follow up",
+            })
+
+            // Log activity
+            try {
+                await fetch('/api/e2e/log-activity', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        leadId: lead.id,
+                        activityType: 'BOT_FOLLOW_UP_SENT',
+                        actorType: 'USER',
+                        metadata: {
+                            field_name: 'bot_follow_up',
+                            new_value: 'Triggered manually',
+                            channel: 'ZALO',
+                        },
+                        field: 'bot_follow_up'
+                    }),
+                })
+            } catch (logError) {
+                console.error('[Follow Up] Failed to log activity:', logError)
+            }
+
+            if (onSuccess) {
+                onSuccess()
             }
         } catch (error) {
             console.error('[Follow Up] Error:', error)
             toast({
                 title: "Lỗi",
-                description: "Có lỗi xảy ra khi gửi yêu cầu",
+                description: error instanceof Error ? error.message : "Có lỗi xảy ra khi gửi tin nhắn",
                 variant: "destructive",
             })
         } finally {

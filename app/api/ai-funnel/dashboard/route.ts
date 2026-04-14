@@ -38,7 +38,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
-    const filterPicId = searchParams.get('picId')
+    const filterPicIdRaw = searchParams.get('picId')
+    const filterPicIds = filterPicIdRaw && filterPicIdRaw !== 'all' ? filterPicIdRaw.split(',') : []
     const filterSource = searchParams.get('source')
 
     // ============================================================
@@ -95,6 +96,7 @@ export async function GET(request: Request) {
         c.lead_id,
         c.additional_images,
         l.pic_id,
+        l.phone,
         l.source,
         ss.stage as crm_stage,
         ss.qualified as crm_qualified
@@ -347,7 +349,7 @@ export async function GET(request: Request) {
       })
       
       // If we are filtering by PIC, only add up that PIC, otherwise add all
-      if (!filterPicId || filterPicId === 'all' || filterPicId === picId) {
+      if (filterPicIds.length === 0 || filterPicIds.includes(picId)) {
         totalAssignedLeadsCount += total
         totalQualifiedAssignedCount += qualified
       }
@@ -355,7 +357,7 @@ export async function GET(request: Request) {
 
     // Final filter on AI leads
     const leadsMapFiltered = unfilteredLeads.filter(l => {
-      const picMatch = !filterPicId || filterPicId === 'all' || l.picId === filterPicId
+      const picMatch = filterPicIds.length === 0 || filterPicIds.includes(l.picId || '')
       const sourceMatch = !filterSource || filterSource === 'all' || l.source === filterSource
       return picMatch && sourceMatch
     })
@@ -369,8 +371,8 @@ export async function GET(request: Request) {
     // ============================================================
     const totalAiLeadsIds = allLeadsFiltered.map(l => l.carId)
     const aiLeadsWithSummaryIds = leadsWithSummary.map(l => l.carId)
-    const activeIds = leadsWithSummary.filter(l => l.latestStage && activeStages.includes(l.latestStage)).map(l => l.carId)
-    const closedIds = leadsWithSummary.filter(l => l.latestStage === 'completed' || l.latestStage === 'deposited').map(l => l.carId)
+    const activeIds = allLeadsFiltered.filter(l => l.latestStage && activeStages.includes(l.latestStage)).map(l => l.carId)
+    const closedIds = allLeadsFiltered.filter(l => l.crmStage === 'COMPLETED' || l.crmStage === 'DEPOSIT_PAID').map(l => l.carId)
 
     const totalAiLeads = totalAiLeadsIds.length
     const aiLeadsWithSummary = aiLeadsWithSummaryIds.length

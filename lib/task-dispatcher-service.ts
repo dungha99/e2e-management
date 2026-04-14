@@ -401,10 +401,11 @@ export async function deactivateAi(ctx: ActionContext): Promise<void> {
  * and is likely to close.
  */
 async function action_check_intention(
-  _args: Record<string, any>,
+  args: Record<string, any>,
   ctx: ActionContext
 ): Promise<ActionResult> {
-  const message = `🔥[HITL] Lead có khả năng chốt cao!\nSĐT: ${ctx.customerPhone}\nGap thấp, có thiện chí, có khả năng chốt`
+  const desc = args._description ? `\n📝 ${args._description}` : ""
+  const message = `🔥[HITL] Lead có khả năng chốt cao!\nSĐT: ${ctx.customerPhone}\nGap thấp, có thiện chí, có khả năng chốt${desc}`
   await notifyMonitorGroup(ctx, message)
   return { success: true, value: "notified", data: { carId: ctx.carId, phone: ctx.customerPhone } }
 }
@@ -421,7 +422,8 @@ async function action_book_inspection(
   console.log(`[TaskDispatcher] book_inspection: carId=${ctx.carId}`)
   // TODO: create inspection record / call booking API here
 
-  const message = `🔴 [HITL] Lịch KTV đã được xác nhận\nĐặt lịch kiểm định mới\nXe: ${ctx.carId}\nSĐT: ${ctx.customerPhone}\nLý do: ${args.description || "Agent decided to book inspection"}`
+  const desc = args._description || args.description || ""
+  const message = `🔴 [HITL] Lịch KTV đã được xác nhận\nĐặt lịch kiểm định mới\nXe: ${ctx.carId}\nSĐT: ${ctx.customerPhone}\nLý do: ${desc}`
   await notifyMonitorGroup(ctx, message)
   await deactivateAi(ctx)
 
@@ -498,7 +500,8 @@ async function action_call_voice_received(
   ctx: ActionContext
 ): Promise<ActionResult> {
   const note = args.note ? ` - ${args.note}` : ""
-  const message = `🔴 [HITL] Có cuộc gọi vừa được log — AI không biết nội dung\n⏸️ Pipeline AI đã tạm dừng.\nAI không có thông tin về nội dung cuộc gọi này.\nNếu tiếp tục mà không cập nhật → AI sẽ gửi tin nhắn sai context.\n👉 Vào lead, điền tóm tắt cuộc gọi vào feedback input. *Pipeline resume sau khi bạn submit.*\nSĐT: ${ctx.customerPhone}${note}`
+  const desc = args._description ? `\n📝 ${args._description}` : ""
+  const message = `🔴 [HITL] Có cuộc gọi vừa được log — AI không biết nội dung\n⏸️ Pipeline AI đã tạm dừng.\nAI không có thông tin về nội dung cuộc gọi này.\nNếu tiếp tục mà không cập nhật → AI sẽ gửi tin nhắn sai context.\n👉 Vào lead, điền tóm tắt cuộc gọi vào feedback input. *Pipeline resume sau khi bạn submit.*\nSĐT: ${ctx.customerPhone}${note}${desc}`
   await notifyMonitorGroup(ctx, message)
   return { success: true, value: "notified", data: { carId: ctx.carId, phone: ctx.customerPhone } }
 }
@@ -511,7 +514,8 @@ async function action_competitor_keyword_received(
   ctx: ActionContext
 ): Promise<ActionResult> {
   const keyword = args.keyword ? ` ("${args.keyword}")` : ""
-  const message = `⚠️ [HITL] Khách đang tham khảo bên khác rồi\n▶️ Pipeline AI vẫn đang chạy.\nNếu cần điều chỉnh chiến thuật → prompt feedback trực tiếp tại:\n*Không cần action nếu AI đang xử lý tốt.*${keyword}!\nSĐT: ${ctx.customerPhone}\nCần xử lý ngay để giữ khách`
+  const desc = args._description ? `\n📝 ${args._description}` : ""
+  const message = `⚠️ [HITL] Khách đang tham khảo bên khác rồi\n▶️ Pipeline AI vẫn đang chạy.\nNếu cần điều chỉnh chiến thuật → prompt feedback trực tiếp tại:\n*Không cần action nếu AI đang xử lý tốt.*${keyword}!\nSĐT: ${ctx.customerPhone}\nCần xử lý ngay để giữ khách${desc}`
   await notifyMonitorGroup(ctx, message)
   return { success: true, value: "notified", data: { carId: ctx.carId, phone: ctx.customerPhone } }
 }
@@ -564,7 +568,7 @@ async function executeNodes(
         continue
       }
       try {
-        const result = await handler(node.arguments || {}, ctx)
+        const result = await handler({ ...node.arguments, _description: node.description }, ctx)
         // Store result for use in condition evaluation
         const varKey = `${node.actionName}_result`
         variables[varKey] = result.value

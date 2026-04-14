@@ -168,26 +168,26 @@ export async function getCarAgentMemory(carId: string, limit: number = 20): Prom
       let summary = ""
       if (name === "Router (Plan)" && payload?.extractedSteps) {
         const stepNames = (payload.extractedSteps as any[]).map((s) => `"${s.stepName}"`).join(" → ")
-        summary = `Extracted ${payload.extractedSteps.length} steps: ${stepNames}`
+        summary = `Extracted ${payload.extractedSteps.length} steps: ${stepNames}\n${JSON.stringify(payload.extractedSteps, null, 2)}`
       } else if (name === "Worker (Parameter/Rule)" && Array.isArray(payload)) {
         summary = (payload as any[]).map((step, i) => {
           const scheduledAt = step.scheduled_at ? `scheduled: ${step.scheduled_at}` : "immediate"
-          const params = step.parameters ? JSON.stringify(step.parameters).slice(0, 200) : "{}"
-          return `Step ${i + 1}: ${scheduledAt}, params: ${params}`
-        }).join(" | ")
+          const params = step.parameters ? JSON.stringify(step.parameters, null, 2) : "{}"
+          return `Step ${i + 1}: ${scheduledAt}\nparams: ${params}`
+        }).join("\n---\n")
       } else if (name === "Review Messages Scheduled") {
         const status = payload?.status || "unknown"
-        const reasoning = typeof payload?.reasoning === "string" ? payload.reasoning.slice(0, 150) : ""
+        const reasoning = typeof payload?.reasoning === "string" ? payload.reasoning : ""
         summary = `${status}${reasoning ? ` — ${reasoning}` : ""}`
       } else if (name === "Task Dispatcher") {
         const steps: any[] = Array.isArray(payload?.steps) ? payload.steps : []
         const actionNames = steps.map((s) => s.actionName).join(" → ")
-        summary = `${steps.length} step(s)${actionNames ? `: ${actionNames}` : ""}`
+        summary = `${steps.length} step(s)${actionNames ? `: ${actionNames}` : ""}\n${JSON.stringify(payload, null, 2)}`
       } else {
-        summary = JSON.stringify(payload).slice(0, 200)
+        summary = JSON.stringify(payload, null, 2)
       }
 
-      lines.push(`[${ts}] ${name}: ${summary}`)
+      lines.push(`[${ts}] ${name}:\n${summary}`)
     }
 
     lines.push("╚══════════════════════════════════════╝")

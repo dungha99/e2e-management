@@ -17,6 +17,14 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+
 
 interface AiThinkingChatProps {
   insights: AiInsight | null
@@ -226,6 +234,14 @@ export function AiThinkingChat({
   const [rerunSituation, setRerunSituation] = useState("")
   const [rerunHighestPrice, setRerunHighestPrice] = useState("")
   const [rerunNextStep, setRerunNextStep] = useState("")
+
+  // Structured Input States
+  const [isInputModalOpen, setIsInputModalOpen] = useState(false)
+  const [structSituation, setStructSituation] = useState("")
+  const [structPsychology, setStructPsychology] = useState("")
+  const [structHighestPrice, setStructHighestPrice] = useState("")
+  const [structNextStep, setStructNextStep] = useState("")
+
   // Fetch Backlist status on mount or carId change
   useEffect(() => {
     async function fetchBlacklistStatus() {
@@ -374,14 +390,43 @@ export function AiThinkingChat({
     }
   }
 
+  const handleStructuredSubmit = async () => {
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
+    setIsSubmitting(true)
+    pendingAutoActivateRef.current = true
+    setIsInputModalOpen(false)
+
+    try {
+      const formattedFeedback = [
+        `TÌNH HUỐNG: ${structSituation}`,
+        `TÂM LÝ KHÁCH: ${structPsychology}`,
+        `GIÁ CAO NHẤT ĐANG CÓ: ${structHighestPrice} triệu ·`,
+        `BƯỚC TIẾP THEO: ${structNextStep}`
+      ].join("\n")
+
+      await onSubmitFeedback(formattedFeedback)
+
+      // Clear fields
+      setStructSituation("")
+      setStructPsychology("")
+      setStructHighestPrice("")
+      setStructNextStep("")
+    } finally {
+      isSubmittingRef.current = false
+      setIsSubmitting(false)
+    }
+  }
+
   const handleRewritePrompt = async () => {
+
     setIsRewriting(true)
     try {
       const res = await fetch("/api/e2e/rewrite-prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: feedback,
+          prompt: isInputModalOpen ? structNextStep : feedback,
           carId,
           phone: leadPhone
         })
@@ -389,7 +434,11 @@ export function AiThinkingChat({
       if (res.ok) {
         const data = await res.json()
         if (data.rewrittenPrompt) {
-          setFeedback(data.rewrittenPrompt)
+          if (isInputModalOpen) {
+            setStructNextStep(data.rewrittenPrompt)
+          } else {
+            setFeedback(data.rewrittenPrompt)
+          }
         }
       } else {
         console.error("Failed to rewrite prompt")
@@ -451,6 +500,102 @@ export function AiThinkingChat({
     autoActivatedInsightRef.current = null
     pendingAutoActivateRef.current = false
   }, [carId])
+
+  const structInputDialog = (
+    <Dialog open={isInputModalOpen} onOpenChange={setIsInputModalOpen}>
+      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-indigo-600">
+            <Sparkles className="h-5 w-5" />
+            Cập nhật thông tin thực tế
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-5 py-4">
+          <div className="space-y-2">
+            <Label className="text-sm font-bold flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+              1. TÌNH HUỐNG
+            </Label>
+            <Textarea
+              placeholder="Khách đang ở đâu trong quy trình, phản hồi mới nhất là gì..."
+              value={structSituation}
+              onChange={(e) => setStructSituation(e.target.value)}
+              className="min-h-[80px] focus:ring-indigo-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-bold flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                2. TÂM LÝ KHÁCH
+              </Label>
+              <Textarea
+                placeholder="Ví dụ: Cứng giá, Thiện chí, Nghi ngờ..."
+                value={structPsychology}
+                onChange={(e) => setStructPsychology(e.target.value)}
+                className="min-h-[80px] focus:ring-indigo-500"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-bold flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                3. GIÁ CAO NHẤT ĐANG CÓ
+              </Label>
+              <div className="relative">
+                <Input
+                  placeholder="VD: 450"
+                  value={structHighestPrice}
+                  onChange={(e) => setStructHighestPrice(e.target.value)}
+                  className="pr-12"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500 font-medium">triệu</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2 relative">
+            <Label className="text-sm font-bold flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+              4. BƯỚC TIẾP THEO (Yêu cầu AI)
+            </Label>
+            <div className="relative">
+              <Textarea
+                placeholder="Việc cần AI làm — cụ thể 1 hành động..."
+                value={structNextStep}
+                onChange={(e) => setStructNextStep(e.target.value)}
+                className="min-h-[100px] pr-10 focus:ring-indigo-500"
+              />
+              <Button
+                size="icon"
+                variant="ghost"
+                disabled={!structNextStep.trim() || isRewriting}
+                onClick={handleRewritePrompt}
+                className="absolute bottom-2 right-2 h-8 w-8 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg shadow-sm"
+                title="Nhờ AI viết lại hoặc gợi ý"
+              >
+                {isRewriting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={() => setIsInputModalOpen(false)}>Hủy</Button>
+          <Button
+            onClick={handleStructuredSubmit}
+            disabled={!structSituation || !structPsychology || !structHighestPrice || !structNextStep || isSubmitting}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white min-w-[120px]"
+          >
+            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
+            Gửi cho AI
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
 
   // Auto-activate workflow only after user explicitly sends feedback (not on page load)
   useEffect(() => {
@@ -570,30 +715,23 @@ export function AiThinkingChat({
           <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center flex-shrink-0 border border-indigo-100 shadow-inner">
             <User className="h-6 w-6 text-indigo-400" />
           </div>
-          <div className="flex-1 relative">
-            <Textarea
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-              disabled={isLoading || isSubmitting}
-              placeholder={isLoading ? "AI đang xử lý, vui lòng chờ..." : "Nhập thông tin để AI phân tích... (Ví dụ: tình huống hiện tại, khó khăn, mong muốn...)"}
-              className="pr-[50px] min-h-[90px] text-sm focus-visible:ring-indigo-500 border-indigo-100 shadow-sm resize-y rounded-xl"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !isLoading && !isSubmitting) {
-                  handleSendFeedback()
-                }
-              }}
-            />
-            <Button
-              size="icon"
-              disabled={!feedback.trim() || isLoading || isSubmitting}
-              onClick={handleSendFeedback}
-              className="absolute bottom-3 right-3 bg-indigo-600 hover:bg-indigo-700 h-9 w-9 text-white rounded-xl shadow-lg"
+          <div className="flex-1 relative group">
+            <div
+              className={`min-h-[90px] p-4 bg-gray-50 border border-indigo-100 rounded-xl cursor-pointer hover:bg-white hover:border-indigo-300 transition-all flex flex-col justify-center items-center gap-2 group-hover:shadow-md ${isLoading || isSubmitting || isRewriting ? 'opacity-50 pointer-events-none' : ''}`}
+              onClick={() => setIsInputModalOpen(true)}
             >
-              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            </Button>
+              <Bot className="h-6 w-6 text-indigo-400 group-hover:text-indigo-600 transition-colors" />
+              <p className="text-sm text-gray-500 font-medium group-hover:text-indigo-600 text-center">
+                {isLoading ? "AI đang xử lý..." : "Nhấn để nhập thông tin thực tế cho AI tối ưu kịch bản"}
+              </p>
+              <span className="text-[10px] text-gray-400 mt-1">
+                TÌNH HUỐNG · TÂM LÝ · GIÁ · BƯỚC TIẾP THEO
+              </span>
+            </div>
           </div>
         </div>
         {actionButtons}
+        {structInputDialog}
       </div>
     )
   }
@@ -935,42 +1073,22 @@ export function AiThinkingChat({
           <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center flex-shrink-0 border border-indigo-100 shadow-inner">
             <User className="h-6 w-6 text-indigo-400" />
           </div>
-          <div className="flex-1 relative">
-            <Textarea
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-              disabled={isLoading || isSubmitting || isRewriting}
-              placeholder={isLoading ? "AI đang xử lý, vui lòng chờ..." : "Nhập thêm thông tin thực tế để AI tối ưu kịch bản... (Ví dụ: Khách đang rất cứng giá, không thích nhắn tin nhiều, thích nói chuyện ngoài lề, gap giá 20tr, giá dealer căng nhất rồi, tiếp theo gọi điện chốt lịch tối nay"}
-              className="pr-[90px] min-h-[90px] max-h-[400px] text-sm focus-visible:ring-indigo-500 border-indigo-100 shadow-sm resize-y rounded-xl"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !isLoading && !isSubmitting && !isRewriting) {
-                  handleSendFeedback()
-                }
-              }}
-            />
-            <Button
-              size="icon"
-              variant="outline"
-              disabled={isRewriting || isLoading || isSubmitting}
-              onClick={handleRewritePrompt}
-              title="Nhờ AI viết lại hoặc gợi ý yêu cầu"
-              className="absolute bottom-[3.25rem] right-3 bg-white/80 hover:bg-white text-indigo-600 border-indigo-200 h-9 w-9 rounded-xl shadow-sm transition-transform active:scale-95 z-10"
+          <div className="flex-1 relative group">
+            <div
+              className={`min-h-[90px] p-4 bg-gray-50 border border-indigo-100 rounded-xl cursor-pointer hover:bg-white hover:border-indigo-300 transition-all flex flex-col justify-center items-center gap-2 group-hover:shadow-md ${isLoading || isSubmitting || isRewriting ? 'opacity-50 pointer-events-none' : ''}`}
+              onClick={() => setIsInputModalOpen(true)}
             >
-              {isRewriting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            </Button>
-            <Button
-              size="icon"
-              disabled={!feedback.trim() || isSubmitting || isLoading || isRewriting}
-              onClick={handleSendFeedback}
-              className="absolute bottom-3 right-3 bg-indigo-600 hover:bg-indigo-700 h-9 w-9 text-white rounded-xl shadow-lg transition-transform active:scale-95"
-            >
-              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            </Button>
-            <div className="absolute -bottom-5 left-1">
-              <span className="text-[10px] text-gray-400">Press Cmd/Ctrl + Enter to send</span>
+              <Bot className="h-6 w-6 text-indigo-400 group-hover:text-indigo-600 transition-colors" />
+              <p className="text-sm text-gray-500 font-medium group-hover:text-indigo-600">
+                {isLoading ? "AI đang xử lý..." : "Nhấn để nhập thông tin thực tế cho AI"}
+              </p>
+              <span className="text-[10px] text-gray-400 mt-1">
+                TÌNH HUỐNG · TÂM LÝ · GIÁ · BƯỚC TIẾP THEO
+              </span>
             </div>
           </div>
         </div>
+        {structInputDialog}
       </div>
     </div >
   )

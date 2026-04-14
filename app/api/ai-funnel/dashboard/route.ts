@@ -38,7 +38,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
-    const filterPicId = searchParams.get('picId')
+    const filterPicIdRaw = searchParams.get('picId')
+    const filterPicIds = filterPicIdRaw && filterPicIdRaw !== 'all' ? filterPicIdRaw.split(',') : []
     const filterSource = searchParams.get('source')
 
     // ============================================================
@@ -95,6 +96,7 @@ export async function GET(request: Request) {
         c.lead_id,
         c.additional_images,
         l.pic_id,
+        l.phone,
         l.source,
         ss.stage as crm_stage,
         ss.qualified as crm_qualified
@@ -109,13 +111,14 @@ export async function GET(request: Request) {
       WHERE c.id = ANY($1::uuid[])
     `, [aiCarIds])
 
-    const carMetadataMap = new Map<string, { crmStage: string | null, crmQualified: string | null, picId: string | null, leadId: string | null, additionalImages: any, source: string | null }>()
+    const carMetadataMap = new Map<string, { crmStage: string | null, crmQualified: string | null, picId: string | null, phone: string | null, leadId: string | null, additionalImages: any, source: string | null }>()
 
     for (const row of vucarV2Res.rows) {
       carMetadataMap.set(row.car_id, {
         crmStage: row.crm_stage,
         crmQualified: row.crm_qualified,
         picId: row.pic_id,
+        phone: row.phone,
         leadId: row.lead_id,
         additionalImages: row.additional_images,
         source: row.source
@@ -148,6 +151,7 @@ export async function GET(request: Request) {
     // ============================================================
     interface LeadData {
       carId: string
+      phone: string | null
       hasSummary: boolean
       latestStage: string | null
       aiStage: string | null
@@ -260,6 +264,7 @@ export async function GET(request: Request) {
         spCreatedAt: summaryRow?.sp_created_at ?? null,
         spUpdatedAt: summaryRow?.sp_updated_at ?? null,
         workflowStartedAt: workflowStartMap.get(carId) ?? null,
+        phone: crm?.phone ?? null,
         picId: crm?.picId ?? null,
         source: crm?.source ?? null,
         snapshots,
@@ -273,6 +278,7 @@ export async function GET(request: Request) {
         const crm = carMetadataMap.get(car_id)
         leadsMap.set(car_id, {
           carId: car_id,
+          phone: crm?.phone ?? null,
           hasSummary: false,
           latestStage: null,
           aiStage: null,
@@ -347,7 +353,7 @@ export async function GET(request: Request) {
       })
       
       // If we are filtering by PIC, only add up that PIC, otherwise add all
-      if (!filterPicId || filterPicId === 'all' || filterPicId === picId) {
+      if (filterPicIds.length === 0 || filterPicIds.includes(picId)) {
         totalAssignedLeadsCount += total
         totalQualifiedAssignedCount += qualified
       }
@@ -355,7 +361,7 @@ export async function GET(request: Request) {
 
     // Final filter on AI leads
     const leadsMapFiltered = unfilteredLeads.filter(l => {
-      const picMatch = !filterPicId || filterPicId === 'all' || l.picId === filterPicId
+      const picMatch = filterPicIds.length === 0 || filterPicIds.includes(l.picId || '')
       const sourceMatch = !filterSource || filterSource === 'all' || l.source === filterSource
       return picMatch && sourceMatch
     })
@@ -365,12 +371,51 @@ export async function GET(request: Request) {
     const activeStages = ['contacted', 'negotiation', 'inspection']
 
     // ============================================================
+    // PRE-CALC: Zalo Success (New Stage)
+    // ============================================================
+    // Fetch all carIds for leads that had a successful firstMessage in Zalo
+    let zaloSuccessIds: string[] = []
+    const filteredPhones = Array.from(new Set(unfilteredLeads
+      .filter(l => {
+        const picMatch = filterPicIds.length === 0 || filterPicIds.includes(l.picId || '')
+        const sourceMatch = !filterSource || filterSource === 'all' || l.source === filterSource
+        return picMatch && sourceMatch
+      })
+      .map(l => l.phone)
+      .filter(Boolean)))
+
+    if (filteredPhones.length > 0) {
+      let zaloQuery = `
+        SELECT DISTINCT COALESCE(payload->>'phone', payload->>'customer_phone') AS phone
+        FROM zalo_action
+        WHERE action_type = 'firstMessage' AND status = 'success'
+      `
+      const zaloParams: any[] = []
+      
+      if (startDate && endDate) {
+        zaloQuery += ` AND created_at >= $1 AND created_at <= $2`
+        zaloParams.push(startDate, endDate)
+      }
+      
+      const phoneParamIdx = zaloParams.length + 1
+      zaloQuery += ` AND COALESCE(payload->>'phone', payload->>'customer_phone') = ANY($${phoneParamIdx})`
+      zaloParams.push(filteredPhones)
+
+      const zaloRes = await e2eQuery(zaloQuery, zaloParams)
+      
+      const successPhones = new Set(zaloRes.rows.map((r: any) => r.phone))
+      zaloSuccessIds = unfilteredLeads
+        .filter(l => successPhones.has(l.phone))
+        .map(l => l.carId)
+    }
+
+    // ============================================================
     // SECTION 1: Volume
     // ============================================================
     const totalAiLeadsIds = allLeadsFiltered.map(l => l.carId)
     const aiLeadsWithSummaryIds = leadsWithSummary.map(l => l.carId)
-    const activeIds = leadsWithSummary.filter(l => l.latestStage && activeStages.includes(l.latestStage)).map(l => l.carId)
-    const closedIds = leadsWithSummary.filter(l => l.latestStage === 'completed' || l.latestStage === 'deposited').map(l => l.carId)
+    const activeIds = allLeadsFiltered.filter(l => l.latestStage && activeStages.includes(l.latestStage)).map(l => l.carId)
+    const closedIds = allLeadsFiltered.filter(l => l.crmStage === 'COMPLETED' || l.crmStage === 'DEPOSIT_PAID').map(l => l.carId)
 
     const totalAiLeads = totalAiLeadsIds.length
     const aiLeadsWithSummary = aiLeadsWithSummaryIds.length
@@ -420,6 +465,7 @@ export async function GET(request: Request) {
     
     const stageReachRates = [
       { stage: 'totalAssigned', count: totalAssignedLeadsCount, rate: 100, carIds: [] },
+      { stage: 'zaloSuccess', count: zaloSuccessIds.length, rate: totalAssignedLeadsCount > 0 ? Math.round((zaloSuccessIds.length / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: zaloSuccessIds },
       { stage: 'totalAi', count: totalAiLeads, rate: totalAssignedLeadsCount > 0 ? Math.round((totalAiLeads / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: totalAiLeadsIds },
       { stage: 'summary', count: aiLeadsWithSummary, rate: totalAssignedLeadsCount > 0 ? Math.round((aiLeadsWithSummary / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: aiLeadsWithSummaryIds },
       { stage: 'contacted', count: stageReachCounts['contacted'].size, rate: totalAssignedLeadsCount > 0 ? Math.round((stageReachCounts['contacted'].size / totalAssignedLeadsCount) * 1000) / 10 : 0, carIds: Array.from(stageReachCounts['contacted']) },
@@ -434,7 +480,8 @@ export async function GET(request: Request) {
     const inspectionCount = stageReachCounts['inspection'].size
 
     const stageToStage = [
-      { from: 'totalAssigned', to: 'totalAi', fromCount: totalAssignedLeadsCount, toCount: totalAiLeads, rate: totalAssignedLeadsCount > 0 ? Math.round((totalAiLeads / totalAssignedLeadsCount) * 1000) / 10 : 0 },
+      { from: 'totalAssigned', to: 'zaloSuccess', fromCount: totalAssignedLeadsCount, toCount: zaloSuccessIds.length, rate: totalAssignedLeadsCount > 0 ? Math.round((zaloSuccessIds.length / totalAssignedLeadsCount) * 1000) / 10 : 0 },
+      { from: 'zaloSuccess', to: 'totalAi', fromCount: zaloSuccessIds.length, toCount: totalAiLeads, rate: zaloSuccessIds.length > 0 ? Math.round((totalAiLeads / zaloSuccessIds.length) * 1000) / 10 : 0 },
       { from: 'totalAi', to: 'summary', fromCount: totalAiLeads, toCount: aiLeadsWithSummary, rate: totalAiLeads > 0 ? Math.round((aiLeadsWithSummary / totalAiLeads) * 1000) / 10 : 0 },
       { from: 'contacted', to: 'negotiation', fromCount: contactedCount, toCount: negotiationCount, rate: contactedCount > 0 ? Math.round((negotiationCount / contactedCount) * 1000) / 10 : 0 },
       { from: 'negotiation', to: 'inspection', fromCount: negotiationCount, toCount: inspectionCount, rate: negotiationCount > 0 ? Math.round((inspectionCount / negotiationCount) * 1000) / 10 : 0 },

@@ -28,6 +28,7 @@ import {
 const STAGE_COLORS: Record<string, string> = {
   totalAssigned: "#cbd5e1",
   totalAi: "#94a3b8",
+  zaloSuccess: "#8b5cf6",
   summary: "#94a3b8",
   contacted: "#60a5fa",
   qualified: "#3b82f6",
@@ -63,6 +64,7 @@ const PIE_COLORS = ["#10b981", "#f59e0b", "#6366f1", "#ef4444", "#94a3b8", "#f43
 const STAGE_LABELS: Record<string, string> = {
   totalAssigned: "Total Assigned Leads",
   totalAi: "Total AI Leads",
+  zaloSuccess: "Zalo Success",
   summary: "Có AI Summary",
   contacted: "Contacted",
   qualified: "Strong Qualified",

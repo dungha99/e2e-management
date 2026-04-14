@@ -14,7 +14,7 @@ import {
 } from "recharts"
 import { 
   ArrowLeft, TrendingUp, Users, CheckCircle2, Clock, 
-  BarChart3, Shield, UserCheck, Loader2, MessageSquare
+  BarChart3, Shield, UserCheck, Loader2, MessageSquare, Filter
 } from "lucide-react"
 import { DateRangePickerWithPresets } from "@/components/e2e/common/DateRangePickerWithPresets"
 import { DrilldownPanel } from "./DrilldownPanel"
@@ -27,10 +27,26 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
+import { Check, ChevronDown, X } from "lucide-react"
 
 // Colors
 const STAGE_COLORS: Record<string, string> = {
   totalAssigned: "#cbd5e1",
+  zaloSuccess: "#2563eb",
   totalAi: "#94a3b8",
   summary: "#94a3b8",
   contacted: "#60a5fa",
@@ -75,6 +91,7 @@ const PIE_COLORS = ["#10b981", "#f59e0b", "#6366f1", "#ef4444", "#94a3b8", "#f43
 
 const STAGE_LABELS: Record<string, string> = {
   totalAssigned: "Total Assigned Leads",
+  zaloSuccess: "Zalo 1st Success",
   totalAi: "Total AI Leads",
   summary: "Có AI Summary",
   contacted: "Contacted",
@@ -237,36 +254,8 @@ function VolumeSection({ data, onDrilldown }: { data: any, onDrilldown: (title: 
         <StatCard title="Closed (CRM)" value={formatNumber(volume.closed)} icon={CheckCircle2} color="text-blue-500" subtitle="COMPLETED + DEPOSIT_PAID" onClick={() => onDrilldown("Closed (CRM)", volume.closedIds || [])} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Stage Distribution Chart */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">Phân bổ theo Stage</CardTitle>
-            <CardDescription>Snapshot mới nhất của từng lead</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stageData} layout="vertical" margin={{ left: 20, right: 30 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" fontSize={12} />
-                  <YAxis dataKey="label" type="category" width={100} fontSize={12} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }}
-                    formatter={(value: number, _: any, props: any) => [`${value} (${props.payload.percentage}%)`, "Leads"]}
-                  />
-                  <Bar dataKey="count" radius={[0, 4, 4, 0]}>
-                    {stageData.map((entry: any, idx: number) => (
-                      <Cell key={idx} fill={entry.fill} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Qualified Distribution */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Growth Volume Chart */}
         <div className="space-y-4">
           <TrendChart 
             data={data.weeklyTrends} 
@@ -275,47 +264,49 @@ function VolumeSection({ data, onDrilldown }: { data: any, onDrilldown: (title: 
             subtitle="Số lượng AI leads theo tuần" 
             color="#6366f1"
           />
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Qualified</CardTitle>
-              <CardDescription>Phân loại theo ảnh xe</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[150px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={qualifiedData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={40}
-                      outerRadius={60}
-                      dataKey="value"
-                      strokeWidth={2}
-                    >
-                      {qualifiedData.map((_, idx) => (
-                        <Cell key={idx} fill={PIE_COLORS[idx]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex justify-center gap-6 mt-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: PIE_COLORS[0] }} />
-                  <span className="text-xs">Strong ({formatPercent(volume.qualifiedDistribution?.strongQualifiedRate)})</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: PIE_COLORS[1] }} />
-                  <span className="text-xs">Weak ({formatPercent(volume.qualifiedDistribution?.weakQualifiedRate)})</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
+
+        {/* Qualified Distribution */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Qualified</CardTitle>
+            <CardDescription>Phân loại theo ảnh xe</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[200px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={qualifiedData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={80}
+                    dataKey="value"
+                    strokeWidth={2}
+                  >
+                    {qualifiedData.map((_, idx) => (
+                      <Cell key={idx} fill={PIE_COLORS[idx]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex justify-center gap-6 mt-2">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: PIE_COLORS[0] }} />
+                <span className="text-xs font-semibold">Strong ({formatPercent(volume.qualifiedDistribution?.strongQualifiedRate)})</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: PIE_COLORS[1] }} />
+                <span className="text-xs font-semibold">Weak ({formatPercent(volume.qualifiedDistribution?.weakQualifiedRate)})</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
@@ -878,115 +869,72 @@ function FeedbackSection({ data, onDrilldown }: { data: any, onDrilldown: (title
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Stage Distribution Chart */}
-        <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle className="text-base">Phân bổ theo Stage</CardTitle>
-            <CardDescription>% xe có feedback tại mỗi stage</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={distributionData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="count"
-                  >
-                    {distributionData.map((entry: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }}
-                    formatter={(value: number, name: string, props: any) => [`${value} xe (${props.payload.pct}%)`, STAGE_LABELS[name] || name]}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="grid grid-cols-2 gap-2 mt-4">
-              {distributionData.slice(0, 10).map((d: any) => (
-                <div key={d.stage} className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: d.fill }} />
-                  <span className="text-[10px] truncate">{STAGE_LABELS[d.stage] || d.stage}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Feedback Details - New Vertical List UI */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">Chi tiết Feedback mới nhất</CardTitle>
-            <CardDescription>Danh sách thực tế từ các xe đang chăm sóc</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="max-h-[600px] overflow-y-auto px-6 pb-6 space-y-4">
-              {(feedback.details || []).map((item: any, idx: number) => (
-                <div 
-                  key={idx} 
-                  className="p-4 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-all cursor-pointer group"
-                  onClick={() => onDrilldown(`Feedback: ${item.carId}`, [item.carId])}
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <Badge 
-                        variant="secondary" 
-                        className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5"
-                        style={{ 
-                          backgroundColor: `${STAGE_COLORS[item.stage]}15`, 
-                          color: STAGE_COLORS[item.stage],
-                          borderColor: `${STAGE_COLORS[item.stage]}40`
-                        }}
-                      >
-                        {STAGE_LABELS[item.stage] || item.stage}
-                      </Badge>
-                      <div className="h-1 w-1 rounded-full bg-muted-foreground/30" />
-                      <span className="text-[11px] font-medium text-muted-foreground">{item.picName}</span>
-                    </div>
-                    <span className="text-[10px] text-muted-foreground">
-                      {new Date(item.createdAt).toLocaleDateString('vi-VN', { 
-                        day: '2-digit', 
-                        month: '2-digit', 
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </span>
+      {/* Feedback Details - New Vertical List UI */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Chi tiết Feedback mới nhất</CardTitle>
+          <CardDescription>Danh sách thực tế từ các xe đang chăm sóc</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="max-h-[600px] overflow-y-auto px-6 pb-6 space-y-4 pt-4">
+            {(feedback.details || []).map((item: any, idx: number) => (
+              <div 
+                key={idx} 
+                className="p-4 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-all cursor-pointer group"
+                onClick={() => onDrilldown(`Feedback: ${item.carId}`, [item.carId])}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Badge 
+                      variant="secondary" 
+                      className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5"
+                      style={{ 
+                        backgroundColor: `${STAGE_COLORS[item.stage]}15`, 
+                        color: STAGE_COLORS[item.stage],
+                        borderColor: `${STAGE_COLORS[item.stage]}40`
+                      }}
+                    >
+                      {STAGE_LABELS[item.stage] || item.stage}
+                    </Badge>
+                    <div className="h-1 w-1 rounded-full bg-muted-foreground/30" />
+                    <span className="text-[11px] font-medium text-muted-foreground">{item.picName}</span>
                   </div>
-                  <div className="relative">
-                    <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">
-                      {item.feedback}
-                    </p>
-                  </div>
-                  <div className="mt-3 pt-3 border-t border-dashed flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <span className="text-[10px] font-mono text-muted-foreground uppercase">ID: {item.carId.slice(0, 8)}...</span>
-                  </div>
+                  <span className="text-[10px] text-muted-foreground">
+                    {new Date(item.createdAt).toLocaleDateString('vi-VN', { 
+                      day: '2-digit', 
+                      month: '2-digit', 
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </span>
                 </div>
-              ))}
-              
-              {(!feedback.details || feedback.details.length === 0) && (
-                <div className="py-20 text-center opacity-30 text-sm">
-                  Chưa có dữ liệu feedback trong khoảng thời gian này
+                <div className="relative">
+                  <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">
+                    {item.feedback}
+                  </p>
                 </div>
-              )}
-            </div>
-            {feedback.details?.length > 0 && (
-              <div className="p-4 border-t bg-muted/10">
-                <p className="text-[10px] text-center text-muted-foreground italic">
-                  Đang hiển thị {feedback.details.length} feedback records mới nhất
-                </p>
+                <div className="mt-3 pt-3 border-t border-dashed flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span className="text-[10px] font-mono text-muted-foreground uppercase">ID: {item.carId.slice(0, 8)}...</span>
+                </div>
+              </div>
+            ))}
+            
+            {(!feedback.details || feedback.details.length === 0) && (
+              <div className="py-20 text-center opacity-30 text-sm">
+                Chưa có dữ liệu feedback trong khoảng thời gian này
               </div>
             )}
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+          {feedback.details?.length > 0 && (
+            <div className="p-4 border-t bg-muted/10 text-center">
+              <p className="text-[10px] text-muted-foreground italic">
+                Đang hiển thị {feedback.details.length} feedback records mới nhất
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
@@ -998,7 +946,7 @@ export function AiFunnelDashboard() {
     from: new Date(new Date().setDate(new Date().getDate() - 30)),
     to: new Date(),
   })
-  const [filterPicId, setFilterPicId] = useState<string>("all")
+  const [filterPicIds, setFilterPicIds] = useState<string[]>([])
   const [filterSource, setFilterSource] = useState<string>("all")
   const [drilldown, setDrilldown] = useState<{ title: string, ids: string[] } | null>(null)
 
@@ -1008,7 +956,7 @@ export function AiFunnelDashboard() {
       const params = new URLSearchParams({
         startDate: dateRange.from.toISOString(),
         endDate: dateRange.to.toISOString(),
-        picId: filterPicId,
+        picId: filterPicIds.length > 0 ? filterPicIds.join(',') : 'all',
         source: filterSource,
       })
       const res = await fetch(`/api/ai-funnel/dashboard?${params}`)
@@ -1019,7 +967,7 @@ export function AiFunnelDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [dateRange, filterPicId, filterSource])
+  }, [dateRange, filterPicIds, filterSource])
 
   useEffect(() => {
     fetchData()
@@ -1032,7 +980,7 @@ export function AiFunnelDashboard() {
   const filters = {
     startDate: dateRange.from.toISOString(),
     endDate: dateRange.to.toISOString(),
-    picId: filterPicId,
+    picIds: filterPicIds,
   }
 
   return (
@@ -1062,18 +1010,67 @@ export function AiFunnelDashboard() {
             </SelectContent>
           </Select>
 
-          {/* PIC Filter */}
-          <Select value={filterPicId} onValueChange={setFilterPicId}>
-            <SelectTrigger className="w-[180px] h-9 text-xs">
-              <SelectValue placeholder="Filter by PIC" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tất cả PIC</SelectItem>
-              {data?.picList?.map((p: any) => (
-                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* PIC Filter (Multi-select) */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-9 w-[200px] justify-between text-xs font-medium"
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <UserCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                  {filterPicIds.length === 0 ? "Tất cả PIC" : 
+                   filterPicIds.length === 1 ? (data?.picList?.find((p:any) => p.id === filterPicIds[0])?.name || "1 PIC selected") :
+                   `${filterPicIds.length} PICs selected`}
+                </div>
+                <ChevronDown className="h-4 w-4 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[200px] p-0" align="end">
+              <Command>
+                <CommandInput placeholder="Search PIC..." className="h-8 text-xs" />
+                <CommandList>
+                  <CommandEmpty>No PIC found.</CommandEmpty>
+                  <CommandGroup>
+                    <CommandItem
+                      onSelect={() => setFilterPicIds([])}
+                      className="text-xs"
+                    >
+                      <div className={cn(
+                        "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                        filterPicIds.length === 0 ? "bg-primary text-primary-foreground" : "opacity-50 [&_svg]:invisible"
+                      )}>
+                        <Check className="h-3 w-3" />
+                      </div>
+                      Tất cả PIC
+                    </CommandItem>
+                    {data?.picList?.map((pic: any) => (
+                      <CommandItem
+                        key={pic.id}
+                        onSelect={() => {
+                          setFilterPicIds(prev => 
+                            prev.includes(pic.id) 
+                              ? prev.filter(id => id !== pic.id)
+                              : [...prev, pic.id]
+                          )
+                        }}
+                        className="text-xs"
+                      >
+                        <div className={cn(
+                          "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                          filterPicIds.includes(pic.id) ? "bg-primary text-primary-foreground" : "opacity-50 [&_svg]:invisible"
+                        )}>
+                          <Check className="h-3 w-3" />
+                        </div>
+                        {pic.name}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
 
           <DateRangePickerWithPresets
             dateRange={{ from: dateRange.from, to: dateRange.to }}

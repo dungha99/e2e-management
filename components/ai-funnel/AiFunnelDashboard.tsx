@@ -41,12 +41,11 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
-import { Check, ChevronDown, X } from "lucide-react"
+import { Check, ChevronDown, X, Info } from "lucide-react"
+import { TooltipProvider, Tooltip as UITooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 // Colors
 const STAGE_COLORS: Record<string, string> = {
-  totalAssigned: "#cbd5e1",
-  zaloSuccess: "#2563eb",
   totalAi: "#94a3b8",
   summary: "#94a3b8",
   contacted: "#60a5fa",
@@ -91,7 +90,6 @@ const PIE_COLORS = ["#10b981", "#f59e0b", "#6366f1", "#ef4444", "#94a3b8", "#f43
 
 const STAGE_LABELS: Record<string, string> = {
   totalAssigned: "Total Assigned Leads",
-  zaloSuccess: "Zalo 1st Success",
   totalAi: "Total AI Leads",
   summary: "Có AI Summary",
   contacted: "Contacted",
@@ -112,6 +110,17 @@ const STAGE_LABELS: Record<string, string> = {
   UNKNOWN: "Unknown",
   UNDEFINED: "Undefined",
   CANNOT_CONTACT: "Cannot Contact",
+}
+
+const STAGE_LOGIC: Record<string, string> = {
+  totalAssigned: "Tổng số leads được marketing chuyển vào CRM (baseline).",
+  totalAi: "Unique leads đã bắt đầu vào AI Workflow ít nhất 1 lần.",
+  summary: "Leads AI đã xử lý và tạo được Profile/Summary đầu tiên.",
+  contacted: "Leads đã có tương tác thật sự (Contacted stage trong snapshots).",
+  qualified: "Leads đã gửi ảnh xe thực tế (Had Car Image) trong snapshot.",
+  negotiation: "Leads đã bắt đầu đàm phán giá (có Price Customer hoặc Negotiation stage).",
+  inspection: "Leads đã hẹn lịch xem xe/kiểm định (có Inspection stage hoặc Inspection Date).",
+  closed: "Leads đã hoàn thành giao dịch (Win) trên hệ thống CRM (Completed/Deposited).",
 }
 
 function formatNumber(n: number | null | undefined): string {
@@ -320,12 +329,14 @@ function ConversionSection({ data, onDrilldown }: { data: any, onDrilldown: (tit
   const { stageReachRates, stageToStage, negotiationAnalysis } = conversion
 
   const funnelData = (stageReachRates || [])
-    .filter((s: any) => s.stage !== 'failed')
+    .filter((s: any) => s.stage !== 'failed' && s.stage !== 'zaloSuccess')
     .map((s: any) => ({
+      ...s,
       name: STAGE_LABELS[s.stage] || s.stage,
       value: s.count,
       rate: s.rate,
       fill: STAGE_COLORS[s.stage] || "#94a3b8",
+      logic: STAGE_LOGIC[s.stage] || "",
     }))
 
   return (
@@ -344,10 +355,24 @@ function ConversionSection({ data, onDrilldown }: { data: any, onDrilldown: (tit
                 <XAxis dataKey="name" fontSize={12} />
                 <YAxis fontSize={12} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }}
-                  formatter={(value: number, _: any, props: any) => [`${value} leads (${props.payload.rate}%)`, "Reach"]}
+                  contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }}
+                  formatter={(value: number, _: any, props: any) => {
+                    const logic = props.payload.logic
+                    return [
+                      <div className="space-y-1">
+                        <div className="font-bold">{value} leads ({props.payload.rate}%)</div>
+                        {logic && <div className="text-[10px] text-muted-foreground italic font-normal max-w-[200px] whitespace-normal leading-relaxed">{logic}</div>}
+                      </div>,
+                      "Reach"
+                    ]
+                  }}
                 />
-                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                <Bar 
+                  dataKey="value" 
+                  radius={[4, 4, 0, 0]} 
+                  className="cursor-pointer"
+                  onClick={(data) => onDrilldown(`Reached ${data.name}`, data.carIds || [])}
+                >
                   {funnelData.map((entry: any, idx: number) => (
                     <Cell key={idx} fill={entry.fill} />
                   ))}
@@ -377,7 +402,19 @@ function ConversionSection({ data, onDrilldown }: { data: any, onDrilldown: (tit
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: STAGE_COLORS[s.stage] || "#94a3b8" }} />
-                        <span className="group-hover:text-blue-600 transition-colors">{STAGE_LABELS[s.stage] || s.stage}</span>
+                        <TooltipProvider>
+                          <UITooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center gap-1.5 group-hover:text-blue-600 transition-colors">
+                                {STAGE_LABELS[s.stage] || s.stage}
+                                <Info className="h-3 w-3 opacity-20 group-hover:opacity-100 transition-opacity" />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="text-xs max-w-[200px]">{STAGE_LOGIC[s.stage] || "Calculation logic not defined"}</p>
+                            </TooltipContent>
+                          </UITooltip>
+                        </TooltipProvider>
                       </div>
                     </TableCell>
                     <TableCell className="text-right font-medium">{formatNumber(s.count)}</TableCell>

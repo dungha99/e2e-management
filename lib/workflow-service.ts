@@ -32,6 +32,7 @@ export interface ExtractedStep {
   failureSignal?: string
   ifSuccess?: string
   ifFailure?: string
+  scheduledAt?: string | null
 }
 
 export interface StepInput {
@@ -75,6 +76,7 @@ export function extractStepsFromAnalysis(analysis: any): ExtractedStep[] {
         failureSignal: obj.failure_signal,
         ifSuccess: obj.if_success,
         ifFailure: obj.if_failure,
+        scheduledAt: obj.scheduled_at || null,
       })
     }
 
@@ -91,6 +93,7 @@ export function extractStepsFromAnalysis(analysis: any): ExtractedStep[] {
         failureSignal: obj.failure_signal,
         ifSuccess: obj.if_success,
         ifFailure: obj.if_failure,
+        scheduledAt: obj.scheduled_at || null,
       })
 
       console.log(`[extractStepsFromAnalysis] Auto-appending SCRIPT step after BIDDING`)
@@ -349,7 +352,7 @@ export async function handleAutoUseFlow(params: {
         connectorId: step.connectorId,
         inputMapping: genericMapping,
         requestPayload: actualValues,
-        scheduledAt: geminiStep.scheduled_at || null,
+        scheduledAt: step.scheduledAt || geminiStep.scheduled_at || null,
         description
       }
     })
@@ -547,6 +550,10 @@ Decided parameters: ${JSON.stringify(prevResult.parameters, null, 2)}
     const ragSection = ragExamplesContext ? `\n=== RAG EXAMPLES (Similar successful conversations from this PIC) ===\nDưới đây là các ví dụ từ những cuộc hội thoại thành công tương tự, hãy tham khảo phong cách và cách tiếp cận:\n${ragExamplesContext}\n` : ""
     const memorySection = agentMemory ? `\n${agentMemory}\n` : ""
 
+    const scheduledAtHint = step.scheduledAt
+      ? `Pre-determined scheduled_at (from Plan agent): "${step.scheduledAt}" — use this exact value as scheduled_at, do not recalculate.`
+      : `No pre-determined schedule — determine the best scheduled_at based on context, or null for immediate.`
+
     const userPrompt = `
 ${todayInfo}
 
@@ -556,6 +563,7 @@ ${previousStepContext}
 === CURRENT STEP TO FILL (Step ${idx + 1} of ${steps.length}) ===
 "${step.stepName}" (connector: ${step.connectorLabel})
 Instruction: "${step.rawContext}"
+${scheduledAtHint}
 
 Required Fields:
 ${fieldDescriptions || '  (no schema fields - provide raw payload)'}

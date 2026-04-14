@@ -22,7 +22,12 @@ export const revalidate = 0
  *  3. Update step_execution with result (success/failed)
  *  4. Advance current_step_id to next step
  *  5. Loop until a future scheduled_at or no more steps
+ *
+ * Instances are processed in parallel with a bounded concurrency limit
+ * to avoid overwhelming DB connection pools and external APIs.
  */
+
+const CONCURRENCY_LIMIT = 5
 
 interface ProcessingResult {
   instanceId: string
@@ -32,9 +37,541 @@ interface ProcessingResult {
   error?: string
 }
 
+// =========================================================================
+// Helper: Run tasks with bounded concurrency (sliding window)
+// =========================================================================
+async function runWithConcurrency<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = []
+  const executing = new Set<Promise<void>>()
+
+  for (const task of tasks) {
+    const p: Promise<void> = task().then(
+      (val) => { results.push({ status: "fulfilled", value: val }) },
+      (err) => { results.push({ status: "rejected", reason: err }) }
+    ).finally(() => executing.delete(p))
+
+    executing.add(p)
+    if (executing.size >= limit) await Promise.race(executing)
+  }
+
+  await Promise.all(executing)
+  return results
+}
+
+// =========================================================================
+// Helper: Process a single workflow instance (all steps sequentially)
+// =========================================================================
+async function processInstance(instance: any): Promise<ProcessingResult> {
+  const result: ProcessingResult = {
+    instanceId: instance.id,
+    workflowName: instance.workflow_name,
+    stepsProcessed: 0,
+    stoppedReason: "all_done",
+  }
+
+  // Resolve customer phone (additional_phone first) and pic_id for this instance
+  let customerPhone = ""
+  let picId = ""
+  try {
+    const contactResult = await vucarV2Query(
+      `SELECT l.phone, l.additional_phone, l.pic_id
+       FROM cars c
+       JOIN leads l ON l.id = c.lead_id
+       WHERE c.id = $1 LIMIT 1`,
+      [instance.car_id]
+    )
+    const contact = contactResult.rows[0]
+    customerPhone = contact?.additional_phone || contact?.phone || ""
+    picId = contact?.pic_id || ""
+  } catch (err) {
+    console.warn(`[Process AI Workflows] Could not resolve phone/picId for car ${instance.car_id}:`, err)
+  }
+
+  try {
+    let currentStepId = instance.current_step_id
+    let continueLoop = true
+
+    while (continueLoop) {
+      if (!currentStepId) {
+        // No more steps → mark instance as completed
+        await e2eQuery(
+          `UPDATE workflow_instances SET status = 'completed', completed_at = NOW() WHERE id = $1`,
+          [instance.id]
+        )
+        result.stoppedReason = "all_done"
+        break
+      }
+
+      // --- 2a. Get the step_execution for this step ---
+      const execResult = await e2eQuery(
+        `SELECT se.*, ws.connector_id, ws.step_name, ws.step_order, ws.input_mapping, ws.description
+         FROM step_executions se
+         JOIN workflow_steps ws ON ws.id = se.step_id
+         WHERE se.instance_id = $1 AND se.step_id = $2
+         ORDER BY se.id DESC
+         LIMIT 1`,
+        [instance.id, currentStepId]
+      )
+
+      if (execResult.rows.length === 0) {
+        console.warn(`[Process AI Workflows] No step_execution found for instance=${instance.id}, step=${currentStepId}`)
+        result.stoppedReason = "error"
+        result.error = `No step_execution for step ${currentStepId}`
+        break
+      }
+
+      const execution = execResult.rows[0]
+
+      // Skip only truly terminal / in-progress states.
+      // NOTE: 'running' is intentionally NOT guarded here — stale running steps
+      // (timed-out after >5 min) are handled by the atomic re-claim below.
+      if (execution.status === 'success' || execution.status === 'failed' || execution.status === 'skipped') {
+        // Move to next step
+        currentStepId = await getNextStepId(instance.workflow_id, execution.step_order)
+        if (currentStepId) {
+          await e2eQuery(
+            `UPDATE workflow_instances SET current_step_id = $1 WHERE id = $2`,
+            [currentStepId, instance.id]
+          )
+        }
+        continue
+      }
+
+      // --- 2b. Check scheduled_at ---
+      // scheduled_at is stored as Vietnam local time (UTC+7) without timezone info.
+      // Vercel runs in UTC, so new Date() on a bare datetime string treats it as UTC
+      // → 7 hours ahead of real time. Subtract 7h to get the true UTC equivalent.
+      const scheduledAt = execution.scheduled_at
+        ? new Date(new Date(execution.scheduled_at).getTime() - 7 * 60 * 60 * 1000)
+        : null
+      const now = new Date()
+
+      if (scheduledAt && scheduledAt > now) {
+        // Scheduled in the future → skip, wait for next cron run
+        console.log(`[Process AI Workflows] Step "${execution.step_name}" scheduled for ${scheduledAt.toISOString()}, skipping`)
+        result.stoppedReason = "scheduled_future"
+        continueLoop = false
+        break
+      }
+
+      // --- 2c. Atomic claim: mark step as running only if still pending OR stale ---
+      // IMPORTANT: This must run before the customer engagement check (2b-ii) so that
+      // only one concurrent cron run can proceed to the no-response / re-analysis path.
+      // Guards against:
+      //   • Concurrent cron runs (race condition) → only one claim succeeds
+      //   • Stale 'running' steps (AI took >5 min, Vercel timed out) → re-claimed
+      const isStaleRunning = execution.status === 'running'
+      const claimResult = await e2eQuery(
+        `UPDATE step_executions SET status = 'running', executed_at = NOW()
+         WHERE id = $1
+           AND (
+             status = 'pending'
+             OR (status = 'running' AND executed_at < NOW() - INTERVAL '5 minutes')
+           )
+         RETURNING id`,
+        [execution.id]
+      )
+      if (claimResult.rows.length === 0) {
+        // Either another cron already claimed it, or it's still actively running (<5 min)
+        console.log(`[Process AI Workflows] Step "${execution.step_name}" is locked (running <5 min or already claimed), skipping`)
+        result.stoppedReason = "scheduled_future"
+        continueLoop = false
+        break
+      }
+      if (isStaleRunning) {
+        console.warn(`[Process AI Workflows] Re-claiming stale step "${execution.step_name}" — was stuck in 'running' >5 min`)
+      }
+
+      // --- 2b-ii. Customer engagement check (only for scheduled steps) ---
+      // If the step had a scheduled_at, the customer had time to respond.
+      // If they haven't replied in 2 days, skip and trigger re-analysis.
+      // Runs after the atomic claim so only one cron run can trigger re-analysis per step.
+      if (execution.scheduled_at && customerPhone && picId) {
+        console.log(`[Process AI Workflows] Checking customer response for "${execution.step_name}" (phone: ${customerPhone})...`)
+        let responded = false
+        try {
+          responded = await checkCustomerResponded(customerPhone, picId, instance.car_id)
+        } catch (err) {
+          console.warn(`[Process AI Workflows] Engagement check failed (non-blocking):`, err)
+          responded = true // Default to proceeding if the check itself fails
+        }
+
+        if (!responded) {
+          console.log(`[Process AI Workflows] Customer has NOT responded in 2 days. Triggering re-analysis...`)
+
+          await e2eQuery(
+            `UPDATE step_executions SET status = 'skipped', error_message = $1 WHERE id = $2`,
+            ['Customer did not respond within 2 days — strategy re-analysis triggered', execution.id]
+          )
+
+          // Terminate the instance so subsequent cron runs don't re-trigger re-analysis
+          await e2eQuery(
+            `UPDATE workflow_instances SET status = 'terminated', completed_at = NOW() WHERE id = $1`,
+            [instance.id]
+          )
+
+          if (instance.car_id) {
+            const noResponseFeedback = `[Auto-Check] Khách hàng chưa phản hồi trong 2 ngày kể từ bước "${execution.step_name}". Cần điều chỉnh chiến lược tiếp cận.`
+
+            // 1. Update the AI Knowledge Diary so the model learns from this pattern
+            import("@/lib/ai-notes-service").then(({ updateAiNoteFromFeedback }) => {
+              updateAiNoteFromFeedback({
+                block: "insight-generator",
+                aiResponse: `Workflow step "${execution.step_name}" was scheduled and executed, but the customer did not reply within 2 days.`,
+                userFeedback: noResponseFeedback,
+                feedbackType: "text",
+              }).catch((err) => console.error(`[Process AI Workflows] AI Notes update failed:`, err))
+            }).catch(() => { })
+
+            // 2. Submit insight feedback → triggers AI re-analysis + new workflow creation
+            try {
+              console.log(`[Process AI Workflows] Submitting feedback for car ${instance.car_id}...`)
+              await submitAiFeedback({
+                carId: instance.car_id,
+                sourceInstanceId: instance.id,
+                phoneNumber: customerPhone,
+                feedback: noResponseFeedback,
+                retrigger: true,
+              })
+              console.log(`[Process AI Workflows] Re-analysis and new workflow triggered successfully.`)
+            } catch (err) {
+              console.error(`[Process AI Workflows] submitAiFeedback failed:`, err)
+            }
+          }
+
+          result.stoppedReason = "customer_no_response"
+          continueLoop = false
+          break
+        }
+
+        console.log(`[Process AI Workflows] Customer HAS responded recently. Proceeding with step.`)
+      }
+
+      // --- 2d. Pre-execution AI Script Evaluator (for "Gửi Script" only, AI-triggered instances) ---
+      if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee" && instance.triggered_by !== 'user') { // Gửi Script
+        console.log(`[Process AI Workflows] Triggering AI Script Evaluator for Gửi Script...`)
+        try {
+          let requestPayload = execution.request_payload
+          if (typeof requestPayload === "string") {
+            requestPayload = JSON.parse(requestPayload)
+          }
+
+          if (requestPayload && Array.isArray(requestPayload.messages) && customerPhone && picId) {
+            const chatMessages = await fetchZaloChatHistory({ carId: instance.car_id, phone: customerPhone, picId })
+            const recentChat = chatMessages.length > 0 ? chatMessages.slice(-100) : null
+            console.log(`[Process AI Workflows] AI Evaluator chat messages: ${recentChat?.length ?? 0}`)
+
+            if (recentChat) {
+              const [picPrompt, reviewAgentNote] = await Promise.all([
+                getPicAgentConfig("Review Messages Scheduled", picId),
+                getActiveAgentNote("Review Messages Scheduled"),
+              ])
+
+              const systemPrompt = `${picPrompt || ''}${reviewAgentNote ? `\n\n### Cấu Hình Bổ Sung (System Preferences):\n${reviewAgentNote}` : ''}`
+
+              const tacticalCommand = execution.description || execution.step_name
+              const [leadContext, agentMemory] = await Promise.all([
+                fetchLeadContext(instance.car_id || ""),
+                getCarAgentMemory(instance.car_id).catch(() => null),
+              ])
+              const memorySection = agentMemory ? `\n${agentMemory}\n\n` : ""
+              const prompt = `Lịch sử chat (100 tin nhắn gần nhất):\n${JSON.stringify(recentChat)}\n\nThông tin xe và Lead:\n${leadContext}\n${memorySection}Tactical Command:\n${tacticalCommand}\n\nTin nhắn dự kiến sắp gửi:\n${JSON.stringify(requestPayload.messages)}\n\nHãy đánh giá và trả về JSON.`
+
+              const geminiResult = await callGemini(prompt, "gemini-3-flash-preview", systemPrompt, getAgentTools())
+
+              const jsonMatch = geminiResult.match(/\{[\s\S]*\}/)
+              if (jsonMatch) {
+                let parsed: any
+                try {
+                  parsed = JSON.parse(jsonMatch[0])
+                } catch (parseErr) {
+                  storeAgentOutput({
+                    agentName: "Review Messages Scheduled",
+                    carId: instance.car_id,
+                    sourceInstanceId: instance.id,
+                    inputPayload: prompt,
+                    outputPayload: { error: "JSON.parse failed", raw: jsonMatch[0].slice(0, 500), level: -1 },
+                  }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
+                }
+                if (parsed && parsed.status) {
+
+                  // ── REVISED_PLAN ─────────────────────────────────────────────
+                  // Context does not match current workflow plan → skip this step,
+                  // terminate the instance, and trigger re-analysis directly via router.
+                  if (parsed.status === "REVISED_PLAN") {
+                    console.log(`[Process AI Workflows] REVISED_PLAN detected — skipping messages, terminating instance, triggering re-analysis for ${customerPhone}`)
+
+                    // Mark this step as skipped (not failed) — don't send messages
+                    await e2eQuery(
+                      `UPDATE step_executions SET status = 'skipped', error_message = $1, completed_at = NOW() WHERE id = $2`,
+                      [`REVISED_PLAN: ${typeof parsed.reasoning === "string" ? parsed.reasoning.slice(0, 300) : "Plan mismatch"}`, execution.id]
+                    )
+
+                    // Terminate the workflow instance
+                    await e2eQuery(
+                      `UPDATE workflow_instances SET status = 'terminated', completed_at = NOW() WHERE id = $1`,
+                      [instance.id]
+                    )
+
+                    await storeAgentOutput({
+                      agentName: "Review Messages Scheduled",
+                      carId: instance.car_id,
+                      sourceInstanceId: instance.id,
+                      inputPayload: prompt,
+                      outputPayload: { ...parsed, level: 2 },
+                    }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
+
+                    // Trigger re-analysis directly via router (same as no-response path)
+                    const revisedPlanFeedback = `[Auto-Check] Review Messages phát hiện bối cảnh thực tế không khớp với kế hoạch tại bước "${execution.step_name}". Lý do: ${typeof parsed.reasoning === "string" ? parsed.reasoning : JSON.stringify(parsed.reasoning)}`
+
+                    if (instance.car_id) {
+                      try {
+                        console.log(`[Process AI Workflows] Submitting feedback for re-analysis, car ${instance.car_id}...`)
+                        await submitAiFeedback({
+                          carId: instance.car_id,
+                          sourceInstanceId: instance.id,
+                          phoneNumber: customerPhone,
+                          feedback: revisedPlanFeedback,
+                          retrigger: true,
+                        })
+                        console.log(`[Process AI Workflows] Re-analysis triggered successfully.`)
+                      } catch (err) {
+                        console.error(`[Process AI Workflows] submitAiFeedback failed:`, err)
+                      }
+                    }
+
+                    // Stop processing this instance
+                    result.stoppedReason = "customer_no_response"
+                    continueLoop = false
+                    break
+                  }
+
+                  // ── EMPTY ────────────────────────────────────────────────────
+                  // No messages needed — clear the messages array
+                  if (parsed.status === "EMPTY") {
+                    requestPayload.messages = []
+                    execution.request_payload = requestPayload
+
+                    await e2eQuery(
+                      `UPDATE step_executions SET request_payload = $1 WHERE id = $2`,
+                      [JSON.stringify(requestPayload), execution.id]
+                    )
+                    console.log(`[Process AI Workflows] AI Script Evaluator: EMPTY — cleared messages`)
+                  } else {
+                    // ── APPROVED ──────────────────────────────────────────────────
+                    // Messages are fine as-is, no changes needed
+                    console.log(`[Process AI Workflows] AI Script Evaluator: APPROVED — keeping original messages`)
+                  }
+
+                  storeAgentOutput({
+                    agentName: "Review Messages Scheduled",
+                    carId: instance.car_id,
+                    sourceInstanceId: instance.id,
+                    inputPayload: prompt,
+                    outputPayload: { ...parsed, level: parsed.status === "EMPTY" ? 1 : 0 },
+                  }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
+                } else {
+                  storeAgentOutput({
+                    agentName: "Review Messages Scheduled",
+                    carId: instance.car_id,
+                    sourceInstanceId: instance.id,
+                    inputPayload: prompt,
+                    outputPayload: { error: "Gemini response missing status field", parsed, level: -1 },
+                  }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
+                }
+              } else {
+                storeAgentOutput({
+                  agentName: "Review Messages Scheduled",
+                  carId: instance.car_id,
+                  sourceInstanceId: instance.id,
+                  inputPayload: prompt,
+                  outputPayload: { error: "Gemini returned unparseable response", raw: geminiResult.slice(0, 500), level: -1 },
+                }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
+              }
+            }
+          }
+        } catch (err) {
+          console.error(`[Process AI Workflows] AI Script Evaluator failed, falling back to original payload:`, err)
+          storeAgentOutput({
+            agentName: "Review Messages Scheduled",
+            carId: instance.car_id,
+            sourceInstanceId: instance.id,
+            inputPayload: null,
+            outputPayload: { error: err instanceof Error ? err.message : String(err), level: -1 },
+          }).catch(e => console.error("[Process AI Workflows] Failed to store agent output:", e))
+        }
+      }
+
+      // --- 2e. Execute the connector ---
+      // For "Gửi Script" steps, check if leads.zalo_account is set → use Vucar Zalo connector instead
+      let effectiveConnectorId = execution.connector_id
+      let effectivePayload = execution.request_payload
+      let urlVariables: Record<string, string> | undefined
+
+      if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee") {
+        try {
+          const zalosResult = await vucarV2Query(
+            `SELECT l.zalo_account FROM cars c JOIN leads l ON l.id = c.lead_id WHERE c.id = $1 LIMIT 1`,
+            [instance.car_id]
+          )
+          const zaloAccount: string | null = zalosResult.rows[0]?.zalo_account || null
+          if (zaloAccount) {
+            const [ownId, userId] = zaloAccount.split(":")
+            if (ownId && userId) {
+              let parsedPayload = effectivePayload
+              if (typeof parsedPayload === "string") {
+                try { parsedPayload = JSON.parse(parsedPayload) } catch { /* keep */ }
+              }
+              effectiveConnectorId = "a1b8debd-7e9d-45d4-8804-cb817d5504f5"
+              effectivePayload = { userId, messages: parsedPayload?.messages || [] }
+              urlVariables = { ownId }
+              console.log(`[Process AI Workflows] Zalo override: using Vucar Zalo connector (ownId=${ownId}, userId=${userId})`)
+
+              // Update workflow_step and step_execution to reflect the actual connector used
+              await e2eQuery(
+                `UPDATE workflow_steps SET connector_id = $1 WHERE id = $2`,
+                [effectiveConnectorId, execution.step_id]
+              )
+              await e2eQuery(
+                `UPDATE step_executions SET request_payload = $1 WHERE id = $2`,
+                [JSON.stringify(effectivePayload), execution.id]
+              )
+            }
+          }
+        } catch (err) {
+          console.warn(`[Process AI Workflows] Failed to check zalo_account, falling back to default connector:`, err)
+        }
+      }
+
+      console.log(`[Process AI Workflows] Executing step "${execution.step_name}" (connector: ${effectiveConnectorId})`)
+
+      let connectorSuccess = false
+      let responsePayload: any = null
+      let errorMessage: string | null = null
+
+      try {
+        const execResponse = await executeConnector(effectiveConnectorId, effectivePayload, urlVariables)
+        connectorSuccess = execResponse.success
+        responsePayload = execResponse.data
+        if (!connectorSuccess) {
+          errorMessage = execResponse.error || "Connector execution failed"
+        }
+      } catch (err) {
+        connectorSuccess = false
+        errorMessage = err instanceof Error ? err.message : String(err)
+      }
+
+      // --- 2e. Update step_execution with result ---
+      await e2eQuery(
+        `UPDATE step_executions
+         SET status = $1,
+             completed_at = NOW(),
+             response_payload = $2,
+             error_message = $3
+         WHERE id = $4`,
+        [
+          connectorSuccess ? 'success' : 'failed',
+          responsePayload ? JSON.stringify(responsePayload) : null,
+          errorMessage,
+          execution.id,
+        ]
+      )
+
+      result.stepsProcessed++
+      console.log(`[Process AI Workflows] Step "${execution.step_name}" → ${connectorSuccess ? 'success' : 'failed'}`)
+
+      if (!connectorSuccess) {
+        const currentRetryCount = execution.retry_count || 0
+        const maxRetries = 3
+
+        if (currentRetryCount < maxRetries) {
+          // Retry: reset step to pending, schedule 30 minutes later, increment retry_count
+          const retryNumber = currentRetryCount + 1
+          const delayMinutes = 30
+          console.log(`[Process AI Workflows] Step "${execution.step_name}" failed, scheduling retry ${retryNumber}/${maxRetries} in ${delayMinutes} minutes`)
+          // NOW() returns UTC on Vercel, but scheduled_at is stored as VN time (UTC+7)
+          await e2eQuery(
+            `UPDATE step_executions
+             SET status = 'pending',
+                 scheduled_at = NOW() + INTERVAL '7 hours 30 minutes',
+                 retry_count = $1,
+                 error_message = $2,
+                 completed_at = NULL
+             WHERE id = $3`,
+            [retryNumber, errorMessage, execution.id]
+          )
+
+          // Also delay all subsequent pending steps with explicit schedules by the same amount
+          await e2eQuery(
+            `UPDATE step_executions
+             SET scheduled_at = scheduled_at + INTERVAL '${delayMinutes} minutes'
+             WHERE instance_id = $1
+               AND status = 'pending'
+               AND id != $2
+               AND scheduled_at IS NOT NULL`,
+            [instance.id, execution.id]
+          )
+
+          result.stoppedReason = "step_retry_scheduled"
+          result.error = `Retry ${retryNumber}/${maxRetries} scheduled in ${delayMinutes} minutes: ${errorMessage}`
+        } else {
+          // Max retries exhausted — mark as permanently failed
+          console.error(`[Process AI Workflows] Step "${execution.step_name}" failed after ${maxRetries} retries`)
+          result.stoppedReason = "step_failed"
+          result.error = errorMessage || undefined
+          await e2eQuery(
+            `UPDATE workflow_instances SET status = 'failed' WHERE id = $1`,
+            [instance.id]
+          )
+        }
+        continueLoop = false
+        break
+      }
+
+      // --- 2f. Run task-dispatcher after Gửi Script to let agent decide next actions ---
+      if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee" && connectorSuccess) {
+        runTaskDispatcher({
+          carId: instance.car_id,
+          picId,
+          customerPhone,
+          trigger: "after_script_sent",
+        }).catch(err => console.error(`[Process AI Workflows] runTaskDispatcher failed:`, err))
+      }
+
+      // --- 2g. Advance to next step ---
+      const nextStepId = await getNextStepId(instance.workflow_id, execution.step_order)
+
+      if (nextStepId) {
+        await e2eQuery(
+          `UPDATE workflow_instances SET current_step_id = $1 WHERE id = $2`,
+          [nextStepId, instance.id]
+        )
+        currentStepId = nextStepId
+        // Continue loop → will check the next step's schedule
+      } else {
+        // No more steps → workflow is complete
+        await e2eQuery(
+          `UPDATE workflow_instances SET status = 'completed', completed_at = NOW() WHERE id = $1`,
+          [instance.id]
+        )
+        result.stoppedReason = "all_done"
+        continueLoop = false
+      }
+    }
+  } catch (err) {
+    result.stoppedReason = "error"
+    result.error = err instanceof Error ? err.message : String(err)
+    console.error(`[Process AI Workflows] Error processing instance ${instance.id}:`, err)
+  }
+
+  return result
+}
+
 export async function GET() {
   const startTime = Date.now()
-  const results: ProcessingResult[] = []
 
   try {
     // --- 1. Find all running AI workflow instances ---
@@ -60,510 +597,18 @@ export async function GET() {
       })
     }
 
-    // --- 2. Process each instance ---
-    for (const instance of instances) {
-      const result: ProcessingResult = {
-        instanceId: instance.id,
-        workflowName: instance.workflow_name,
-        stepsProcessed: 0,
-        stoppedReason: "all_done",
-      }
+    // --- 2. Process all instances in parallel (bounded concurrency) ---
+    console.log(`[Process AI Workflows] Processing ${instances.length} instance(s) with concurrency=${CONCURRENCY_LIMIT}`)
+    const settled = await runWithConcurrency(
+      instances.map((instance) => () => processInstance(instance)),
+      CONCURRENCY_LIMIT
+    )
 
-      // Resolve customer phone (additional_phone first) and pic_id for this instance
-      let customerPhone = ""
-      let picId = ""
-      try {
-        const contactResult = await vucarV2Query(
-          `SELECT l.phone, l.additional_phone, l.pic_id
-           FROM cars c
-           JOIN leads l ON l.id = c.lead_id
-           WHERE c.id = $1 LIMIT 1`,
-          [instance.car_id]
-        )
-        const contact = contactResult.rows[0]
-        customerPhone = contact?.additional_phone || contact?.phone || ""
-        picId = contact?.pic_id || ""
-      } catch (err) {
-        console.warn(`[Process AI Workflows] Could not resolve phone/picId for car ${instance.car_id}:`, err)
-      }
-
-      try {
-        let currentStepId = instance.current_step_id
-        let continueLoop = true
-
-        while (continueLoop) {
-          if (!currentStepId) {
-            // No more steps → mark instance as completed
-            await e2eQuery(
-              `UPDATE workflow_instances SET status = 'completed', completed_at = NOW() WHERE id = $1`,
-              [instance.id]
-            )
-            result.stoppedReason = "all_done"
-            break
-          }
-
-          // --- 2a. Get the step_execution for this step ---
-          const execResult = await e2eQuery(
-            `SELECT se.*, ws.connector_id, ws.step_name, ws.step_order, ws.input_mapping, ws.description
-             FROM step_executions se
-             JOIN workflow_steps ws ON ws.id = se.step_id
-             WHERE se.instance_id = $1 AND se.step_id = $2
-             ORDER BY se.id DESC
-             LIMIT 1`,
-            [instance.id, currentStepId]
-          )
-
-          if (execResult.rows.length === 0) {
-            console.warn(`[Process AI Workflows] No step_execution found for instance=${instance.id}, step=${currentStepId}`)
-            result.stoppedReason = "error"
-            result.error = `No step_execution for step ${currentStepId}`
-            break
-          }
-
-          const execution = execResult.rows[0]
-
-          // Skip only truly terminal / in-progress states.
-          // NOTE: 'running' is intentionally NOT guarded here — stale running steps
-          // (timed-out after >5 min) are handled by the atomic re-claim below.
-          if (execution.status === 'success' || execution.status === 'failed' || execution.status === 'skipped') {
-            // Move to next step
-            currentStepId = await getNextStepId(instance.workflow_id, execution.step_order)
-            if (currentStepId) {
-              await e2eQuery(
-                `UPDATE workflow_instances SET current_step_id = $1 WHERE id = $2`,
-                [currentStepId, instance.id]
-              )
-            }
-            continue
-          }
-
-          // --- 2b. Check scheduled_at ---
-          // scheduled_at is stored as Vietnam local time (UTC+7) without timezone info.
-          // Vercel runs in UTC, so new Date() on a bare datetime string treats it as UTC
-          // → 7 hours ahead of real time. Subtract 7h to get the true UTC equivalent.
-          const scheduledAt = execution.scheduled_at
-            ? new Date(new Date(execution.scheduled_at).getTime() - 7 * 60 * 60 * 1000)
-            : null
-          const now = new Date()
-
-          if (scheduledAt && scheduledAt > now) {
-            // Scheduled in the future → skip, wait for next cron run
-            console.log(`[Process AI Workflows] Step "${execution.step_name}" scheduled for ${scheduledAt.toISOString()}, skipping`)
-            result.stoppedReason = "scheduled_future"
-            continueLoop = false
-            break
-          }
-
-          // --- 2b-ii. Customer engagement check (only for scheduled steps) ---
-          // If the step had a scheduled_at, the customer had time to respond.
-          // If they haven't replied in 2 days, skip and trigger re-analysis.
-          if (execution.scheduled_at && customerPhone && picId) {
-            console.log(`[Process AI Workflows] Checking customer response for "${execution.step_name}" (phone: ${customerPhone})...`)
-            let responded = false
-            try {
-              responded = await checkCustomerResponded(customerPhone, picId, instance.car_id)
-            } catch (err) {
-              console.warn(`[Process AI Workflows] Engagement check failed (non-blocking):`, err)
-              responded = true // Default to proceeding if the check itself fails
-            }
-
-            if (!responded) {
-              console.log(`[Process AI Workflows] Customer has NOT responded in 2 days. Triggering re-analysis...`)
-
-              await e2eQuery(
-                `UPDATE step_executions SET status = 'skipped', error_message = $1 WHERE id = $2`,
-                ['Customer did not respond within 2 days — strategy re-analysis triggered', execution.id]
-              )
-
-              // Terminate the instance so subsequent cron runs don't re-trigger re-analysis
-              await e2eQuery(
-                `UPDATE workflow_instances SET status = 'terminated', completed_at = NOW() WHERE id = $1`,
-                [instance.id]
-              )
-
-              if (instance.car_id) {
-                const noResponseFeedback = `[Auto-Check] Khách hàng chưa phản hồi trong 2 ngày kể từ bước "${execution.step_name}". Cần điều chỉnh chiến lược tiếp cận.`
-
-                // 1. Update the AI Knowledge Diary so the model learns from this pattern
-                import("@/lib/ai-notes-service").then(({ updateAiNoteFromFeedback }) => {
-                  updateAiNoteFromFeedback({
-                    block: "insight-generator",
-                    aiResponse: `Workflow step "${execution.step_name}" was scheduled and executed, but the customer did not reply within 2 days.`,
-                    userFeedback: noResponseFeedback,
-                    feedbackType: "text",
-                  }).catch((err) => console.error(`[Process AI Workflows] AI Notes update failed:`, err))
-                }).catch(() => { })
-
-                // 2. Submit insight feedback → triggers AI re-analysis + new workflow creation
-                try {
-                  console.log(`[Process AI Workflows] Submitting feedback for car ${instance.car_id}...`)
-                  await submitAiFeedback({
-                    carId: instance.car_id,
-                    sourceInstanceId: instance.id,
-                    phoneNumber: customerPhone,
-                    feedback: noResponseFeedback,
-                    retrigger: true,
-                  })
-                  console.log(`[Process AI Workflows] Re-analysis and new workflow triggered successfully.`)
-                } catch (err) {
-                  console.error(`[Process AI Workflows] submitAiFeedback failed:`, err)
-                }
-              }
-
-              result.stoppedReason = "customer_no_response"
-              continueLoop = false
-              break
-            }
-
-            console.log(`[Process AI Workflows] Customer HAS responded recently. Proceeding with step.`)
-          }
-
-          // --- 2c. Atomic claim: mark step as running only if still pending OR stale ---
-          // Guards against:
-          //   • Concurrent cron runs (race condition) → only one claim succeeds
-          //   • Stale 'running' steps (AI took >5 min, Vercel timed out) → re-claimed
-          const isStaleRunning = execution.status === 'running'
-          const claimResult = await e2eQuery(
-            `UPDATE step_executions SET status = 'running', executed_at = NOW()
-             WHERE id = $1
-               AND (
-                 status = 'pending'
-                 OR (status = 'running' AND executed_at < NOW() - INTERVAL '5 minutes')
-               )
-             RETURNING id`,
-            [execution.id]
-          )
-          if (claimResult.rows.length === 0) {
-            // Either another cron already claimed it, or it's still actively running (<5 min)
-            console.log(`[Process AI Workflows] Step "${execution.step_name}" is locked (running <5 min or already claimed), skipping`)
-            result.stoppedReason = "scheduled_future"
-            continueLoop = false
-            break
-          }
-          if (isStaleRunning) {
-            console.warn(`[Process AI Workflows] Re-claiming stale step "${execution.step_name}" — was stuck in 'running' >5 min`)
-          }
-
-          // --- 2d. Pre-execution AI Script Evaluator (for "Gửi Script" only, AI-triggered instances) ---
-          if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee" && instance.triggered_by !== 'user') { // Gửi Script
-            console.log(`[Process AI Workflows] Triggering AI Script Evaluator for Gửi Script...`)
-            try {
-              let requestPayload = execution.request_payload
-              if (typeof requestPayload === "string") {
-                requestPayload = JSON.parse(requestPayload)
-              }
-
-              if (requestPayload && Array.isArray(requestPayload.messages) && customerPhone && picId) {
-                const chatMessages = await fetchZaloChatHistory({ carId: instance.car_id, phone: customerPhone, picId })
-                const recentChat = chatMessages.length > 0 ? chatMessages.slice(-100) : null
-                console.log(`[Process AI Workflows] AI Evaluator chat messages: ${recentChat?.length ?? 0}`)
-
-                if (recentChat) {
-                    const [picPrompt, reviewAgentNote] = await Promise.all([
-                      getPicAgentConfig("Review Messages Scheduled", picId),
-                      getActiveAgentNote("Review Messages Scheduled"),
-                    ])
-
-                    const systemPrompt = `${picPrompt || ''}${reviewAgentNote ? `\n\n### Cấu Hình Bổ Sung (System Preferences):\n${reviewAgentNote}` : ''}`
-
-
-                    const tacticalCommand = execution.description || execution.step_name
-                    const [leadContext, agentMemory] = await Promise.all([
-                      fetchLeadContext(instance.car_id || ""),
-                      getCarAgentMemory(instance.car_id).catch(() => null),
-                    ])
-                    const memorySection = agentMemory ? `\n${agentMemory}\n\n` : ""
-                    const prompt = `Lịch sử chat (100 tin nhắn gần nhất):\n${JSON.stringify(recentChat)}\n\nThông tin xe và Lead:\n${leadContext}\n${memorySection}Tactical Command:\n${tacticalCommand}\n\nTin nhắn dự kiến sắp gửi:\n${JSON.stringify(requestPayload.messages)}\n\nHãy đánh giá và trả về JSON.`
-
-                    const geminiResult = await callGemini(prompt, "gemini-3-flash-preview", systemPrompt, getAgentTools())
-
-                    const jsonMatch = geminiResult.match(/\{[\s\S]*\}/)
-                    if (jsonMatch) {
-                      let parsed: any
-                      try {
-                        parsed = JSON.parse(jsonMatch[0])
-                      } catch (parseErr) {
-                        storeAgentOutput({
-                          agentName: "Review Messages Scheduled",
-                          carId: instance.car_id,
-                          sourceInstanceId: instance.id,
-                          inputPayload: prompt,
-                          outputPayload: { error: "JSON.parse failed", raw: jsonMatch[0].slice(0, 500), level: -1 },
-                        }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
-                      }
-                      if (parsed && parsed.status) {
-
-                        // ── REVISED_PLAN ─────────────────────────────────────────────
-                        // Context does not match current workflow plan → skip this step,
-                        // terminate the instance, and trigger re-analysis directly via router.
-                        if (parsed.status === "REVISED_PLAN") {
-                          console.log(`[Process AI Workflows] REVISED_PLAN detected — skipping messages, terminating instance, triggering re-analysis for ${customerPhone}`)
-
-                          // Mark this step as skipped (not failed) — don't send messages
-                          await e2eQuery(
-                            `UPDATE step_executions SET status = 'skipped', error_message = $1, completed_at = NOW() WHERE id = $2`,
-                            [`REVISED_PLAN: ${typeof parsed.reasoning === "string" ? parsed.reasoning.slice(0, 300) : "Plan mismatch"}`, execution.id]
-                          )
-
-                          // Terminate the workflow instance
-                          await e2eQuery(
-                            `UPDATE workflow_instances SET status = 'terminated', completed_at = NOW() WHERE id = $1`,
-                            [instance.id]
-                          )
-
-                          await storeAgentOutput({
-                            agentName: "Review Messages Scheduled",
-                            carId: instance.car_id,
-                            sourceInstanceId: instance.id,
-                            inputPayload: prompt,
-                            outputPayload: { ...parsed, level: 2 },
-                          }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
-
-                          // Trigger re-analysis directly via router (same as no-response path)
-                          const revisedPlanFeedback = `[Auto-Check] Review Messages phát hiện bối cảnh thực tế không khớp với kế hoạch tại bước "${execution.step_name}". Lý do: ${typeof parsed.reasoning === "string" ? parsed.reasoning : JSON.stringify(parsed.reasoning)}`
-
-                          if (instance.car_id) {
-                            try {
-                              console.log(`[Process AI Workflows] Submitting feedback for re-analysis, car ${instance.car_id}...`)
-                              await submitAiFeedback({
-                                carId: instance.car_id,
-                                sourceInstanceId: instance.id,
-                                phoneNumber: customerPhone,
-                                feedback: revisedPlanFeedback,
-                                retrigger: true,
-                              })
-                              console.log(`[Process AI Workflows] Re-analysis triggered successfully.`)
-                            } catch (err) {
-                              console.error(`[Process AI Workflows] submitAiFeedback failed:`, err)
-                            }
-                          }
-
-                          // Stop processing this instance
-                          result.stoppedReason = "customer_no_response"
-                          continueLoop = false
-                          break
-                        }
-
-                        // ── EMPTY ────────────────────────────────────────────────────
-                        // No messages needed — clear the messages array
-                        if (parsed.status === "EMPTY") {
-                          requestPayload.messages = []
-                          execution.request_payload = requestPayload
-
-                          await e2eQuery(
-                            `UPDATE step_executions SET request_payload = $1 WHERE id = $2`,
-                            [JSON.stringify(requestPayload), execution.id]
-                          )
-                          console.log(`[Process AI Workflows] AI Script Evaluator: EMPTY — cleared messages`)
-                        } else {
-                          // ── APPROVED ──────────────────────────────────────────────────
-                          // Messages are fine as-is, no changes needed
-                          console.log(`[Process AI Workflows] AI Script Evaluator: APPROVED — keeping original messages`)
-                        }
-
-                        storeAgentOutput({
-                          agentName: "Review Messages Scheduled",
-                          carId: instance.car_id,
-                          sourceInstanceId: instance.id,
-                          inputPayload: prompt,
-                          outputPayload: { ...parsed, level: parsed.status === "EMPTY" ? 1 : 0 },
-                        }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
-                      } else {
-                        storeAgentOutput({
-                          agentName: "Review Messages Scheduled",
-                          carId: instance.car_id,
-                          sourceInstanceId: instance.id,
-                          inputPayload: prompt,
-                          outputPayload: { error: "Gemini response missing status field", parsed, level: -1 },
-                        }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
-                      }
-                    } else {
-                      storeAgentOutput({
-                        agentName: "Review Messages Scheduled",
-                        carId: instance.car_id,
-                        sourceInstanceId: instance.id,
-                        inputPayload: prompt,
-                        outputPayload: { error: "Gemini returned unparseable response", raw: geminiResult.slice(0, 500), level: -1 },
-                      }).catch(err => console.error("[Process AI Workflows] Failed to store agent output:", err))
-                    }
-                }
-              }
-            } catch (err) {
-              console.error(`[Process AI Workflows] AI Script Evaluator failed, falling back to original payload:`, err)
-              storeAgentOutput({
-                agentName: "Review Messages Scheduled",
-                carId: instance.car_id,
-                sourceInstanceId: instance.id,
-                inputPayload: null,
-                outputPayload: { error: err instanceof Error ? err.message : String(err), level: -1 },
-              }).catch(e => console.error("[Process AI Workflows] Failed to store agent output:", e))
-            }
-          }
-
-          // --- 2e. Execute the connector ---
-          // For "Gửi Script" steps, check if leads.zalo_account is set → use Vucar Zalo connector instead
-          let effectiveConnectorId = execution.connector_id
-          let effectivePayload = execution.request_payload
-          let urlVariables: Record<string, string> | undefined
-
-          if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee") {
-            try {
-              const zalosResult = await vucarV2Query(
-                `SELECT l.zalo_account FROM cars c JOIN leads l ON l.id = c.lead_id WHERE c.id = $1 LIMIT 1`,
-                [instance.car_id]
-              )
-              const zaloAccount: string | null = zalosResult.rows[0]?.zalo_account || null
-              if (zaloAccount) {
-                const [ownId, userId] = zaloAccount.split(":")
-                if (ownId && userId) {
-                  let parsedPayload = effectivePayload
-                  if (typeof parsedPayload === "string") {
-                    try { parsedPayload = JSON.parse(parsedPayload) } catch { /* keep */ }
-                  }
-                  effectiveConnectorId = "a1b8debd-7e9d-45d4-8804-cb817d5504f5"
-                  effectivePayload = { userId, messages: parsedPayload?.messages || [] }
-                  urlVariables = { ownId }
-                  console.log(`[Process AI Workflows] Zalo override: using Vucar Zalo connector (ownId=${ownId}, userId=${userId})`)
-
-                  // Update workflow_step and step_execution to reflect the actual connector used
-                  await e2eQuery(
-                    `UPDATE workflow_steps SET connector_id = $1 WHERE id = $2`,
-                    [effectiveConnectorId, execution.step_id]
-                  )
-                  await e2eQuery(
-                    `UPDATE step_executions SET request_payload = $1 WHERE id = $2`,
-                    [JSON.stringify(effectivePayload), execution.id]
-                  )
-                }
-              }
-            } catch (err) {
-              console.warn(`[Process AI Workflows] Failed to check zalo_account, falling back to default connector:`, err)
-            }
-          }
-
-          console.log(`[Process AI Workflows] Executing step "${execution.step_name}" (connector: ${effectiveConnectorId})`)
-
-          let connectorSuccess = false
-          let responsePayload: any = null
-          let errorMessage: string | null = null
-
-          try {
-            const execResponse = await executeConnector(effectiveConnectorId, effectivePayload, urlVariables)
-            connectorSuccess = execResponse.success
-            responsePayload = execResponse.data
-            if (!connectorSuccess) {
-              errorMessage = execResponse.error || "Connector execution failed"
-            }
-          } catch (err) {
-            connectorSuccess = false
-            errorMessage = err instanceof Error ? err.message : String(err)
-          }
-
-          // --- 2e. Update step_execution with result ---
-          await e2eQuery(
-            `UPDATE step_executions
-             SET status = $1,
-                 completed_at = NOW(),
-                 response_payload = $2,
-                 error_message = $3
-             WHERE id = $4`,
-            [
-              connectorSuccess ? 'success' : 'failed',
-              responsePayload ? JSON.stringify(responsePayload) : null,
-              errorMessage,
-              execution.id,
-            ]
-          )
-
-          result.stepsProcessed++
-          console.log(`[Process AI Workflows] Step "${execution.step_name}" → ${connectorSuccess ? 'success' : 'failed'}`)
-
-          if (!connectorSuccess) {
-            const currentRetryCount = execution.retry_count || 0
-            const maxRetries = 3
-
-            if (currentRetryCount < maxRetries) {
-              // Retry: reset step to pending, schedule 30 minutes later, increment retry_count
-              const retryNumber = currentRetryCount + 1
-              const delayMinutes = 30
-              console.log(`[Process AI Workflows] Step "${execution.step_name}" failed, scheduling retry ${retryNumber}/${maxRetries} in ${delayMinutes} minutes`)
-              // NOW() returns UTC on Vercel, but scheduled_at is stored as VN time (UTC+7)
-              await e2eQuery(
-                `UPDATE step_executions
-                 SET status = 'pending',
-                     scheduled_at = NOW() + INTERVAL '7 hours 30 minutes',
-                     retry_count = $1,
-                     error_message = $2,
-                     completed_at = NULL
-                 WHERE id = $3`,
-                [retryNumber, errorMessage, execution.id]
-              )
-
-              // Also delay all subsequent pending steps with explicit schedules by the same amount
-              await e2eQuery(
-                `UPDATE step_executions
-                 SET scheduled_at = scheduled_at + INTERVAL '${delayMinutes} minutes'
-                 WHERE instance_id = $1
-                   AND status = 'pending'
-                   AND id != $2
-                   AND scheduled_at IS NOT NULL`,
-                [instance.id, execution.id]
-              )
-
-              result.stoppedReason = "step_retry_scheduled"
-              result.error = `Retry ${retryNumber}/${maxRetries} scheduled in ${delayMinutes} minutes: ${errorMessage}`
-            } else {
-              // Max retries exhausted — mark as permanently failed
-              console.error(`[Process AI Workflows] Step "${execution.step_name}" failed after ${maxRetries} retries`)
-              result.stoppedReason = "step_failed"
-              result.error = errorMessage || undefined
-              await e2eQuery(
-                `UPDATE workflow_instances SET status = 'failed' WHERE id = $1`,
-                [instance.id]
-              )
-            }
-            continueLoop = false
-            break
-          }
-
-          // --- 2f. Run task-dispatcher after Gửi Script to let agent decide next actions ---
-          if (execution.connector_id === "05b6afa5-786f-4062-9d53-de9cb89450ee" && connectorSuccess) {
-            runTaskDispatcher({
-              carId: instance.car_id,
-              picId,
-              customerPhone,
-              trigger: "after_script_sent",
-            }).catch(err => console.error(`[Process AI Workflows] runTaskDispatcher failed:`, err))
-          }
-
-          // --- 2g. Advance to next step ---
-          const nextStepId = await getNextStepId(instance.workflow_id, execution.step_order)
-
-          if (nextStepId) {
-            await e2eQuery(
-              `UPDATE workflow_instances SET current_step_id = $1 WHERE id = $2`,
-              [nextStepId, instance.id]
-            )
-            currentStepId = nextStepId
-            // Continue loop → will check the next step's schedule
-          } else {
-            // No more steps → workflow is complete
-            await e2eQuery(
-              `UPDATE workflow_instances SET status = 'completed', completed_at = NOW() WHERE id = $1`,
-              [instance.id]
-            )
-            result.stoppedReason = "all_done"
-            continueLoop = false
-          }
-        }
-      } catch (err) {
-        result.stoppedReason = "error"
-        result.error = err instanceof Error ? err.message : String(err)
-        console.error(`[Process AI Workflows] Error processing instance ${instance.id}:`, err)
-      }
-
-      results.push(result)
-    }
+    const results: ProcessingResult[] = settled.map((s) =>
+      s.status === "fulfilled"
+        ? s.value
+        : { instanceId: "unknown", workflowName: "unknown", stepsProcessed: 0, stoppedReason: "error" as const, error: String(s.reason) }
+    )
 
     return NextResponse.json({
       success: true,

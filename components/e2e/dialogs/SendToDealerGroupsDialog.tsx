@@ -118,22 +118,20 @@ export function SendToDealerGroupsDialog({
         })
       }
 
-      // Enqueue one message per selected group via the queue (uses vucar API at send time)
-      const enqueuePromises = selectedGroups.map(group =>
-        fetch("/api/proxy/zalo-send-image", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            groupname: group.groupName,
-            message: carInfo,
-            image_url: imageUrls,
-            pic_id: selectedLead.pic_id,
-          }),
-        })
-      )
+      // Send directly via Vucar API using the chosen partner
+      const sendResponse = await fetch("/api/e2e/send-dealer-groups-direct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          b_user_id: selectedPartnerId,
+          group_names: selectedGroups.map(g => g.groupName),
+          message: carInfo,
+          image_url: imageUrls,
+        }),
+      })
 
-      const enqueueResults = await Promise.all(enqueuePromises)
-      const queuedCount = enqueueResults.filter(r => r.ok).length
+      const sendResult = await sendResponse.json()
+      const queuedCount = sendResult.successCount ?? 0
 
       // Create bidding records for groups that match a dealer
       const biddingPromises = selectedGroups
@@ -155,13 +153,13 @@ export function SendToDealerGroupsDialog({
 
       if (queuedCount > 0) {
         toast({
-          title: "Đã thêm vào hàng chờ",
-          description: `${queuedCount} nhóm sẽ nhận thông tin xe và ${imageUrls.length} ảnh`,
+          title: "Thành công",
+          description: `Đã gửi thông tin xe và ${imageUrls.length} ảnh đến ${queuedCount}/${selectedGroups.length} nhóm dealer`,
         })
       } else {
         toast({
-          title: "Lỗi",
-          description: "Không thể thêm tin nhắn vào hàng chờ",
+          title: "Gửi thất bại",
+          description: "Không thể gửi tin nhắn đến các nhóm",
           variant: "destructive",
         })
       }
@@ -301,7 +299,7 @@ export function SendToDealerGroupsDialog({
                 {sendingToGroups ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Đang xử lý...
+                    Đang gửi...
                   </>
                 ) : (
                   `Gửi đến ${selectedGroupIds.length} nhóm`

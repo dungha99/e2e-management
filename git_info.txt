@@ -1,0 +1,12 @@
+﻿commit 90413d3ca86c4b393977c244b61d1ca0f272bc99
+Author: Nguyen Ngoc Minh Thu <jamie@Nguyens-MacBook-Pro.local>
+Date:   Tue Apr 14 15:27:16 2026 +0700
+
+    feat: add Auto 1st Success stage to AI Funnel Dashboard
+
+M	app/api/ai-funnel/dashboard/route.ts
+M	components/ai-funnel/AiFunnelDashboard.tsx
+?? app/api/e2e/funnel-mece-stats/
+?? check_connectors.js
+?? git_info.txt
+?? git_status.txt

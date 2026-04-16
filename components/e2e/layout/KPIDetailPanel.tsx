@@ -40,6 +40,8 @@ const METRIC_CONFIG: Record<string, { title: string; color: string }> = {
   FUNNEL_HAS_IMAGE: { title: "2a. Đã có hình", color: "text-emerald-700" },
   FUNNEL_HAS_IMAGE_WITH_ADDITIONAL: { title: "2a-I. Có ảnh bổ sung", color: "text-emerald-700" },
   FUNNEL_HAS_IMAGE_WITHOUT_ADDITIONAL: { title: "2a-II. Chưa có ảnh bổ sung", color: "text-amber-700" },
+  FUNNEL_HAS_IMAGE_QUOTED_PRICE: { title: "2a · Đã trả giá cho khách", color: "text-teal-700" },
+  FUNNEL_HAS_IMAGE_NOT_QUOTED_PRICE: { title: "2a · Chưa trả giá cho khách", color: "text-pink-700" },
   FUNNEL_NO_IMAGE: { title: "2b. Chưa có hình", color: "text-orange-700" },
   FUNNEL_NO_IMAGE_HAD_IMAGE: { title: "2b-I. Đã gửi ảnh qua chat", color: "text-orange-700" },
   FUNNEL_NO_IMAGE_NO_HAD_IMAGE: { title: "2b-II. Chưa gửi ảnh", color: "text-red-700" },
@@ -83,6 +85,16 @@ const METRIC_CONFIG: Record<string, { title: string; color: string }> = {
   FUNNEL_NEVER_FIRST_MESSAGE_NO_INTERACTION: { title: "3c-iv. Chưa có tương tác", color: "text-gray-500" },
   FUNNEL_RENAME_SUCCESS: { title: "3c-iv. Đã đổi tên", color: "text-emerald-700" },
   FUNNEL_RENAME_RESERVE: { title: "3c-iv. Còn lại", color: "text-gray-600" },
+
+  // V3 MECE metrics
+  FUNNEL_MECE_SQ_DEAD: { title: "Đã có hình · Dead >1d", color: "text-red-600" },
+  FUNNEL_MECE_SQ_ACTIVE: { title: "Đã có hình · Active ≤1d", color: "text-emerald-600" },
+  FUNNEL_MECE_D1_GHOST: { title: "Ghost — Chưa có tin nhắn nào từ khách", color: "text-indigo-600" },
+  FUNNEL_MECE_D1_TWOWAY_DEAD: { title: "Two-way · Dead >1d — Khách đã tương tác nhưng chưa gửi hình", color: "text-red-600" },
+  FUNNEL_MECE_D1_TWOWAY_ACTIVE: { title: "Two-way · Active ≤1d — Khách đã tương tác nhưng chưa gửi hình", color: "text-emerald-600" },
+  FUNNEL_MECE_D1_PIC_NO_MSG: { title: "PIC chưa nhắn · Dead — Có Zalo record nhưng PIC chưa gửi tin", color: "text-orange-600" },
+  FUNNEL_MECE_D2_HAS_BID: { title: "Có bid · chưa SQ — Đã có giá đấu nhưng chưa đạt SQ", color: "text-amber-700" },
+  FUNNEL_MECE_D2_NO_ZALO: { title: "Không có Zalo — Không tìm thấy record trong hệ thống Zalo", color: "text-gray-600" },
 }
 
 interface KPIDetailLead {
@@ -135,6 +147,16 @@ export function KPIDetailPanel({ open, onClose, metric, picId, search, sources, 
   const [isBulkFollowingUp, setIsBulkFollowingUp] = useState(false)
   const [selectedQualified, setSelectedQualified] = useState<string[]>(initialQualified ? initialQualified.split(',').filter(Boolean) : [])
   const [availableQualified, setAvailableQualified] = useState<string[]>([])
+
+  // Count leads per qualified value from the current result set
+  const qualifiedCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const lead of leads) {
+      const q = lead.qualified || "__null__"
+      counts[q] = (counts[q] || 0) + 1
+    }
+    return counts
+  }, [leads])
 
   // Sync internal qualified filter when the parent prop changes
   useEffect(() => {
@@ -484,6 +506,7 @@ export function KPIDetailPanel({ open, onClose, metric, picId, search, sources, 
             {availableQualified.map((q) => {
               const config = QUALIFIED_CONFIG[q] || { label: q, className: "bg-gray-100 text-gray-500 border-gray-200" }
               const isSelected = selectedQualified.includes(q)
+              const count = qualifiedCounts[q]
               return (
                 <button
                   key={q}
@@ -501,6 +524,13 @@ export function KPIDetailPanel({ open, onClose, metric, picId, search, sources, 
                   }`}
                 >
                   {config.label}
+                  {count !== undefined && (
+                    <span className={`ml-1 font-black tabular-nums ${
+                      isSelected ? "opacity-80" : "opacity-70"
+                    }`}>
+                      ({count})
+                    </span>
+                  )}
                 </button>
               )
             })}
@@ -522,6 +552,8 @@ export function KPIDetailPanel({ open, onClose, metric, picId, search, sources, 
                   <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">#</th>
                   <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Khách hàng & Xe</th>
                   <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Loại</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Trạng thái Sale</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Độ thiện chí</th>
                   <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Ghi chú</th>
                   {leads.some(l => l.daysWaiting !== null) && (
                     <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Chờ</th>
@@ -566,6 +598,42 @@ export function KPIDetailPanel({ open, onClose, metric, picId, search, sources, 
                           </span>
                         ) : (
                           <span className="text-[9px] font-bold text-gray-400 italic">N/A</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 align-top">
+                      <div className="pt-1.5 flex flex-col items-start gap-1">
+                        {lead.stage ? (
+                           <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border uppercase tracking-tighter ${
+                             lead.stage === 'COMPLETED' ? 'bg-green-100 text-green-800 border-green-200' :
+                             lead.stage === 'DEPOSIT_PAID' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                             lead.stage === 'CAR_VIEW' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                             lead.stage === 'NEGOTIATION' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                             lead.stage === 'CONTACTED' ? 'bg-purple-100 text-purple-800 border-purple-200' :
+                             lead.stage === 'CANNOT_CONTACT' ? 'bg-orange-100 text-orange-800 border-orange-200' :
+                             lead.stage === 'FAILED' ? 'bg-red-100 text-red-800 border-red-200' :
+                             'bg-gray-100 text-gray-700 border-gray-200'
+                           }`}>
+                             {lead.stage}
+                           </span>
+                        ) : (
+                           <span className="text-[9px] font-bold text-gray-400 italic">N/A</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 align-top">
+                      <div className="pt-1.5 flex flex-col items-start gap-1">
+                        {lead.intentionLead ? (
+                           <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border uppercase tracking-tighter ${
+                             lead.intentionLead.toUpperCase() === 'HIGH' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                             lead.intentionLead.toUpperCase() === 'MEDIUM' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                             lead.intentionLead.toUpperCase() === 'LOW' ? 'bg-orange-100 text-orange-800 border-orange-200' :
+                             'bg-gray-100 text-gray-700 border-gray-200'
+                           }`}>
+                             {lead.intentionLead}
+                           </span>
+                        ) : (
+                           <span className="text-[9px] font-bold text-gray-400 italic">N/A</span>
                         )}
                       </div>
                     </td>

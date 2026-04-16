@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { e2eQuery, vucarV2Query } from "@/lib/db"
+import { e2eQuery, vucarV2Query, vucarZaloQuery } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 
@@ -16,8 +16,9 @@ export async function GET(request: Request) {
     let paramIdx = 1
 
     if (picId && picId !== 'all') {
-      crmConditions.push(`l.pic_id = $${paramIdx}`)
-      crmParams.push(picId)
+      const picIds = picId.split(',').filter(Boolean)
+      crmConditions.push(`l.pic_id::text = ANY($${paramIdx}::text[])`)
+      crmParams.push(picIds)
       paramIdx++
     }
 
@@ -119,15 +120,26 @@ export async function GET(request: Request) {
       if (!saMap.has(sa.lead_id)) saMap.set(sa.lead_id, sa)
     }
 
+    // Fetch Zalo data via vucar_zalo DB for true last_message_at
+    const zaloRes = await vucarZaloQuery(`
+      SELECT
+        lr.phone,
+        MAX(c.last_message_at) AS last_message_at
+      FROM leads_relation lr
+      LEFT JOIN conversations c ON c.thread_id = lr.friend_id AND c.own_id = lr.account_id
+      WHERE lr.phone = ANY($1::text[])
+      GROUP BY lr.phone
+    `, [phones])
+    const zaloMap = new Map(zaloRes.rows.map((r: any) => [r.phone, r]))
+
     // 4. Map and Filter (3A / 3C + due for follow up)
     const processedLeads = crmLeads.map((r: any) => {
       const phone = r.phone
       const fm = fmMap.get(phone) as any
+      const zalo = zaloMap.get(phone) as any
       const hasMZ = r.has_messages_zalo === 1
       const nSale = parseInt(r.msgs_from_sale || "0", 10)
       const nCust = parseInt(r.msgs_from_customer || "0", 10)
-      const lastMsgAt = r.last_msg_at ? new Date(r.last_msg_at).getTime() : 0
-      const lastSaleMsgAt = r.last_sale_msg_at ? new Date(r.last_sale_msg_at).getTime() : 0
 
       const is3A = fm?.has_success === 1 || (hasMZ && nSale > 0 && nCust > 0)
       const is3C = !is3A && fm?.has_failed !== 1
@@ -142,8 +154,8 @@ export async function GET(request: Request) {
       const sa = saMap.get(r.id)
       const followUpSent = !!sa
 
-      // Calculate days since last action/creation
-      const referenceTime = is3A ? (lastMsgAt || new Date(r.car_created_at).getTime()) : (lastSaleMsgAt || new Date(r.car_created_at).getTime())
+      // Calculate days since last action/creation using true last_message_at
+      const referenceTime = zalo?.last_message_at ? new Date(zalo.last_message_at).getTime() : new Date(r.car_created_at).getTime()
       const daysSince = Math.round((Date.now() - referenceTime) / 86400000 * 10) / 10
 
       return {

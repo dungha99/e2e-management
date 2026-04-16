@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { e2eQuery, vucarV2Query } from "@/lib/db"
+import { e2eQuery, vucarV2Query, vucarZaloQuery } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 
@@ -26,8 +26,9 @@ export async function GET(request: Request) {
     let idx = 1
 
     if (picId && picId !== 'all') {
-      conditions.push(`l.pic_id = $${idx}`)
-      params.push(picId)
+      const picIds = picId.split(',').filter(Boolean)
+      conditions.push(`l.pic_id::text = ANY($${idx}::text[])`)
+      params.push(picIds)
       idx++
     }
 
@@ -70,7 +71,7 @@ export async function GET(request: Request) {
     const crmWhere = crmConditions.length > 0 ? crmConditions.join(" AND ") : "1=1"
 
     // ── 1. Tiers 1 & 2 (Total, Has Image, No Image) ──────────────────────────
-    if (metric === 'FUNNEL_TOTAL_LEADS' || metric === 'FUNNEL_HAS_IMAGE' || metric === 'FUNNEL_HAS_IMAGE_WITH_ADDITIONAL' || metric === 'FUNNEL_HAS_IMAGE_WITHOUT_ADDITIONAL' || metric === 'FUNNEL_NO_IMAGE' || metric === 'FUNNEL_NO_IMAGE_HAD_IMAGE' || metric === 'FUNNEL_NO_IMAGE_NO_HAD_IMAGE') {
+    if (metric === 'FUNNEL_TOTAL_LEADS' || metric === 'FUNNEL_HAS_IMAGE' || metric === 'FUNNEL_HAS_IMAGE_WITH_ADDITIONAL' || metric === 'FUNNEL_HAS_IMAGE_WITHOUT_ADDITIONAL' || metric === 'FUNNEL_HAS_IMAGE_QUOTED_PRICE' || metric === 'FUNNEL_HAS_IMAGE_NOT_QUOTED_PRICE' || metric === 'FUNNEL_NO_IMAGE' || metric === 'FUNNEL_NO_IMAGE_HAD_IMAGE' || metric === 'FUNNEL_NO_IMAGE_NO_HAD_IMAGE') {
       let extraWhere = "";
       if (metric === 'FUNNEL_HAS_IMAGE') extraWhere = " AND ss.qualified::text = 'STRONG_QUALIFIED'";
       if (metric === 'FUNNEL_NO_IMAGE') extraWhere = " AND (ss.qualified::text != 'STRONG_QUALIFIED' OR ss.qualified IS NULL)";
@@ -99,6 +100,51 @@ export async function GET(request: Request) {
         `, [...params, hasAdditionalFlag])
         phoneFilter = phoneAggRes.rows.map((r: any) => r.phone).filter(Boolean);
         if (phoneFilter.length === 0) return NextResponse.json({ leads: [], qualifiedValues });
+      }
+
+      // For 2A price-quote sub-metrics: get SQ phones then split by Zalo message content
+      if (metric === 'FUNNEL_HAS_IMAGE_QUOTED_PRICE' || metric === 'FUNNEL_HAS_IMAGE_NOT_QUOTED_PRICE') {
+        extraWhere = " AND ss.qualified::text = 'STRONG_QUALIFIED'";
+        // Step 1: all SQ phones
+        const sqRes = await vucarV2Query(`
+          SELECT DISTINCT l.phone
+          FROM leads l
+          LEFT JOIN cars c ON c.lead_id = l.id
+          LEFT JOIN sale_status ss ON ss.car_id = c.id
+          WHERE ${filterWhere} AND ss.qualified::text = 'STRONG_QUALIFIED' AND l.phone IS NOT NULL
+        `, params)
+        const sqPhones: string[] = sqRes.rows.map((r: any) => r.phone).filter(Boolean)
+        if (sqPhones.length === 0) return NextResponse.json({ leads: [], qualifiedValues })
+
+        // Step 2: phones that have a price-related self message in Zalo
+        const priceRes = await vucarZaloQuery(`
+          SELECT DISTINCT lr.phone
+          FROM leads_relation lr
+          JOIN messages m ON m.thread_id = lr.friend_id AND m.own_id = lr.account_id
+          WHERE lr.phone = ANY($1::text[])
+            AND m.is_self = true
+            AND (
+              m.content ILIKE '%triệu%'
+              OR m.content ILIKE '%tỷ%'
+              OR m.content ILIKE '%trả giá%'
+              OR m.content ILIKE '%báo giá%'
+              OR m.content ILIKE '%định giá%'
+              OR m.content ILIKE '%giá xe%'
+              OR m.content ILIKE '%mức giá%'
+              OR m.content ILIKE '%giá bán%'
+              OR m.content ILIKE '%vnđ%'
+              OR m.content ILIKE '%vnd%'
+              OR m.content ~ '[0-9]+[,\.][0-9]+ *(triệu|tỷ|tr|ty)'
+            )
+        `, [sqPhones])
+        const quotedPhones = new Set<string>(priceRes.rows.map((r: any) => r.phone))
+
+        if (metric === 'FUNNEL_HAS_IMAGE_QUOTED_PRICE') {
+          phoneFilter = sqPhones.filter(p => quotedPhones.has(p))
+        } else {
+          phoneFilter = sqPhones.filter(p => !quotedPhones.has(p))
+        }
+        if (phoneFilter.length === 0) return NextResponse.json({ leads: [], qualifiedValues })
       }
 
       // For 2B sub-metrics, first find phones by had_image from chat_summary/summary_properties
@@ -131,7 +177,7 @@ export async function GET(request: Request) {
       let phoneWhere = "";
       const queryParams = [...params];
       if (phoneFilter) {
-        phoneWhere = ` AND l.phone = ANY($${idx + 1}::text[])`;
+        phoneWhere = ` AND l.phone = ANY($${idx}::text[])`;
         queryParams.push(phoneFilter);
       }
 
@@ -139,7 +185,7 @@ export async function GET(request: Request) {
         SELECT DISTINCT ON (l.phone)
                l.id AS id, l.phone, l.additional_phone, l.name, c.id AS car_id,
                c.brand, c.model, c.year, c.created_at AS car_created_at, 
-               c.location, c.mileage, ss.notes, ss.qualified
+               c.location, c.mileage, ss.notes, ss.qualified, ss.stage, ss.intention AS intention_lead
         FROM leads l
         LEFT JOIN cars c ON c.lead_id = l.id
         LEFT JOIN sale_status ss ON ss.car_id = c.id
@@ -176,6 +222,8 @@ export async function GET(request: Request) {
           mileage: r.mileage,
           notes: r.notes || "",
           qualified: r.qualified,
+          stage: r.stage,
+          intentionLead: r.intention_lead,
           zaloActions: zaloActionsMap.get(r.phone) || {}
         })),
         qualifiedValues
@@ -388,7 +436,7 @@ export async function GET(request: Request) {
         SELECT DISTINCT ON (l.phone)
                l.id AS id, l.phone, l.additional_phone, l.name, c.id AS car_id,
                c.brand, c.model, c.year, c.created_at AS car_created_at,
-               c.location, c.mileage, ss.notes, ss.qualified
+               c.location, c.mileage, ss.notes, ss.qualified, ss.stage, ss.intention AS intention_lead
         FROM leads l
         LEFT JOIN cars c ON c.lead_id = l.id
         LEFT JOIN sale_status ss ON ss.car_id = c.id
@@ -435,6 +483,8 @@ export async function GET(request: Request) {
           mileage: r.mileage,
           notes: r.notes || "",
           qualified: r.qualified,
+          stage: r.stage,
+          intentionLead: r.intention_lead,
           daysWaiting: phoneDaysWaiting.get(r.phone) || null,
           zaloActions: zaloActionsMap.get(r.phone) || {}
         })),
@@ -448,7 +498,7 @@ export async function GET(request: Request) {
         SELECT DISTINCT ON (l.phone)
                l.id AS id, l.phone, l.additional_phone, l.name, c.id AS car_id,
                c.brand, c.model, c.year, c.created_at AS car_created_at, 
-               c.location, c.mileage, ss.notes, ss.qualified
+               c.location, c.mileage, ss.notes, ss.qualified, ss.stage, ss.intention AS intention_lead
         FROM cars c
         LEFT JOIN leads l ON l.id = c.lead_id
         LEFT JOIN sale_status ss ON ss.car_id = c.id
@@ -487,15 +537,180 @@ export async function GET(request: Request) {
           mileage: r.mileage,
           notes: r.notes || "",
           qualified: r.qualified,
+          stage: r.stage,
+          intentionLead: r.intention_lead,
           zaloActions: zaloActionsMap.get(r.phone) || {}
         })),
         qualifiedValues
       })
     }
 
+    // ── 4. MECE V3 metrics (cross-DB: CRM + vucar_zalo) ─────────────────────
+    if (metric.startsWith('FUNNEL_MECE_')) {
+      try {
+
+      // Step 1: CRM aggregation per phone
+      const crmRes = await vucarV2Query(`
+        SELECT
+          l.phone,
+          MAX(CASE WHEN ss.qualified = 'STRONG_QUALIFIED' THEN 1 ELSE 0 END) AS is_sq,
+          MAX(ss.price_highest_bid) AS price_highest_bid
+        FROM leads l
+        LEFT JOIN cars c ON c.lead_id = l.id
+        LEFT JOIN sale_status ss ON ss.car_id = c.id
+        WHERE ${filterWhere}
+        GROUP BY l.phone
+      `, params)
+
+      const crmRows = crmRes.rows
+      const allPhones = crmRows.map((r: any) => r.phone).filter(Boolean)
+
+      if (allPhones.length === 0) return NextResponse.json({ leads: [], qualifiedValues })
+
+      // Step 2: Zalo data via vucar_zalo DB (LEFT JOIN to preserve pic_no_msg)
+      let zaloRows: any[] = []
+      const zaloRes = await vucarZaloQuery(`
+        SELECT
+          lr.phone,
+          MAX(c.last_message_at) AS last_message_at,
+          COUNT(CASE WHEN m.is_self = true THEN 1 END) AS msgs_from_sale,
+          COUNT(CASE WHEN m.is_self = false THEN 1 END) AS msgs_from_customer
+        FROM leads_relation lr
+        LEFT JOIN conversations c ON c.thread_id = lr.friend_id AND c.own_id = lr.account_id
+        LEFT JOIN messages m ON m.thread_id = lr.friend_id AND m.own_id = lr.account_id
+        WHERE lr.phone = ANY($1::text[])
+        GROUP BY lr.phone
+      `, [allPhones])
+      zaloRows = zaloRes.rows
+
+      const zaloPhonesMap = new Map(zaloRows.map((r: any) => [r.phone, r]))
+
+      // Step 3: Classify each phone and collect matches
+      const matchingPhones: string[] = []
+
+      for (const crm of crmRows) {
+        if (!crm.phone) continue
+        const zalo = zaloPhonesMap.get(crm.phone)
+
+        // Dead/Active calculation
+        let isDead = true
+        if (zalo && zalo.last_message_at) {
+          const days = (Date.now() - new Date(zalo.last_message_at).getTime()) / 86400000
+          isDead = days > 1
+        }
+
+        // Classification priority (same as funnel-mece-stats)
+        const isSq = parseInt(crm.is_sq, 10) === 1
+        if (isSq) {
+          // SQ bucket
+          if (metric === 'FUNNEL_MECE_SQ_DEAD' && isDead) matchingPhones.push(crm.phone)
+          if (metric === 'FUNNEL_MECE_SQ_ACTIVE' && !isDead) matchingPhones.push(crm.phone)
+          continue
+        }
+
+        // Non-SQ classification
+        let bucket = ''
+        if (crm.price_highest_bid !== null) {
+          bucket = 'D2_has_bid'
+        } else if (!zalo) {
+          bucket = 'D2_no_zalo'
+        } else if (parseInt(zalo.msgs_from_sale || '0', 10) === 0) {
+          bucket = 'D1_pic_no_msg'
+        } else if (parseInt(zalo.msgs_from_customer || '0', 10) === 0) {
+          bucket = 'D1_ghost'
+        } else {
+          bucket = 'D1_two_way'
+        }
+
+        // Override dead for buckets with no interaction
+        if (bucket === 'D2_no_zalo' || bucket === 'D1_pic_no_msg') {
+          isDead = true
+        }
+
+        // Match against requested metric
+        let matches = false
+        switch (metric) {
+          case 'FUNNEL_MECE_D1_GHOST':         matches = bucket === 'D1_ghost'; break
+          case 'FUNNEL_MECE_D1_TWOWAY_DEAD':   matches = bucket === 'D1_two_way' && isDead; break
+          case 'FUNNEL_MECE_D1_TWOWAY_ACTIVE': matches = bucket === 'D1_two_way' && !isDead; break
+          case 'FUNNEL_MECE_D1_PIC_NO_MSG':    matches = bucket === 'D1_pic_no_msg'; break
+          case 'FUNNEL_MECE_D2_HAS_BID':       matches = bucket === 'D2_has_bid'; break
+          case 'FUNNEL_MECE_D2_NO_ZALO':       matches = bucket === 'D2_no_zalo'; break
+        }
+
+        if (matches) matchingPhones.push(crm.phone)
+      }
+
+      if (matchingPhones.length === 0) return NextResponse.json({ leads: [], qualifiedValues })
+
+      // Step 4: Fetch lead detail rows for matched phones
+      const detailIdx = params.length + 1
+      const detailRes = await vucarV2Query(`
+        SELECT DISTINCT ON (l.phone)
+               l.id AS id, l.phone, l.additional_phone, l.name, c.id AS car_id,
+               c.brand, c.model, c.year, c.created_at AS car_created_at,
+               c.location, c.mileage, ss.notes, ss.qualified,
+               ss.stage, ss.price_customer, ss.price_highest_bid,
+               ss.intention AS intention_lead, ss.negotiation_ability
+        FROM leads l
+        LEFT JOIN cars c ON c.lead_id = l.id
+        LEFT JOIN sale_status ss ON ss.car_id = c.id
+        WHERE ${filterWhere}
+          AND l.phone = ANY($${detailIdx}::text[])
+        ORDER BY l.phone, l.created_at DESC
+      `, [...params, matchingPhones])
+
+      // Step 5: Fetch zalo actions for display
+      const zaloActionsMap = new Map()
+      if (matchingPhones.length > 0) {
+        const actionsRes = await e2eQuery(`
+          SELECT
+            COALESCE(payload->>'phone', payload->>'customer_phone') AS phone,
+            action_type,
+            status
+          FROM zalo_action
+          WHERE COALESCE(payload->>'phone', payload->>'customer_phone') = ANY($1::text[])
+          ORDER BY created_at DESC
+        `, [matchingPhones])
+        for (const act of actionsRes.rows) {
+          if (!zaloActionsMap.has(act.phone)) zaloActionsMap.set(act.phone, {})
+          const leadActions = zaloActionsMap.get(act.phone)
+          if (!leadActions[act.action_type]) leadActions[act.action_type] = act.status
+        }
+      }
+
+      return NextResponse.json({
+        leads: detailRes.rows.map((r: any) => ({
+          id: r.id,
+          phone: r.phone || r.additional_phone || "N/A",
+          name: r.name || "—",
+          car_id: r.car_id,
+          brand: r.brand,
+          model: r.model,
+          year: r.year,
+          car_created_at: r.car_created_at,
+          location: r.location,
+          mileage: r.mileage,
+          notes: r.notes || "",
+          qualified: r.qualified,
+          stage: r.stage,
+          price_customer: r.price_customer,
+          price_highest_bid: r.price_highest_bid,
+          intentionLead: r.intention_lead,
+          negotiationAbility: r.negotiation_ability,
+          zaloActions: zaloActionsMap.get(r.phone) || {}
+        })),
+        qualifiedValues
+      })
+      } catch (meceErr: any) {
+        console.error('[KPI MECE] Error:', meceErr?.message || meceErr, meceErr?.stack || '')
+        return NextResponse.json({ error: 'MECE query failed', detail: meceErr?.message || String(meceErr) }, { status: 500 })
+      }
+    }
+
     return NextResponse.json({ leads: [], qualifiedValues })
   } catch (error) {
-    console.error("[KPI Detail API] Error:", error)
+    console.error("[KPI Detail API] Error:", error instanceof Error ? error.message : error, error instanceof Error ? error.stack : '')
     return NextResponse.json({ error: "Failed to fetch KPI detail" }, { status: 500 })
   }
 }

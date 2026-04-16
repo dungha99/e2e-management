@@ -1,0 +1,1005 @@
+diff --git a/app/api/e2e/funnel-followup-leads/route.ts b/app/api/e2e/funnel-followup-leads/route.ts
+index 45583c9..5a402c4 100644
+--- a/app/api/e2e/funnel-followup-leads/route.ts
++++ b/app/api/e2e/funnel-followup-leads/route.ts
+@@ -1,5 +1,5 @@
+ import { NextResponse } from "next/server"
+-import { e2eQuery, vucarV2Query } from "@/lib/db"
++import { e2eQuery, vucarV2Query, vucarZaloQuery } from "@/lib/db"
+ 
+ export const dynamic = "force-dynamic"
+ 
+@@ -16,8 +16,9 @@ export async function GET(request: Request) {
+     let paramIdx = 1
+ 
+     if (picId && picId !== 'all') {
+-      crmConditions.push(`l.pic_id = $${paramIdx}`)
+-      crmParams.push(picId)
++      const picIds = picId.split(',').filter(Boolean)
++      crmConditions.push(`l.pic_id::text = ANY($${paramIdx}::text[])`)
++      crmParams.push(picIds)
+       paramIdx++
+     }
+ 
+@@ -119,15 +120,26 @@ export async function GET(request: Request) {
+       if (!saMap.has(sa.lead_id)) saMap.set(sa.lead_id, sa)
+     }
+ 
++    // Fetch Zalo data via vucar_zalo DB for true last_message_at
++    const zaloRes = await vucarZaloQuery(`
++      SELECT
++        lr.phone,
++        MAX(c.last_message_at) AS last_message_at
++      FROM leads_relation lr
++      LEFT JOIN conversations c ON c.thread_id = lr.friend_id AND c.own_id = lr.account_id
++      WHERE lr.phone = ANY($1::text[])
++      GROUP BY lr.phone
++    `, [phones])
++    const zaloMap = new Map(zaloRes.rows.map((r: any) => [r.phone, r]))
++
+     // 4. Map and Filter (3A / 3C + due for follow up)
+     const processedLeads = crmLeads.map((r: any) => {
+       const phone = r.phone
+       const fm = fmMap.get(phone) as any
++      const zalo = zaloMap.get(phone) as any
+       const hasMZ = r.has_messages_zalo === 1
+       const nSale = parseInt(r.msgs_from_sale || "0", 10)
+       const nCust = parseInt(r.msgs_from_customer || "0", 10)
+-      const lastMsgAt = r.last_msg_at ? new Date(r.last_msg_at).getTime() : 0
+-      const lastSaleMsgAt = r.last_sale_msg_at ? new Date(r.last_sale_msg_at).getTime() : 0
+ 
+       const is3A = fm?.has_success === 1 || (hasMZ && nSale > 0 && nCust > 0)
+       const is3C = !is3A && fm?.has_failed !== 1
+@@ -142,8 +154,8 @@ export async function GET(request: Request) {
+       const sa = saMap.get(r.id)
+       const followUpSent = !!sa
+ 
+-      // Calculate days since last action/creation
+-      const referenceTime = is3A ? (lastMsgAt || new Date(r.car_created_at).getTime()) : (lastSaleMsgAt || new Date(r.car_created_at).getTime())
++      // Calculate days since last action/creation using true last_message_at
++      const referenceTime = zalo?.last_message_at ? new Date(zalo.last_message_at).getTime() : new Date(r.car_created_at).getTime()
+       const daysSince = Math.round((Date.now() - referenceTime) / 86400000 * 10) / 10
+ 
+       return {
+diff --git a/app/api/e2e/funnel-stats/route.ts b/app/api/e2e/funnel-stats/route.ts
+index 6df3840..fce7827 100644
+--- a/app/api/e2e/funnel-stats/route.ts
++++ b/app/api/e2e/funnel-stats/route.ts
+@@ -19,8 +19,9 @@ export async function GET(request: Request) {
+         let baseParamIdx = 1
+ 
+         if (picId && picId !== 'all') {
+-            baseCrmConditions.push(`l.pic_id = $${baseParamIdx}`)
+-            baseCrmParams.push(picId)
++            const picIds = picId.split(',').filter(Boolean)
++            baseCrmConditions.push(`l.pic_id::text = ANY($${baseParamIdx}::text[])`)
++            baseCrmParams.push(picIds)
+             baseParamIdx++
+         }
+         if (dateFrom) {
+@@ -54,8 +55,9 @@ export async function GET(request: Request) {
+         let paramIdx = 1
+ 
+         if (picId && picId !== 'all') {
+-            crmConditions.push(`l.pic_id = $${paramIdx}`)
+-            crmParams.push(picId)
++            const picIds = picId.split(',').filter(Boolean)
++            crmConditions.push(`l.pic_id::text = ANY($${paramIdx}::text[])`)
++            crmParams.push(picIds)
+             paramIdx++
+         }
+ 
+diff --git a/app/api/e2e/kpi-detail/route.ts b/app/api/e2e/kpi-detail/route.ts
+index da05b83..d9cd1e1 100644
+--- a/app/api/e2e/kpi-detail/route.ts
++++ b/app/api/e2e/kpi-detail/route.ts
+@@ -1,5 +1,5 @@
+ import { NextResponse } from "next/server"
+-import { e2eQuery, vucarV2Query } from "@/lib/db"
++import { e2eQuery, vucarV2Query, vucarZaloQuery } from "@/lib/db"
+ 
+ export const dynamic = "force-dynamic"
+ 
+@@ -26,8 +26,9 @@ export async function GET(request: Request) {
+     let idx = 1
+ 
+     if (picId && picId !== 'all') {
+-      conditions.push(`l.pic_id = $${idx}`)
+-      params.push(picId)
++      const picIds = picId.split(',').filter(Boolean)
++      conditions.push(`l.pic_id::text = ANY($${idx}::text[])`)
++      params.push(picIds)
+       idx++
+     }
+ 
+@@ -139,7 +140,7 @@ export async function GET(request: Request) {
+         SELECT DISTINCT ON (l.phone)
+                l.id AS id, l.phone, l.additional_phone, l.name, c.id AS car_id,
+                c.brand, c.model, c.year, c.created_at AS car_created_at, 
+-               c.location, c.mileage, ss.notes, ss.qualified
++               c.location, c.mileage, ss.notes, ss.qualified, ss.stage, ss.intention AS intention_lead
+         FROM leads l
+         LEFT JOIN cars c ON c.lead_id = l.id
+         LEFT JOIN sale_status ss ON ss.car_id = c.id
+@@ -176,6 +177,8 @@ export async function GET(request: Request) {
+           mileage: r.mileage,
+           notes: r.notes || "",
+           qualified: r.qualified,
++          stage: r.stage,
++          intentionLead: r.intention_lead,
+           zaloActions: zaloActionsMap.get(r.phone) || {}
+         })),
+         qualifiedValues
+@@ -388,7 +391,7 @@ export async function GET(request: Request) {
+         SELECT DISTINCT ON (l.phone)
+                l.id AS id, l.phone, l.additional_phone, l.name, c.id AS car_id,
+                c.brand, c.model, c.year, c.created_at AS car_created_at,
+-               c.location, c.mileage, ss.notes, ss.qualified
++               c.location, c.mileage, ss.notes, ss.qualified, ss.stage, ss.intention AS intention_lead
+         FROM leads l
+         LEFT JOIN cars c ON c.lead_id = l.id
+         LEFT JOIN sale_status ss ON ss.car_id = c.id
+@@ -435,6 +438,8 @@ export async function GET(request: Request) {
+           mileage: r.mileage,
+           notes: r.notes || "",
+           qualified: r.qualified,
++          stage: r.stage,
++          intentionLead: r.intention_lead,
+           daysWaiting: phoneDaysWaiting.get(r.phone) || null,
+           zaloActions: zaloActionsMap.get(r.phone) || {}
+         })),
+@@ -448,7 +453,7 @@ export async function GET(request: Request) {
+         SELECT DISTINCT ON (l.phone)
+                l.id AS id, l.phone, l.additional_phone, l.name, c.id AS car_id,
+                c.brand, c.model, c.year, c.created_at AS car_created_at, 
+-               c.location, c.mileage, ss.notes, ss.qualified
++               c.location, c.mileage, ss.notes, ss.qualified, ss.stage, ss.intention AS intention_lead
+         FROM cars c
+         LEFT JOIN leads l ON l.id = c.lead_id
+         LEFT JOIN sale_status ss ON ss.car_id = c.id
+@@ -487,15 +492,180 @@ export async function GET(request: Request) {
+           mileage: r.mileage,
+           notes: r.notes || "",
+           qualified: r.qualified,
++          stage: r.stage,
++          intentionLead: r.intention_lead,
+           zaloActions: zaloActionsMap.get(r.phone) || {}
+         })),
+         qualifiedValues
+       })
+     }
+ 
++    // ── 4. MECE V3 metrics (cross-DB: CRM + vucar_zalo) ─────────────────────
++    if (metric.startsWith('FUNNEL_MECE_')) {
++      try {
++
++      // Step 1: CRM aggregation per phone
++      const crmRes = await vucarV2Query(`
++        SELECT
++          l.phone,
++          MAX(CASE WHEN ss.qualified = 'STRONG_QUALIFIED' THEN 1 ELSE 0 END) AS is_sq,
++          MAX(ss.price_highest_bid) AS price_highest_bid
++        FROM leads l
++        LEFT JOIN cars c ON c.lead_id = l.id
++        LEFT JOIN sale_status ss ON ss.car_id = c.id
++        WHERE ${filterWhere}
++        GROUP BY l.phone
++      `, params)
++
++      const crmRows = crmRes.rows
++      const allPhones = crmRows.map((r: any) => r.phone).filter(Boolean)
++
++      if (allPhones.length === 0) return NextResponse.json({ leads: [], qualifiedValues })
++
++      // Step 2: Zalo data via vucar_zalo DB (LEFT JOIN to preserve pic_no_msg)
++      let zaloRows: any[] = []
++      const zaloRes = await vucarZaloQuery(`
++        SELECT
++          lr.phone,
++          MAX(c.last_message_at) AS last_message_at,
++          COUNT(CASE WHEN m.is_self = true THEN 1 END) AS msgs_from_sale,
++          COUNT(CASE WHEN m.is_self = false THEN 1 END) AS msgs_from_customer
++        FROM leads_relation lr
++        LEFT JOIN conversations c ON c.thread_id = lr.friend_id AND c.own_id = lr.account_id
++        LEFT JOIN messages m ON m.thread_id = lr.friend_id AND m.own_id = lr.account_id
++        WHERE lr.phone = ANY($1::text[])
++        GROUP BY lr.phone
++      `, [allPhones])
++      zaloRows = zaloRes.rows
++
++      const zaloPhonesMap = new Map(zaloRows.map((r: any) => [r.phone, r]))
++
++      // Step 3: Classify each phone and collect matches
++      const matchingPhones: string[] = []
++
++      for (const crm of crmRows) {
++        if (!crm.phone) continue
++        const zalo = zaloPhonesMap.get(crm.phone)
++
++        // Dead/Active calculation
++        let isDead = true
++        if (zalo && zalo.last_message_at) {
++          const days = (Date.now() - new Date(zalo.last_message_at).getTime()) / 86400000
++          isDead = days > 1
++        }
++
++        // Classification priority (same as funnel-mece-stats)
++        const isSq = parseInt(crm.is_sq, 10) === 1
++        if (isSq) {
++          // SQ bucket
++          if (metric === 'FUNNEL_MECE_SQ_DEAD' && isDead) matchingPhones.push(crm.phone)
++          if (metric === 'FUNNEL_MECE_SQ_ACTIVE' && !isDead) matchingPhones.push(crm.phone)
++          continue
++        }
++
++        // Non-SQ classification
++        let bucket = ''
++        if (crm.price_highest_bid !== null) {
++          bucket = 'D2_has_bid'
++        } else if (!zalo) {
++          bucket = 'D2_no_zalo'
++        } else if (parseInt(zalo.msgs_from_sale || '0', 10) === 0) {
++          bucket = 'D1_pic_no_msg'
++        } else if (parseInt(zalo.msgs_from_customer || '0', 10) === 0) {
++          bucket = 'D1_ghost'
++        } else {
++          bucket = 'D1_two_way'
++        }
++
++        // Override dead for buckets with no interaction
++        if (bucket === 'D2_no_zalo' || bucket === 'D1_pic_no_msg') {
++          isDead = true
++        }
++
++        // Match against requested metric
++        let matches = false
++        switch (metric) {
++          case 'FUNNEL_MECE_D1_GHOST':         matches = bucket === 'D1_ghost'; break
++          case 'FUNNEL_MECE_D1_TWOWAY_DEAD':   matches = bucket === 'D1_two_way' && isDead; break
++          case 'FUNNEL_MECE_D1_TWOWAY_ACTIVE': matches = bucket === 'D1_two_way' && !isDead; break
++          case 'FUNNEL_MECE_D1_PIC_NO_MSG':    matches = bucket === 'D1_pic_no_msg'; break
++          case 'FUNNEL_MECE_D2_HAS_BID':       matches = bucket === 'D2_has_bid'; break
++          case 'FUNNEL_MECE_D2_NO_ZALO':       matches = bucket === 'D2_no_zalo'; break
++        }
++
++        if (matches) matchingPhones.push(crm.phone)
++      }
++
++      if (matchingPhones.length === 0) return NextResponse.json({ leads: [], qualifiedValues })
++
++      // Step 4: Fetch lead detail rows for matched phones
++      const detailIdx = params.length + 1
++      const detailRes = await vucarV2Query(`
++        SELECT DISTINCT ON (l.phone)
++               l.id AS id, l.phone, l.additional_phone, l.name, c.id AS car_id,
++               c.brand, c.model, c.year, c.created_at AS car_created_at,
++               c.location, c.mileage, ss.notes, ss.qualified,
++               ss.stage, ss.price_customer, ss.price_highest_bid,
++               ss.intention AS intention_lead, ss.negotiation_ability
++        FROM leads l
++        LEFT JOIN cars c ON c.lead_id = l.id
++        LEFT JOIN sale_status ss ON ss.car_id = c.id
++        WHERE ${filterWhere}
++          AND l.phone = ANY($${detailIdx}::text[])
++        ORDER BY l.phone, l.created_at DESC
++      `, [...params, matchingPhones])
++
++      // Step 5: Fetch zalo actions for display
++      const zaloActionsMap = new Map()
++      if (matchingPhones.length > 0) {
++        const actionsRes = await e2eQuery(`
++          SELECT
++            COALESCE(payload->>'phone', payload->>'customer_phone') AS phone,
++            action_type,
++            status
++          FROM zalo_action
++          WHERE COALESCE(payload->>'phone', payload->>'customer_phone') = ANY($1::text[])
++          ORDER BY created_at DESC
++        `, [matchingPhones])
++        for (const act of actionsRes.rows) {
++          if (!zaloActionsMap.has(act.phone)) zaloActionsMap.set(act.phone, {})
++          const leadActions = zaloActionsMap.get(act.phone)
++          if (!leadActions[act.action_type]) leadActions[act.action_type] = act.status
++        }
++      }
++
++      return NextResponse.json({
++        leads: detailRes.rows.map((r: any) => ({
++          id: r.id,
++          phone: r.phone || r.additional_phone || "N/A",
++          name: r.name || "—",
++          car_id: r.car_id,
++          brand: r.brand,
++          model: r.model,
++          year: r.year,
++          car_created_at: r.car_created_at,
++          location: r.location,
++          mileage: r.mileage,
++          notes: r.notes || "",
++          qualified: r.qualified,
++          stage: r.stage,
++          price_customer: r.price_customer,
++          price_highest_bid: r.price_highest_bid,
++          intentionLead: r.intention_lead,
++          negotiationAbility: r.negotiation_ability,
++          zaloActions: zaloActionsMap.get(r.phone) || {}
++        })),
++        qualifiedValues
++      })
++      } catch (meceErr: any) {
++        console.error('[KPI MECE] Error:', meceErr?.message || meceErr, meceErr?.stack || '')
++        return NextResponse.json({ error: 'MECE query failed', detail: meceErr?.message || String(meceErr) }, { status: 500 })
++      }
++    }
++
+     return NextResponse.json({ leads: [], qualifiedValues })
+   } catch (error) {
+-    console.error("[KPI Detail API] Error:", error)
++    console.error("[KPI Detail API] Error:", error instanceof Error ? error.message : error, error instanceof Error ? error.stack : '')
+     return NextResponse.json({ error: "Failed to fetch KPI detail" }, { status: 500 })
+   }
+ }
+diff --git a/app/e2e/[userId]/funnel/page.tsx b/app/e2e/[userId]/funnel/page.tsx
+index b672d24..23a39c7 100644
+--- a/app/e2e/[userId]/funnel/page.tsx
++++ b/app/e2e/[userId]/funnel/page.tsx
+@@ -88,23 +88,28 @@ function QualificationSelector({
+   )
+ }
+ 
+-// Account selector component (copied from main page for consistency)
++// Account selector component — multi-select with checkboxes
+ function MobileAccountSelector({
+-  selectedAccount,
++  selectedAccounts,
+   onAccountChange,
+ }: {
+-  selectedAccount: string
+-  onAccountChange: (value: string) => void
++  selectedAccounts: string[]
++  onAccountChange: (value: string[]) => void
+ }) {
+   const { accounts } = useAccounts()
+   const [open, setOpen] = useState(false)
+-  const selectedName = selectedAccount === 'all' ? "Tất cả PIC (ALL)" : (accounts.find((a) => a.uid === selectedAccount)?.name ?? "Tài khoản")
++  const isAll = selectedAccounts.length === 0 || (selectedAccounts.length === 1 && selectedAccounts[0] === 'all')
++  const label = isAll
++    ? "Tất cả PIC (ALL)"
++    : selectedAccounts.length === 1
++      ? (accounts.find((a) => a.uid === selectedAccounts[0])?.name ?? "1 PIC")
++      : `${selectedAccounts.length} PICs`
+ 
+   return (
+     <Popover open={open} onOpenChange={setOpen}>
+       <PopoverTrigger asChild>
+         <button className="flex items-center justify-between gap-1 w-32 h-9 px-2.5 text-xs bg-background border border-input rounded-md hover:bg-accent transition-colors truncate">
+-          <span className="truncate">{selectedName}</span>
++          <span className="truncate">{label}</span>
+           <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+         </button>
+       </PopoverTrigger>
+@@ -118,28 +123,46 @@ function MobileAccountSelector({
+                 key="all"
+                 value="Tất cả PIC (ALL)"
+                 onSelect={() => {
+-                  onAccountChange('all')
+-                  setOpen(false)
++                  onAccountChange(['all'])
+                 }}
+                 className="flex items-center gap-2 text-sm"
+               >
+-                <Check className={cn("w-3.5 h-3.5 shrink-0", selectedAccount === 'all' ? "opacity-100" : "opacity-0")} />
++                <div className={cn(
++                  "flex h-4 w-4 items-center justify-center rounded-sm border border-primary transition-all",
++                  isAll ? "bg-primary text-primary-foreground" : "opacity-50"
++                )}>
++                  {isAll && <Check className="h-3 w-3" />}
++                </div>
+                 Tất cả PIC (ALL)
+               </CommandItem>
+-              {accounts.map((account) => (
+-                <CommandItem
+-                  key={account.uid}
+-                  value={account.name}
+-                  onSelect={() => {
+-                    onAccountChange(account.uid)
+-                    setOpen(false)
+-                  }}
+-                  className="flex items-center gap-2 text-sm"
+-                >
+-                  <Check className={cn("w-3.5 h-3.5 shrink-0", selectedAccount === account.uid ? "opacity-100" : "opacity-0")} />
+-                  {account.name}
+-                </CommandItem>
+-              ))}
++              {accounts.map((account) => {
++                const isSelected = selectedAccounts.includes(account.uid)
++                return (
++                  <CommandItem
++                    key={account.uid}
++                    value={account.name}
++                    onSelect={() => {
++                      let next: string[]
++                      if (isSelected) {
++                        next = selectedAccounts.filter(v => v !== account.uid)
++                        if (next.length === 0) next = ['all']
++                      } else {
++                        next = [...selectedAccounts.filter(v => v !== 'all'), account.uid]
++                      }
++                      onAccountChange(next)
++                    }}
++                    className="flex items-center gap-2 text-sm"
++                  >
++                    <div className={cn(
++                      "flex h-4 w-4 items-center justify-center rounded-sm border border-primary transition-all",
++                      isSelected ? "bg-primary text-primary-foreground" : "opacity-50"
++                    )}>
++                      {isSelected && <Check className="h-3 w-3" />}
++                    </div>
++                    {account.name}
++                  </CommandItem>
++                )
++              })}
+             </CommandGroup>
+           </CommandList>
+         </Command>
+@@ -181,11 +204,14 @@ function FunnelPageContent({ userId }: { userId: string }) {
+   const [kpiDetailOpen, setKpiDetailOpen] = useState(false)
+   const [kpiDetailMetric, setKpiDetailMetric] = useState<string | null>(null)
+ 
++  // Multi-select PIC state
++  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([userId])
++
+   useEffect(() => {
+     if (!userId) return
+ 
+     setLoading(true)
+-    const params = new URLSearchParams({ pic_id: userId })
++    const params = new URLSearchParams({ pic_id: selectedAccounts.join(',') })
+     
+     // Use params from state if available, otherwise from URL
+     const from = dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : dateFromParam
+@@ -207,15 +233,14 @@ function FunnelPageContent({ userId }: { userId: string }) {
+       })
+       .catch((err) => console.error("[FunnelPage] Error:", err))
+       .finally(() => setLoading(false))
+-  }, [userId, dateRange, dateFromParam, dateToParam, selectedQualified])
++  }, [userId, selectedAccounts, dateRange, dateFromParam, dateToParam, selectedQualified])
+ 
+   const handleBack = () => {
+     router.back()
+   }
+ 
+-  const handleAccountChange = (newUserId: string) => {
+-    const params = new URLSearchParams(searchParams.toString())
+-    router.push(`/e2e/${newUserId}/funnel?${params.toString()}`)
++  const handleAccountChange = (newAccounts: string[]) => {
++    setSelectedAccounts(newAccounts)
+   }
+ 
+   const handleDateRangeChange = (newRange: DateRange | undefined) => {
+@@ -258,7 +283,7 @@ function FunnelPageContent({ userId }: { userId: string }) {
+         selectedAccount={userId}
+         accountSelector={
+           <MobileAccountSelector
+-            selectedAccount={userId}
++            selectedAccounts={selectedAccounts}
+             onAccountChange={handleAccountChange}
+           />
+         }
+@@ -294,7 +319,7 @@ function FunnelPageContent({ userId }: { userId: string }) {
+             data={funnelData} 
+             loading={loading} 
+             onMetricClick={handleMetricClick}
+-            picId={userId}
++            picId={selectedAccounts.join(',')}
+             dateFrom={dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : dateFromParam}
+             dateTo={dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : dateToParam}
+             qualified={selectedQualified.join(',')}
+@@ -305,7 +330,7 @@ function FunnelPageContent({ userId }: { userId: string }) {
+           open={kpiDetailOpen}
+           onClose={() => setKpiDetailOpen(false)}
+           metric={kpiDetailMetric}
+-          picId={userId}
++          picId={selectedAccounts.join(',')}
+           dateFrom={dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : dateFromParam}
+           dateTo={dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : dateToParam}
+           qualified={selectedQualified.join(',')}
+diff --git a/components/e2e/layout/KPIDetailPanel.tsx b/components/e2e/layout/KPIDetailPanel.tsx
+index 8a30cb8..2423ca3 100644
+--- a/components/e2e/layout/KPIDetailPanel.tsx
++++ b/components/e2e/layout/KPIDetailPanel.tsx
+@@ -83,6 +83,16 @@ const METRIC_CONFIG: Record<string, { title: string; color: string }> = {
+   FUNNEL_NEVER_FIRST_MESSAGE_NO_INTERACTION: { title: "3c-iv. Chưa có tương tác", color: "text-gray-500" },
+   FUNNEL_RENAME_SUCCESS: { title: "3c-iv. Đã đổi tên", color: "text-emerald-700" },
+   FUNNEL_RENAME_RESERVE: { title: "3c-iv. Còn lại", color: "text-gray-600" },
++
++  // V3 MECE metrics
++  FUNNEL_MECE_SQ_DEAD: { title: "Đã có hình · Dead >1d", color: "text-red-600" },
++  FUNNEL_MECE_SQ_ACTIVE: { title: "Đã có hình · Active ≤1d", color: "text-emerald-600" },
++  FUNNEL_MECE_D1_GHOST: { title: "Ghost — Chưa có tin nhắn nào từ khách", color: "text-indigo-600" },
++  FUNNEL_MECE_D1_TWOWAY_DEAD: { title: "Two-way · Dead >1d — Khách đã tương tác nhưng chưa gửi hình", color: "text-red-600" },
++  FUNNEL_MECE_D1_TWOWAY_ACTIVE: { title: "Two-way · Active ≤1d — Khách đã tương tác nhưng chưa gửi hình", color: "text-emerald-600" },
++  FUNNEL_MECE_D1_PIC_NO_MSG: { title: "PIC chưa nhắn · Dead — Có Zalo record nhưng PIC chưa gửi tin", color: "text-orange-600" },
++  FUNNEL_MECE_D2_HAS_BID: { title: "Có bid · chưa SQ — Đã có giá đấu nhưng chưa đạt SQ", color: "text-amber-700" },
++  FUNNEL_MECE_D2_NO_ZALO: { title: "Không có Zalo — Không tìm thấy record trong hệ thống Zalo", color: "text-gray-600" },
+ }
+ 
+ interface KPIDetailLead {
+@@ -522,6 +532,8 @@ export function KPIDetailPanel({ open, onClose, metric, picId, search, sources,
+                   <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">#</th>
+                   <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Khách hàng & Xe</th>
+                   <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Loại</th>
++                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Trạng thái Sale</th>
++                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Độ thiện chí</th>
+                   <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Ghi chú</th>
+                   {leads.some(l => l.daysWaiting !== null) && (
+                     <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Chờ</th>
+@@ -569,6 +581,42 @@ export function KPIDetailPanel({ open, onClose, metric, picId, search, sources,
+                         )}
+                       </div>
+                     </td>
++                    <td className="px-4 py-2.5 align-top">
++                      <div className="pt-1.5 flex flex-col items-start gap-1">
++                        {lead.stage ? (
++                           <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border uppercase tracking-tighter ${
++                             lead.stage === 'COMPLETED' ? 'bg-green-100 text-green-800 border-green-200' :
++                             lead.stage === 'DEPOSIT_PAID' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
++                             lead.stage === 'CAR_VIEW' ? 'bg-blue-100 text-blue-800 border-blue-200' :
++                             lead.stage === 'NEGOTIATION' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
++                             lead.stage === 'CONTACTED' ? 'bg-purple-100 text-purple-800 border-purple-200' :
++                             lead.stage === 'CANNOT_CONTACT' ? 'bg-orange-100 text-orange-800 border-orange-200' :
++                             lead.stage === 'FAILED' ? 'bg-red-100 text-red-800 border-red-200' :
++                             'bg-gray-100 text-gray-700 border-gray-200'
++                           }`}>
++                             {lead.stage}
++                           </span>
++                        ) : (
++                           <span className="text-[9px] font-bold text-gray-400 italic">N/A</span>
++                        )}
++                      </div>
++                    </td>
++                    <td className="px-4 py-2.5 align-top">
++                      <div className="pt-1.5 flex flex-col items-start gap-1">
++                        {lead.intentionLead ? (
++                           <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border uppercase tracking-tighter ${
++                             lead.intentionLead.toUpperCase() === 'HIGH' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
++                             lead.intentionLead.toUpperCase() === 'MEDIUM' ? 'bg-blue-100 text-blue-800 border-blue-200' :
++                             lead.intentionLead.toUpperCase() === 'LOW' ? 'bg-orange-100 text-orange-800 border-orange-200' :
++                             'bg-gray-100 text-gray-700 border-gray-200'
++                           }`}>
++                             {lead.intentionLead}
++                           </span>
++                        ) : (
++                           <span className="text-[9px] font-bold text-gray-400 italic">N/A</span>
++                        )}
++                      </div>
++                    </td>
+                     <td className="px-4 py-2.5 align-top">
+                       <div className="text-[11px] text-gray-600 line-clamp-4 leading-relaxed max-w-[250px] pt-1" title={lead.notes}>
+                         {lead.notes || "—"}
+diff --git a/components/e2e/layout/LeadFunnelBreakdown.tsx b/components/e2e/layout/LeadFunnelBreakdown.tsx
+index f95c3c2..0a99846 100644
+--- a/components/e2e/layout/LeadFunnelBreakdown.tsx
++++ b/components/e2e/layout/LeadFunnelBreakdown.tsx
+@@ -42,6 +42,8 @@ export function LeadFunnelBreakdown({ data, loading, onMetricClick, picId, dateF
+   const [metrics, setMetrics] = useState({ totalFollowed: 0, totalNotFollowed: 0 })
+   const [loadingFollowUp, setLoadingFollowUp] = useState(false)
+   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>('desc')
++  const [meceData, setMeceData] = useState<any>(null)
++  const [loadingMece, setLoadingMece] = useState(false)
+   const { toast } = useToast()
+ 
+   // Edit Lead Dialog State
+@@ -79,9 +81,28 @@ export function LeadFunnelBreakdown({ data, loading, onMetricClick, picId, dateF
+     }
+   }
+ 
++  const fetchMeceStats = async () => {
++    if (!picId) return
++    setLoadingMece(true)
++    try {
++      const params = new URLSearchParams({ pic_id: picId })
++      if (dateFrom) params.set("dateFrom", dateFrom)
++      if (dateTo) params.set("dateTo", dateTo)
++
++      const res = await fetch(`/api/e2e/funnel-mece-stats?${params.toString()}`)
++      const json = await res.json()
++      setMeceData(json.stats || null)
++    } catch (err) {
++      console.error("[MECE] Error:", err)
++    } finally {
++      setLoadingMece(false)
++    }
++  }
++
+   useEffect(() => {
+     if (isExpanded) {
+       fetchFollowUpLeads()
++      fetchMeceStats()
+     }
+   }, [picId, dateFrom, dateTo, qualified, isExpanded])
+ 
+@@ -326,6 +347,14 @@ export function LeadFunnelBreakdown({ data, loading, onMetricClick, picId, dateF
+                   Version 2
+                   <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter">New</span>
+                 </TabsTrigger>
++                <TabsTrigger value="v3" className="px-8 rounded-lg data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm transition-all text-gray-500 font-bold flex items-center gap-2">
++                  Version 3 (MECE)
++                  <span className="bg-indigo-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter">Pro</span>
++                </TabsTrigger>
++                <TabsTrigger value="v4" className="px-8 rounded-lg data-[state=active]:bg-white data-[state=active]:text-violet-600 data-[state=active]:shadow-sm transition-all text-gray-500 font-bold flex items-center gap-2">
++                  Version 4
++                  <span className="bg-violet-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter">V4</span>
++                </TabsTrigger>
+               </TabsList>
+             </div>
+ 
+@@ -793,6 +822,306 @@ export function LeadFunnelBreakdown({ data, loading, onMetricClick, picId, dateF
+                 </div>
+               </div>
+             </TabsContent>
++
++            {/* VERSION 3: MECE VIEW */}
++            <TabsContent value="v3">
++              <div className="flex flex-col items-center w-full max-w-5xl relative mt-4 mx-auto pb-12">
++               {loadingMece ? (
++                 <div className="py-20 flex flex-col items-center justify-center">
++                   <div className="h-8 w-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
++                   <p className="text-sm text-gray-400 font-medium">Đang phân tích MECE Funnel...</p>
++                 </div>
++               ) : !meceData ? (
++                 <div className="py-20">Không có dữ liệu MECE</div>
++               ) : (
++                 <div className="relative flex flex-col items-center mb-10 w-full">
++                    {/* Level 1: Total Leads */}
++                    <button className="bg-gray-100 border border-gray-200 rounded-lg px-6 py-2 min-w-[180px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer">
++                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Tổng Lead</div>
++                      <div className="text-[8px] text-gray-400 mb-1">Tổng số lead được phân bổ</div>
++                      <div className="text-xl font-black text-gray-800">{meceData.total}</div>
++                    </button>
++                    <div className="tree-line-v h-8 bg-gray-200"></div>
++
++                    {/* Level 2 Branches: SQ and Non-SQ */}
++                    <div className="relative flex justify-center gap-24 w-full mt-2 pt-6">
++                      <div className="absolute top-0 left-1/2 w-1/2 max-w-[400px] h-[2px] bg-gray-200 -translate-x-1/2"></div>
++                      
++                      {/* L2: SQ (Left) */}
++                      <div className="relative flex flex-col items-center w-64">
++                        <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
++                        <button className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 w-full shadow-sm hover:scale-105 transition-transform text-center mb-3">
++                          <div className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest mb-0.5">Đã có hình</div>
++                          <div className="text-[8px] text-emerald-500 mb-1">Lead đã đạt STRONG_QUALIFIED — đủ hình ảnh xe</div>
++                          <div className="text-2xl font-black text-emerald-700">{meceData.sq.total} <span className="text-xs font-medium opacity-70">({meceData.total > 0 ? Math.round((meceData.sq.total/meceData.total)*100) : 0}%)</span></div>
++                        </button>
++                        <div className="flex gap-2 w-full justify-between">
++                           <button onClick={() => onMetricClick?.("FUNNEL_MECE_SQ_DEAD")} className="flex-1 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg p-2 text-center group transition">
++                              <div className="text-[9px] font-bold text-red-500 uppercase tracking-tighter">Dead &gt;1d</div>
++                              <div className="text-lg font-black text-red-600 group-hover:scale-110 transition">{meceData.sq.dead}</div>
++                           </button>
++                           <button onClick={() => onMetricClick?.("FUNNEL_MECE_SQ_ACTIVE")} className="flex-1 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-lg p-2 text-center group transition">
++                              <div className="text-[9px] font-bold text-emerald-600 uppercase tracking-tighter">Active ≤1d</div>
++                              <div className="text-lg font-black text-emerald-700 group-hover:scale-110 transition">{meceData.sq.active}</div>
++                           </button>
++                        </div>
++                      </div>
++
++                      {/* L2: Non-SQ (Right) */}
++                      <div className="relative flex flex-col items-center w-[600px]"> 
++                        <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
++                        <button className="bg-gray-50 border border-gray-200 rounded-xl p-3 w-64 shadow-sm hover:scale-105 transition-transform text-center mb-8">
++                          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Chưa có hình</div>
++                          <div className="text-[8px] text-gray-400 mb-1">Chưa đạt SQ — cần theo dõi thêm</div>
++                          <div className="text-2xl font-black text-gray-800">{meceData.nonSq.total} <span className="text-xs font-medium opacity-70">({meceData.total > 0 ? Math.round((meceData.nonSq.total/meceData.total)*100) : 0}%)</span></div>
++                        </button>
++                        
++                        {/* Branches of Non-SQ: D1 and D2 */}
++                        <div className="relative flex justify-between gap-12 w-full pt-6">
++                          <div className="absolute top-0 left-[30%] right-[30%] h-[2px] bg-gray-300"></div>
++
++                          {/* L3: D1 Seller Side */}
++                          <div className="relative flex flex-col items-center flex-1">
++                            <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-300 -translate-x-1/2 -mt-6"></div>
++                            <div className="bg-indigo-50 border border-indigo-200 px-4 py-1.5 rounded-full shadow-sm text-center mb-6 z-10 relative">
++                              <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">D1 · Phía Seller ({meceData.d1.total})</span>
++                            </div>
++
++                            <div className="w-full flex flex-col gap-4">
++                               {/* D1 Buckets list */}
++                               <div className="flex gap-2 w-full">
++                                  {/* 1. Ghost */}
++                                  <div className="flex-1 bg-white border-2 border-indigo-100 rounded-xl p-2 shadow-sm flex flex-col relative justify-center items-center h-full min-h-[70px]">
++                                     <div className="text-center font-bold text-indigo-800 text-[11px] mb-0.5">Ghost</div>
++                                     <div className="text-[7px] text-gray-400 text-center mb-0.5">Chưa có tin nhắn nào từ khách</div>
++                                     <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_GHOST")} className="bg-indigo-50 hover:bg-indigo-100 rounded px-3 py-1 w-full flex items-center justify-between group mt-1">
++                                       <span className="text-[9px] text-indigo-700 font-bold uppercase">Total:</span>
++                                       <span className="text-sm font-black text-indigo-700">{meceData.d1.ghost.total}</span>
++                                     </button>
++                                  </div>
++
++                                  {/* 2. Two-way */}
++                                  <div className="flex-1 bg-white border-2 border-indigo-100 rounded-xl p-2 shadow-sm flex flex-col relative">
++                                     <div className="text-center font-bold text-indigo-800 text-[11px] mb-0.5">Two-way <span className="text-gray-400">({meceData.d1.twoWay.total})</span></div>
++                                     <div className="text-[7px] text-gray-400 text-center mb-1">Khách đã tương tác nhưng chưa gửi hình</div>
++                                     <div className="flex gap-1">
++                                       <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_TWOWAY_DEAD")} className="flex-1 bg-red-50 hover:bg-red-100 rounded p-1 text-center">
++                                         <div className="text-[8px] text-red-500 font-bold uppercase">Dead</div>
++                                         <div className="text-sm font-black text-red-600">{meceData.d1.twoWay.dead}</div>
++                                       </button>
++                                       <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_TWOWAY_ACTIVE")} className="flex-1 bg-emerald-50 hover:bg-emerald-100 rounded p-1 text-center">
++                                         <div className="text-[8px] text-emerald-500 font-bold uppercase">Active</div>
++                                         <div className="text-sm font-black text-emerald-600">{meceData.d1.twoWay.active}</div>
++                                       </button>
++                                     </div>
++                                  </div>
++
++                                  {/* 3. PIC No Msg */}
++                                  <div className="flex-1 bg-white border-2 border-orange-100 rounded-xl p-2 shadow-sm flex flex-col relative justify-center items-center h-full min-h-[70px]">
++                                     <div className="text-center font-bold text-orange-800 text-[10px] leading-tight mb-0.5">PIC chưa nhắn <span className="text-gray-400">({meceData.d1.picNoMsg.total})</span></div>
++                                     <div className="text-[7px] text-gray-400 text-center mb-0.5">Có Zalo record nhưng PIC chưa gửi tin</div>
++                                     <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_PIC_NO_MSG")} className="bg-red-100 hover:bg-red-200 rounded px-3 py-1 w-full flex items-center justify-between group mt-1">
++                                       <span className="text-[9px] text-red-700 font-bold uppercase">Dead:</span>
++                                       <span className="text-sm font-black text-red-700">{meceData.d1.picNoMsg.dead}</span>
++                                     </button>
++                                  </div>
++                               </div>
++                            </div>
++                          </div>
++
++                          {/* L3: D2 Internal Side */}
++                          <div className="relative flex flex-col items-center w-56">
++                            <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-300 -translate-x-1/2 -mt-6"></div>
++                            <div className="bg-amber-50 border border-amber-200 px-4 py-1.5 rounded-full shadow-sm text-center mb-6 z-10 relative">
++                              <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">D2 · Phía Nội bộ ({meceData.d2.total})</span>
++                            </div>
++
++                            <div className="w-full flex flex-col gap-3">
++                               <div className="bg-white border-2 border-amber-100 rounded-xl p-2 shadow-sm flex flex-col">
++                                  <div className="text-center font-bold text-amber-800 text-[11px] mb-0.5">Có bid • chưa SQ <span className="text-gray-400">({meceData.d2.hasBid.total})</span></div>
++                                  <div className="text-[7px] text-gray-400 text-center mb-1">Đã có giá đấu nhưng chưa đạt SQ</div>
++                                  <button onClick={() => onMetricClick?.("FUNNEL_MECE_D2_HAS_BID")} className="bg-red-50 hover:bg-red-100 rounded px-2 py-1 flex items-center justify-between mb-1 group">
++                                     <span className="text-[9px] text-red-600 font-bold uppercase">Dead:</span>
++                                     <span className="text-sm font-black text-red-600">{meceData.d2.hasBid.dead}</span>
++                                  </button>
++                               </div>
++                               <div className="bg-white border-2 border-gray-200 rounded-xl p-2 shadow-sm flex flex-col">
++                                  <div className="text-center font-bold text-gray-700 text-[11px] mb-0.5">Không có Zalo <span className="text-gray-400">({meceData.d2.noZalo.total})</span></div>
++                                  <div className="text-[7px] text-gray-400 text-center mb-1">Không tìm thấy record trong hệ thống Zalo</div>
++                                  <button onClick={() => onMetricClick?.("FUNNEL_MECE_D2_NO_ZALO")} className="bg-red-50 hover:bg-red-100 rounded px-2 py-1 flex items-center justify-between group">
++                                     <span className="text-[9px] text-red-600 font-bold uppercase">Dead:</span>
++                                     <span className="text-sm font-black text-red-600">{meceData.d2.noZalo.dead}</span>
++                                  </button>
++                               </div>
++                            </div>
++                          </div>
++                        </div>
++                      </div>
++                    </div>
++                 </div>
++               )}
++              </div>
++            </TabsContent>
++
++            {/* VERSION 4: HAS ZALO / NO ZALO SPLIT */}
++            <TabsContent value="v4">
++              <div className="flex flex-col items-center w-full max-w-5xl relative mt-4 mx-auto pb-12">
++               {loadingMece ? (
++                 <div className="py-20 flex flex-col items-center justify-center">
++                   <div className="h-8 w-8 border-4 border-violet-500 border-t-transparent rounded-full animate-spin mb-4"></div>
++                   <p className="text-sm text-gray-400 font-medium">Đang phân tích V4 Funnel...</p>
++                 </div>
++               ) : !meceData ? (
++                 <div className="py-20">Không có dữ liệu</div>
++               ) : (
++                 <div className="relative flex flex-col items-center mb-10 w-full">
++                    {/* Level 1: Total Leads */}
++                    <button className="bg-gray-100 border border-gray-200 rounded-lg px-6 py-2 min-w-[180px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer">
++                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Tổng Lead</div>
++                      <div className="text-xl font-black text-gray-800">{meceData.total}</div>
++                    </button>
++                    <div className="tree-line-v h-8 bg-gray-200"></div>
++
++                    {/* Level 2: Has Zalo / No Zalo */}
++                    <div className="relative flex justify-center gap-24 w-full mt-2 pt-6">
++                      <div className="absolute top-0 left-1/2 w-1/2 max-w-[400px] h-[2px] bg-gray-200 -translate-x-1/2"></div>
++                      
++                      {/* A. Has Zalo (LEFT — expands into full tree) */}
++                      <div className="relative flex flex-col items-center w-[700px]">
++                        <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
++                        <button className="bg-violet-50 border border-violet-200 rounded-xl p-3 w-64 shadow-sm hover:scale-105 transition-transform text-center mb-3">
++                          <div className="text-[11px] font-bold text-violet-600 uppercase tracking-widest mb-0.5">A. Có Zalo</div>
++                          <div className="text-[8px] text-violet-500 mb-1">Lead có record trong hệ thống Zalo</div>
++                          <div className="text-2xl font-black text-violet-700">{meceData.hasZalo} <span className="text-xs font-medium opacity-70">({meceData.total > 0 ? Math.round((meceData.hasZalo/meceData.total)*100) : 0}%)</span></div>
++                        </button>
++
++                        {/* Sub-tree: SQ / Non-SQ under Has Zalo */}
++                        <div className="tree-line-v h-6 bg-violet-200"></div>
++                        <div className="relative flex justify-center gap-16 w-full mt-2 pt-6">
++                          <div className="absolute top-0 left-1/2 w-[60%] max-w-[500px] h-[2px] bg-violet-200 -translate-x-1/2"></div>
++                          
++                          {/* SQ under Has Zalo */}
++                          <div className="relative flex flex-col items-center w-56">
++                            <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-violet-200 -translate-x-1/2 -mt-6"></div>
++                            <button className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 w-full shadow-sm hover:scale-105 transition-transform text-center mb-3">
++                              <div className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest mb-0.5">Đã có hình</div>
++                              <div className="text-[8px] text-emerald-500 mb-1">SQ có Zalo</div>
++                              <div className="text-2xl font-black text-emerald-700">{meceData.hasZaloSq.total}</div>
++                            </button>
++                            <div className="flex gap-2 w-full justify-between">
++                               <button onClick={() => onMetricClick?.("FUNNEL_MECE_SQ_DEAD")} className="flex-1 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg p-2 text-center group transition">
++                                  <div className="text-[9px] font-bold text-red-500 uppercase tracking-tighter">Dead &gt;1d</div>
++                                  <div className="text-lg font-black text-red-600 group-hover:scale-110 transition">{meceData.hasZaloSq.dead}</div>
++                               </button>
++                               <button onClick={() => onMetricClick?.("FUNNEL_MECE_SQ_ACTIVE")} className="flex-1 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-lg p-2 text-center group transition">
++                                  <div className="text-[9px] font-bold text-emerald-600 uppercase tracking-tighter">Active ≤1d</div>
++                                  <div className="text-lg font-black text-emerald-700 group-hover:scale-110 transition">{meceData.hasZaloSq.active}</div>
++                               </button>
++                            </div>
++                          </div>
++
++                          {/* Non-SQ under Has Zalo */}
++                          <div className="relative flex flex-col items-center w-[500px]">
++                            <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-violet-200 -translate-x-1/2 -mt-6"></div>
++                            <button className="bg-gray-50 border border-gray-200 rounded-xl p-3 w-56 shadow-sm hover:scale-105 transition-transform text-center mb-8">
++                              <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Chưa có hình</div>
++                              <div className="text-[8px] text-gray-400 mb-1">Non-SQ có Zalo</div>
++                              <div className="text-2xl font-black text-gray-800">{meceData.hasZaloNonSq.total}</div>
++                            </button>
++                            
++                            {/* D1 + D2 under Non-SQ Has Zalo */}
++                            <div className="relative flex justify-between gap-8 w-full pt-6">
++                              <div className="absolute top-0 left-[30%] right-[30%] h-[2px] bg-gray-300"></div>
++
++                              {/* D1 Seller Side */}
++                              <div className="relative flex flex-col items-center flex-1">
++                                <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-300 -translate-x-1/2 -mt-6"></div>
++                                <div className="bg-indigo-50 border border-indigo-200 px-4 py-1.5 rounded-full shadow-sm text-center mb-6 z-10 relative">
++                                  <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">D1 · Phía Seller ({meceData.hasZaloD1.total})</span>
++                                </div>
++
++                                <div className="w-full flex flex-col gap-4">
++                                   <div className="flex gap-2 w-full">
++                                      {/* Ghost */}
++                                      <div className="flex-1 bg-white border-2 border-indigo-100 rounded-xl p-2 shadow-sm flex flex-col relative justify-center items-center h-full min-h-[70px]">
++                                         <div className="text-center font-bold text-indigo-800 text-[11px] mb-0.5">Ghost</div>
++                                         <div className="text-[7px] text-gray-400 text-center mb-0.5">Chưa có tin nhắn nào từ khách</div>
++                                         <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_GHOST")} className="bg-indigo-50 hover:bg-indigo-100 rounded px-3 py-1 w-full flex items-center justify-between group mt-1">
++                                           <span className="text-[9px] text-indigo-700 font-bold uppercase">Total:</span>
++                                           <span className="text-sm font-black text-indigo-700">{meceData.hasZaloD1.ghost.total}</span>
++                                         </button>
++                                      </div>
++
++                                      {/* Two-way */}
++                                      <div className="flex-1 bg-white border-2 border-indigo-100 rounded-xl p-2 shadow-sm flex flex-col relative">
++                                         <div className="text-center font-bold text-indigo-800 text-[11px] mb-0.5">Two-way <span className="text-gray-400">({meceData.hasZaloD1.twoWay.total})</span></div>
++                                         <div className="text-[7px] text-gray-400 text-center mb-1">Khách đã tương tác</div>
++                                         <div className="flex gap-1">
++                                           <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_TWOWAY_DEAD")} className="flex-1 bg-red-50 hover:bg-red-100 rounded p-1 text-center">
++                                             <div className="text-[8px] text-red-500 font-bold uppercase">Dead</div>
++                                             <div className="text-sm font-black text-red-600">{meceData.hasZaloD1.twoWay.dead}</div>
++                                           </button>
++                                           <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_TWOWAY_ACTIVE")} className="flex-1 bg-emerald-50 hover:bg-emerald-100 rounded p-1 text-center">
++                                             <div className="text-[8px] text-emerald-500 font-bold uppercase">Active</div>
++                                             <div className="text-sm font-black text-emerald-600">{meceData.hasZaloD1.twoWay.active}</div>
++                                           </button>
++                                         </div>
++                                      </div>
++
++                                      {/* PIC No Msg */}
++                                      <div className="flex-1 bg-white border-2 border-orange-100 rounded-xl p-2 shadow-sm flex flex-col relative justify-center items-center h-full min-h-[70px]">
++                                         <div className="text-center font-bold text-orange-800 text-[10px] leading-tight mb-0.5">PIC chưa nhắn <span className="text-gray-400">({meceData.hasZaloD1.picNoMsg.total})</span></div>
++                                         <div className="text-[7px] text-gray-400 text-center mb-0.5">Có Zalo record nhưng PIC chưa gửi tin</div>
++                                         <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_PIC_NO_MSG")} className="bg-red-100 hover:bg-red-200 rounded px-3 py-1 w-full flex items-center justify-between group mt-1">
++                                           <span className="text-[9px] text-red-700 font-bold uppercase">Dead:</span>
++                                           <span className="text-sm font-black text-red-700">{meceData.hasZaloD1.picNoMsg.dead}</span>
++                                         </button>
++                                      </div>
++                                   </div>
++                                </div>
++                              </div>
++
++                              {/* D2 Internal Side (only Has Bid, since No Zalo is in B) */}
++                              <div className="relative flex flex-col items-center w-48">
++                                <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-300 -translate-x-1/2 -mt-6"></div>
++                                <div className="bg-amber-50 border border-amber-200 px-4 py-1.5 rounded-full shadow-sm text-center mb-6 z-10 relative">
++                                  <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">D2 ({meceData.hasZaloD2.total})</span>
++                                </div>
++
++                                <div className="w-full flex flex-col gap-3">
++                                   <div className="bg-white border-2 border-amber-100 rounded-xl p-2 shadow-sm flex flex-col">
++                                      <div className="text-center font-bold text-amber-800 text-[11px] mb-0.5">Có bid • chưa SQ <span className="text-gray-400">({meceData.hasZaloD2.hasBid.total})</span></div>
++                                      <div className="text-[7px] text-gray-400 text-center mb-1">Đã có giá đấu nhưng chưa đạt SQ</div>
++                                      <button onClick={() => onMetricClick?.("FUNNEL_MECE_D2_HAS_BID")} className="bg-red-50 hover:bg-red-100 rounded px-2 py-1 flex items-center justify-between mb-1 group">
++                                         <span className="text-[9px] text-red-600 font-bold uppercase">Dead:</span>
++                                         <span className="text-sm font-black text-red-600">{meceData.hasZaloD2.hasBid.dead}</span>
++                                      </button>
++                                   </div>
++                                </div>
++                              </div>
++                            </div>
++                          </div>
++                        </div>
++                      </div>
++
++                      {/* B. No Zalo (RIGHT — simple count) */}
++                      <div className="relative flex flex-col items-center w-56">
++                        <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
++                        <div className="bg-gray-50 border-2 border-gray-200 rounded-xl p-4 w-full shadow-sm text-center">
++                          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">B. Không có Zalo</div>
++                          <div className="text-[8px] text-gray-400 mb-2">Không tìm thấy record trong hệ thống Zalo</div>
++                          <div className="text-2xl font-black text-gray-700 mb-2">{meceData.noZalo} <span className="text-xs font-medium opacity-70">({meceData.total > 0 ? Math.round((meceData.noZalo/meceData.total)*100) : 0}%)</span></div>
++                          <button onClick={() => onMetricClick?.("FUNNEL_MECE_D2_NO_ZALO")} className="bg-red-50 hover:bg-red-100 rounded px-3 py-1.5 w-full flex items-center justify-between group border border-red-200">
++                             <span className="text-[9px] text-red-600 font-bold uppercase">Dead:</span>
++                             <span className="text-sm font-black text-red-600">{meceData.noZalo}</span>
++                          </button>
++                        </div>
++                      </div>
++                    </div>
++                 </div>
++               )}
++              </div>
++            </TabsContent>
+           </Tabs>
+         )}
+       </div>
+diff --git a/lib/db.ts b/lib/db.ts
+index 6807c7e..b4b45bf 100644
+--- a/lib/db.ts
++++ b/lib/db.ts
+@@ -7,6 +7,7 @@ const globalForDb = globalThis as unknown as {
+   tempInspectionPool: Pool | undefined;
+   e2ePool: Pool | undefined;
+   followupDataPool: Pool | undefined;
++  vucarZaloPool: Pool | undefined;
+ };
+ 
+ export function getDrmPool(): Pool {
+@@ -240,3 +241,49 @@ export async function e2eQuery(text: string, params?: any[]) {
+     throw error;
+   }
+ }
++
++export function getVucarZaloPool(): Pool {
++  if (!globalForDb.vucarZaloPool) {
++    globalForDb.vucarZaloPool = new Pool({
++      host: process.env.ZALO_DB_HOST,
++      port: parseInt(process.env.ZALO_DB_PORT || "5432"),
++      database: process.env.ZALO_DB_NAME,
++      user: process.env.ZALO_DB_USER,
++      password: process.env.ZALO_DB_PASSWORD,
++      ssl: { rejectUnauthorized: false },
++      max: 15,
++      idleTimeoutMillis: 10000,
++      connectionTimeoutMillis: 20000,
++    });
++
++    globalForDb.vucarZaloPool.on("error", (err) => {
++      console.error("Unexpected error on idle VuCar Zalo client", err);
++    });
++  }
++
++  return globalForDb.vucarZaloPool;
++}
++
++export async function vucarZaloQuery(text: string, params?: any[]) {
++  const pool = getVucarZaloPool();
++  const start = Date.now();
++  try {
++    const res = await pool.query(text, params);
++    const duration = Date.now() - start;
++
++    // Log slow queries (>500ms)
++    if (duration > 500) {
++      console.warn("Slow VuCar Zalo query detected:", {
++        duration: `${duration}ms`,
++        query: text.substring(0, 100) + (text.length > 100 ? "..." : ""),
++        rowCount: res.rowCount,
++      });
++    }
++
++    return res;
++  } catch (error) {
++    console.error("vucar-zalo query error", { text, error });
++    throw error;
++  }
++}
++

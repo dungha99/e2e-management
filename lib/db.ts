@@ -7,6 +7,7 @@ const globalForDb = globalThis as unknown as {
   tempInspectionPool: Pool | undefined;
   e2ePool: Pool | undefined;
   followupDataPool: Pool | undefined;
+  vucarZaloPool: Pool | undefined;
 };
 
 export function getDrmPool(): Pool {
@@ -240,3 +241,49 @@ export async function e2eQuery(text: string, params?: any[]) {
     throw error;
   }
 }
+
+export function getVucarZaloPool(): Pool {
+  if (!globalForDb.vucarZaloPool) {
+    globalForDb.vucarZaloPool = new Pool({
+      host: process.env.ZALO_DB_HOST,
+      port: parseInt(process.env.ZALO_DB_PORT || "5432"),
+      database: process.env.ZALO_DB_NAME,
+      user: process.env.ZALO_DB_USER,
+      password: process.env.ZALO_DB_PASSWORD,
+      ssl: { rejectUnauthorized: false },
+      max: 15,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 20000,
+    });
+
+    globalForDb.vucarZaloPool.on("error", (err) => {
+      console.error("Unexpected error on idle VuCar Zalo client", err);
+    });
+  }
+
+  return globalForDb.vucarZaloPool;
+}
+
+export async function vucarZaloQuery(text: string, params?: any[]) {
+  const pool = getVucarZaloPool();
+  const start = Date.now();
+  try {
+    const res = await pool.query(text, params);
+    const duration = Date.now() - start;
+
+    // Log slow queries (>500ms)
+    if (duration > 500) {
+      console.warn("Slow VuCar Zalo query detected:", {
+        duration: `${duration}ms`,
+        query: text.substring(0, 100) + (text.length > 100 ? "..." : ""),
+        rowCount: res.rowCount,
+      });
+    }
+
+    return res;
+  } catch (error) {
+    console.error("vucar-zalo query error", { text, error });
+    throw error;
+  }
+}
+

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { e2eQuery, vucarV2Query } from "@/lib/db"
+import { e2eQuery, vucarV2Query, vucarZaloQuery } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 
@@ -19,8 +19,9 @@ export async function GET(request: Request) {
         let baseParamIdx = 1
 
         if (picId && picId !== 'all') {
-            baseCrmConditions.push(`l.pic_id = $${baseParamIdx}`)
-            baseCrmParams.push(picId)
+            const picIds = picId.split(',').filter(Boolean)
+            baseCrmConditions.push(`l.pic_id::text = ANY($${baseParamIdx}::text[])`)
+            baseCrmParams.push(picIds)
             baseParamIdx++
         }
         if (dateFrom) {
@@ -54,8 +55,9 @@ export async function GET(request: Request) {
         let paramIdx = 1
 
         if (picId && picId !== 'all') {
-            crmConditions.push(`l.pic_id = $${paramIdx}`)
-            crmParams.push(picId)
+            const picIds = picId.split(',').filter(Boolean)
+            crmConditions.push(`l.pic_id::text = ANY($${paramIdx}::text[])`)
+            crmParams.push(picIds)
             paramIdx++
         }
 
@@ -115,6 +117,51 @@ export async function GET(request: Request) {
         const hasImageCount = parseInt(hasImageRes.rows[0]?.cnt || "0", 10)
         const hasImageWithAdditional = parseInt(hasImageRes.rows[0]?.with_additional || "0", 10)
         const hasImageWithoutAdditional = parseInt(hasImageRes.rows[0]?.without_additional || "0", 10)
+
+        // 2a extra: Đã/Chưa trả giá — check Zalo message content for price keywords
+        let hasImageQuotedPrice = 0
+        let hasImageNotQuotedPrice = hasImageCount
+        try {
+            // Get phones of all STRONG_QUALIFIED leads
+            const sqPhonesRes = await vucarV2Query(`
+                SELECT DISTINCT l.phone
+                FROM leads l
+                LEFT JOIN cars c ON c.lead_id = l.id
+                LEFT JOIN sale_status ss ON ss.car_id = c.id
+                WHERE ${crmWhere}
+                  AND ss.qualified::text = 'STRONG_QUALIFIED'
+                  AND l.phone IS NOT NULL
+            `, crmParams)
+            const sqPhones: string[] = sqPhonesRes.rows.map((r: any) => r.phone).filter(Boolean)
+
+            if (sqPhones.length > 0) {
+                // Check if sale sent any price-related message for each phone in Zalo DB
+                const priceRes = await vucarZaloQuery(`
+                    SELECT DISTINCT lr.phone
+                    FROM leads_relation lr
+                    JOIN messages m ON m.thread_id = lr.friend_id AND m.own_id = lr.account_id
+                    WHERE lr.phone = ANY($1::text[])
+                      AND m.is_self = true
+                      AND (
+                        m.content ILIKE '%triệu%'
+                        OR m.content ILIKE '%tỷ%'
+                        OR m.content ILIKE '%trả giá%'
+                        OR m.content ILIKE '%báo giá%'
+                        OR m.content ILIKE '%định giá%'
+                        OR m.content ILIKE '%giá xe%'
+                        OR m.content ILIKE '%mức giá%'
+                        OR m.content ILIKE '%giá bán%'
+                        OR m.content ILIKE '%vnđ%'
+                        OR m.content ILIKE '%vnd%'
+                        OR m.content ~ '[0-9]+[,\.][0-9]+ *(triệu|tỷ|tr|ty)'
+                      )
+                `, [sqPhones])
+                hasImageQuotedPrice = priceRes.rows.length
+                hasImageNotQuotedPrice = hasImageCount - hasImageQuotedPrice
+            }
+        } catch (zaloErr: any) {
+            console.error('[funnel-stats] price-quote check error:', zaloErr?.message)
+        }
 
         // 2b. Chưa có hình (or NULL) -> Get their phones and message stats
         const noImagePhonesRes = await vucarV2Query(`
@@ -395,6 +442,8 @@ export async function GET(request: Request) {
             hasImageCount,
             hasImageWithAdditional,
             hasImageWithoutAdditional,
+            hasImageQuotedPrice,
+            hasImageNotQuotedPrice,
             noImageCount,
             noImageHadImage,
             noImageNoHadImage,

@@ -1,0 +1,371 @@
+commit e6c52a369b428f6206fe040a5c31efb9b51bf43b
+Merge: f52165b 963e61f
+Author: Dung Ha <dung.ha@vucar.net>
+Date:   Tue Apr 14 17:31:17 2026 +0700
+
+    WIP on main: f52165b Update feature for pic have their own system prompt
+
+diff --cc components/e2e/layout/LeadFunnelBreakdown.tsx
+index f95c3c2,f95c3c2..0a99846
+--- a/components/e2e/layout/LeadFunnelBreakdown.tsx
++++ b/components/e2e/layout/LeadFunnelBreakdown.tsx
+@@@ -42,6 -42,6 +42,8 @@@ export function LeadFunnelBreakdown({ d
+    const [metrics, setMetrics] = useState({ totalFollowed: 0, totalNotFollowed: 0 })
+    const [loadingFollowUp, setLoadingFollowUp] = useState(false)
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>('desc')
+++  const [meceData, setMeceData] = useState<any>(null)
+++  const [loadingMece, setLoadingMece] = useState(false)
+    const { toast } = useToast()
+  
+    // Edit Lead Dialog State
+@@@ -79,9 -79,9 +81,28 @@@
+      }
+    }
+  
+++  const fetchMeceStats = async () => {
+++    if (!picId) return
+++    setLoadingMece(true)
+++    try {
+++      const params = new URLSearchParams({ pic_id: picId })
+++      if (dateFrom) params.set("dateFrom", dateFrom)
+++      if (dateTo) params.set("dateTo", dateTo)
+++
+++      const res = await fetch(`/api/e2e/funnel-mece-stats?${params.toString()}`)
+++      const json = await res.json()
+++      setMeceData(json.stats || null)
+++    } catch (err) {
+++      console.error("[MECE] Error:", err)
+++    } finally {
+++      setLoadingMece(false)
+++    }
+++  }
+++
+    useEffect(() => {
+      if (isExpanded) {
+        fetchFollowUpLeads()
+++      fetchMeceStats()
+      }
+    }, [picId, dateFrom, dateTo, qualified, isExpanded])
+  
+@@@ -326,6 -326,6 +347,14 @@@
+                    Version 2
+                    <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter">New</span>
+                  </TabsTrigger>
+++                <TabsTrigger value="v3" className="px-8 rounded-lg data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm transition-all text-gray-500 font-bold flex items-center gap-2">
+++                  Version 3 (MECE)
+++                  <span className="bg-indigo-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter">Pro</span>
+++                </TabsTrigger>
+++                <TabsTrigger value="v4" className="px-8 rounded-lg data-[state=active]:bg-white data-[state=active]:text-violet-600 data-[state=active]:shadow-sm transition-all text-gray-500 font-bold flex items-center gap-2">
+++                  Version 4
+++                  <span className="bg-violet-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter">V4</span>
+++                </TabsTrigger>
+                </TabsList>
+              </div>
+  
+@@@ -793,6 -793,6 +822,306 @@@
+                  </div>
+                </div>
+              </TabsContent>
+++
+++            {/* VERSION 3: MECE VIEW */}
+++            <TabsContent value="v3">
+++              <div className="flex flex-col items-center w-full max-w-5xl relative mt-4 mx-auto pb-12">
+++               {loadingMece ? (
+++                 <div className="py-20 flex flex-col items-center justify-center">
+++                   <div className="h-8 w-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+++                   <p className="text-sm text-gray-400 font-medium">Đang phân tích MECE Funnel...</p>
+++                 </div>
+++               ) : !meceData ? (
+++                 <div className="py-20">Không có dữ liệu MECE</div>
+++               ) : (
+++                 <div className="relative flex flex-col items-center mb-10 w-full">
+++                    {/* Level 1: Total Leads */}
+++                    <button className="bg-gray-100 border border-gray-200 rounded-lg px-6 py-2 min-w-[180px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer">
+++                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Tổng Lead</div>
+++                      <div className="text-[8px] text-gray-400 mb-1">Tổng số lead được phân bổ</div>
+++                      <div className="text-xl font-black text-gray-800">{meceData.total}</div>
+++                    </button>
+++                    <div className="tree-line-v h-8 bg-gray-200"></div>
+++
+++                    {/* Level 2 Branches: SQ and Non-SQ */}
+++                    <div className="relative flex justify-center gap-24 w-full mt-2 pt-6">
+++                      <div className="absolute top-0 left-1/2 w-1/2 max-w-[400px] h-[2px] bg-gray-200 -translate-x-1/2"></div>
+++                      
+++                      {/* L2: SQ (Left) */}
+++                      <div className="relative flex flex-col items-center w-64">
+++                        <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
+++                        <button className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 w-full shadow-sm hover:scale-105 transition-transform text-center mb-3">
+++                          <div className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest mb-0.5">Đã có hình</div>
+++                          <div className="text-[8px] text-emerald-500 mb-1">Lead đã đạt STRONG_QUALIFIED — đủ hình ảnh xe</div>
+++                          <div className="text-2xl font-black text-emerald-700">{meceData.sq.total} <span className="text-xs font-medium opacity-70">({meceData.total > 0 ? Math.round((meceData.sq.total/meceData.total)*100) : 0}%)</span></div>
+++                        </button>
+++                        <div className="flex gap-2 w-full justify-between">
+++                           <button onClick={() => onMetricClick?.("FUNNEL_MECE_SQ_DEAD")} className="flex-1 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg p-2 text-center group transition">
+++                              <div className="text-[9px] font-bold text-red-500 uppercase tracking-tighter">Dead &gt;1d</div>
+++                              <div className="text-lg font-black text-red-600 group-hover:scale-110 transition">{meceData.sq.dead}</div>
+++                           </button>
+++                           <button onClick={() => onMetricClick?.("FUNNEL_MECE_SQ_ACTIVE")} className="flex-1 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-lg p-2 text-center group transition">
+++                              <div className="text-[9px] font-bold text-emerald-600 uppercase tracking-tighter">Active ≤1d</div>
+++                              <div className="text-lg font-black text-emerald-700 group-hover:scale-110 transition">{meceData.sq.active}</div>
+++                           </button>
+++                        </div>
+++                      </div>
+++
+++                      {/* L2: Non-SQ (Right) */}
+++                      <div className="relative flex flex-col items-center w-[600px]"> 
+++                        <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
+++                        <button className="bg-gray-50 border border-gray-200 rounded-xl p-3 w-64 shadow-sm hover:scale-105 transition-transform text-center mb-8">
+++                          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Chưa có hình</div>
+++                          <div className="text-[8px] text-gray-400 mb-1">Chưa đạt SQ — cần theo dõi thêm</div>
+++                          <div className="text-2xl font-black text-gray-800">{meceData.nonSq.total} <span className="text-xs font-medium opacity-70">({meceData.total > 0 ? Math.round((meceData.nonSq.total/meceData.total)*100) : 0}%)</span></div>
+++                        </button>
+++                        
+++                        {/* Branches of Non-SQ: D1 and D2 */}
+++                        <div className="relative flex justify-between gap-12 w-full pt-6">
+++                          <div className="absolute top-0 left-[30%] right-[30%] h-[2px] bg-gray-300"></div>
+++
+++                          {/* L3: D1 Seller Side */}
+++                          <div className="relative flex flex-col items-center flex-1">
+++                            <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-300 -translate-x-1/2 -mt-6"></div>
+++                            <div className="bg-indigo-50 border border-indigo-200 px-4 py-1.5 rounded-full shadow-sm text-center mb-6 z-10 relative">
+++                              <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">D1 · Phía Seller ({meceData.d1.total})</span>
+++                            </div>
+++
+++                            <div className="w-full flex flex-col gap-4">
+++                               {/* D1 Buckets list */}
+++                               <div className="flex gap-2 w-full">
+++                                  {/* 1. Ghost */}
+++                                  <div className="flex-1 bg-white border-2 border-indigo-100 rounded-xl p-2 shadow-sm flex flex-col relative justify-center items-center h-full min-h-[70px]">
+++                                     <div className="text-center font-bold text-indigo-800 text-[11px] mb-0.5">Ghost</div>
+++                                     <div className="text-[7px] text-gray-400 text-center mb-0.5">Chưa có tin nhắn nào từ khách</div>
+++                                     <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_GHOST")} className="bg-indigo-50 hover:bg-indigo-100 rounded px-3 py-1 w-full flex items-center justify-between group mt-1">
+++                                       <span className="text-[9px] text-indigo-700 font-bold uppercase">Total:</span>
+++                                       <span className="text-sm font-black text-indigo-700">{meceData.d1.ghost.total}</span>
+++                                     </button>
+++                                  </div>
+++
+++                                  {/* 2. Two-way */}
+++                                  <div className="flex-1 bg-white border-2 border-indigo-100 rounded-xl p-2 shadow-sm flex flex-col relative">
+++                                     <div className="text-center font-bold text-indigo-800 text-[11px] mb-0.5">Two-way <span className="text-gray-400">({meceData.d1.twoWay.total})</span></div>
+++                                     <div className="text-[7px] text-gray-400 text-center mb-1">Khách đã tương tác nhưng chưa gửi hình</div>
+++                                     <div className="flex gap-1">
+++                                       <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_TWOWAY_DEAD")} className="flex-1 bg-red-50 hover:bg-red-100 rounded p-1 text-center">
+++                                         <div className="text-[8px] text-red-500 font-bold uppercase">Dead</div>
+++                                         <div className="text-sm font-black text-red-600">{meceData.d1.twoWay.dead}</div>
+++                                       </button>
+++                                       <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_TWOWAY_ACTIVE")} className="flex-1 bg-emerald-50 hover:bg-emerald-100 rounded p-1 text-center">
+++                                         <div className="text-[8px] text-emerald-500 font-bold uppercase">Active</div>
+++                                         <div className="text-sm font-black text-emerald-600">{meceData.d1.twoWay.active}</div>
+++                                       </button>
+++                                     </div>
+++                                  </div>
+++
+++                                  {/* 3. PIC No Msg */}
+++                                  <div className="flex-1 bg-white border-2 border-orange-100 rounded-xl p-2 shadow-sm flex flex-col relative justify-center items-center h-full min-h-[70px]">
+++                                     <div className="text-center font-bold text-orange-800 text-[10px] leading-tight mb-0.5">PIC chưa nhắn <span className="text-gray-400">({meceData.d1.picNoMsg.total})</span></div>
+++                                     <div className="text-[7px] text-gray-400 text-center mb-0.5">Có Zalo record nhưng PIC chưa gửi tin</div>
+++                                     <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_PIC_NO_MSG")} className="bg-red-100 hover:bg-red-200 rounded px-3 py-1 w-full flex items-center justify-between group mt-1">
+++                                       <span className="text-[9px] text-red-700 font-bold uppercase">Dead:</span>
+++                                       <span className="text-sm font-black text-red-700">{meceData.d1.picNoMsg.dead}</span>
+++                                     </button>
+++                                  </div>
+++                               </div>
+++                            </div>
+++                          </div>
+++
+++                          {/* L3: D2 Internal Side */}
+++                          <div className="relative flex flex-col items-center w-56">
+++                            <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-300 -translate-x-1/2 -mt-6"></div>
+++                            <div className="bg-amber-50 border border-amber-200 px-4 py-1.5 rounded-full shadow-sm text-center mb-6 z-10 relative">
+++                              <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">D2 · Phía Nội bộ ({meceData.d2.total})</span>
+++                            </div>
+++
+++                            <div className="w-full flex flex-col gap-3">
+++                               <div className="bg-white border-2 border-amber-100 rounded-xl p-2 shadow-sm flex flex-col">
+++                                  <div className="text-center font-bold text-amber-800 text-[11px] mb-0.5">Có bid • chưa SQ <span className="text-gray-400">({meceData.d2.hasBid.total})</span></div>
+++                                  <div className="text-[7px] text-gray-400 text-center mb-1">Đã có giá đấu nhưng chưa đạt SQ</div>
+++                                  <button onClick={() => onMetricClick?.("FUNNEL_MECE_D2_HAS_BID")} className="bg-red-50 hover:bg-red-100 rounded px-2 py-1 flex items-center justify-between mb-1 group">
+++                                     <span className="text-[9px] text-red-600 font-bold uppercase">Dead:</span>
+++                                     <span className="text-sm font-black text-red-600">{meceData.d2.hasBid.dead}</span>
+++                                  </button>
+++                               </div>
+++                               <div className="bg-white border-2 border-gray-200 rounded-xl p-2 shadow-sm flex flex-col">
+++                                  <div className="text-center font-bold text-gray-700 text-[11px] mb-0.5">Không có Zalo <span className="text-gray-400">({meceData.d2.noZalo.total})</span></div>
+++                                  <div className="text-[7px] text-gray-400 text-center mb-1">Không tìm thấy record trong hệ thống Zalo</div>
+++                                  <button onClick={() => onMetricClick?.("FUNNEL_MECE_D2_NO_ZALO")} className="bg-red-50 hover:bg-red-100 rounded px-2 py-1 flex items-center justify-between group">
+++                                     <span className="text-[9px] text-red-600 font-bold uppercase">Dead:</span>
+++                                     <span className="text-sm font-black text-red-600">{meceData.d2.noZalo.dead}</span>
+++                                  </button>
+++                               </div>
+++                            </div>
+++                          </div>
+++                        </div>
+++                      </div>
+++                    </div>
+++                 </div>
+++               )}
+++              </div>
+++            </TabsContent>
+++
+++            {/* VERSION 4: HAS ZALO / NO ZALO SPLIT */}
+++            <TabsContent value="v4">
+++              <div className="flex flex-col items-center w-full max-w-5xl relative mt-4 mx-auto pb-12">
+++               {loadingMece ? (
+++                 <div className="py-20 flex flex-col items-center justify-center">
+++                   <div className="h-8 w-8 border-4 border-violet-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+++                   <p className="text-sm text-gray-400 font-medium">Đang phân tích V4 Funnel...</p>
+++                 </div>
+++               ) : !meceData ? (
+++                 <div className="py-20">Không có dữ liệu</div>
+++               ) : (
+++                 <div className="relative flex flex-col items-center mb-10 w-full">
+++                    {/* Level 1: Total Leads */}
+++                    <button className="bg-gray-100 border border-gray-200 rounded-lg px-6 py-2 min-w-[180px] text-center shadow-sm relative z-10 hover:scale-105 transition-transform cursor-pointer">
+++                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Tổng Lead</div>
+++                      <div className="text-xl font-black text-gray-800">{meceData.total}</div>
+++                    </button>
+++                    <div className="tree-line-v h-8 bg-gray-200"></div>
+++
+++                    {/* Level 2: Has Zalo / No Zalo */}
+++                    <div className="relative flex justify-center gap-24 w-full mt-2 pt-6">
+++                      <div className="absolute top-0 left-1/2 w-1/2 max-w-[400px] h-[2px] bg-gray-200 -translate-x-1/2"></div>
+++                      
+++                      {/* A. Has Zalo (LEFT — expands into full tree) */}
+++                      <div className="relative flex flex-col items-center w-[700px]">
+++                        <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
+++                        <button className="bg-violet-50 border border-violet-200 rounded-xl p-3 w-64 shadow-sm hover:scale-105 transition-transform text-center mb-3">
+++                          <div className="text-[11px] font-bold text-violet-600 uppercase tracking-widest mb-0.5">A. Có Zalo</div>
+++                          <div className="text-[8px] text-violet-500 mb-1">Lead có record trong hệ thống Zalo</div>
+++                          <div className="text-2xl font-black text-violet-700">{meceData.hasZalo} <span className="text-xs font-medium opacity-70">({meceData.total > 0 ? Math.round((meceData.hasZalo/meceData.total)*100) : 0}%)</span></div>
+++                        </button>
+++
+++                        {/* Sub-tree: SQ / Non-SQ under Has Zalo */}
+++                        <div className="tree-line-v h-6 bg-violet-200"></div>
+++                        <div className="relative flex justify-center gap-16 w-full mt-2 pt-6">
+++                          <div className="absolute top-0 left-1/2 w-[60%] max-w-[500px] h-[2px] bg-violet-200 -translate-x-1/2"></div>
+++                          
+++                          {/* SQ under Has Zalo */}
+++                          <div className="relative flex flex-col items-center w-56">
+++                            <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-violet-200 -translate-x-1/2 -mt-6"></div>
+++                            <button className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 w-full shadow-sm hover:scale-105 transition-transform text-center mb-3">
+++                              <div className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest mb-0.5">Đã có hình</div>
+++                              <div className="text-[8px] text-emerald-500 mb-1">SQ có Zalo</div>
+++                              <div className="text-2xl font-black text-emerald-700">{meceData.hasZaloSq.total}</div>
+++                            </button>
+++                            <div className="flex gap-2 w-full justify-between">
+++                               <button onClick={() => onMetricClick?.("FUNNEL_MECE_SQ_DEAD")} className="flex-1 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg p-2 text-center group transition">
+++                                  <div className="text-[9px] font-bold text-red-500 uppercase tracking-tighter">Dead &gt;1d</div>
+++                                  <div className="text-lg font-black text-red-600 group-hover:scale-110 transition">{meceData.hasZaloSq.dead}</div>
+++                               </button>
+++                               <button onClick={() => onMetricClick?.("FUNNEL_MECE_SQ_ACTIVE")} className="flex-1 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-lg p-2 text-center group transition">
+++                                  <div className="text-[9px] font-bold text-emerald-600 uppercase tracking-tighter">Active ≤1d</div>
+++                                  <div className="text-lg font-black text-emerald-700 group-hover:scale-110 transition">{meceData.hasZaloSq.active}</div>
+++                               </button>
+++                            </div>
+++                          </div>
+++
+++                          {/* Non-SQ under Has Zalo */}
+++                          <div className="relative flex flex-col items-center w-[500px]">
+++                            <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-violet-200 -translate-x-1/2 -mt-6"></div>
+++                            <button className="bg-gray-50 border border-gray-200 rounded-xl p-3 w-56 shadow-sm hover:scale-105 transition-transform text-center mb-8">
+++                              <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Chưa có hình</div>
+++                              <div className="text-[8px] text-gray-400 mb-1">Non-SQ có Zalo</div>
+++                              <div className="text-2xl font-black text-gray-800">{meceData.hasZaloNonSq.total}</div>
+++                            </button>
+++                            
+++                            {/* D1 + D2 under Non-SQ Has Zalo */}
+++                            <div className="relative flex justify-between gap-8 w-full pt-6">
+++                              <div className="absolute top-0 left-[30%] right-[30%] h-[2px] bg-gray-300"></div>
+++
+++                              {/* D1 Seller Side */}
+++                              <div className="relative flex flex-col items-center flex-1">
+++                                <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-300 -translate-x-1/2 -mt-6"></div>
+++                                <div className="bg-indigo-50 border border-indigo-200 px-4 py-1.5 rounded-full shadow-sm text-center mb-6 z-10 relative">
+++                                  <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">D1 · Phía Seller ({meceData.hasZaloD1.total})</span>
+++                                </div>
+++
+++                                <div className="w-full flex flex-col gap-4">
+++                                   <div className="flex gap-2 w-full">
+++                                      {/* Ghost */}
+++                                      <div className="flex-1 bg-white border-2 border-indigo-100 rounded-xl p-2 shadow-sm flex flex-col relative justify-center items-center h-full min-h-[70px]">
+++                                         <div className="text-center font-bold text-indigo-800 text-[11px] mb-0.5">Ghost</div>
+++                                         <div className="text-[7px] text-gray-400 text-center mb-0.5">Chưa có tin nhắn nào từ khách</div>
+++                                         <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_GHOST")} className="bg-indigo-50 hover:bg-indigo-100 rounded px-3 py-1 w-full flex items-center justify-between group mt-1">
+++                                           <span className="text-[9px] text-indigo-700 font-bold uppercase">Total:</span>
+++                                           <span className="text-sm font-black text-indigo-700">{meceData.hasZaloD1.ghost.total}</span>
+++                                         </button>
+++                                      </div>
+++
+++                                      {/* Two-way */}
+++                                      <div className="flex-1 bg-white border-2 border-indigo-100 rounded-xl p-2 shadow-sm flex flex-col relative">
+++                                         <div className="text-center font-bold text-indigo-800 text-[11px] mb-0.5">Two-way <span className="text-gray-400">({meceData.hasZaloD1.twoWay.total})</span></div>
+++                                         <div className="text-[7px] text-gray-400 text-center mb-1">Khách đã tương tác</div>
+++                                         <div className="flex gap-1">
+++                                           <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_TWOWAY_DEAD")} className="flex-1 bg-red-50 hover:bg-red-100 rounded p-1 text-center">
+++                                             <div className="text-[8px] text-red-500 font-bold uppercase">Dead</div>
+++                                             <div className="text-sm font-black text-red-600">{meceData.hasZaloD1.twoWay.dead}</div>
+++                                           </button>
+++                                           <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_TWOWAY_ACTIVE")} className="flex-1 bg-emerald-50 hover:bg-emerald-100 rounded p-1 text-center">
+++                                             <div className="text-[8px] text-emerald-500 font-bold uppercase">Active</div>
+++                                             <div className="text-sm font-black text-emerald-600">{meceData.hasZaloD1.twoWay.active}</div>
+++                                           </button>
+++                                         </div>
+++                                      </div>
+++
+++                                      {/* PIC No Msg */}
+++                                      <div className="flex-1 bg-white border-2 border-orange-100 rounded-xl p-2 shadow-sm flex flex-col relative justify-center items-center h-full min-h-[70px]">
+++                                         <div className="text-center font-bold text-orange-800 text-[10px] leading-tight mb-0.5">PIC chưa nhắn <span className="text-gray-400">({meceData.hasZaloD1.picNoMsg.total})</span></div>
+++                                         <div className="text-[7px] text-gray-400 text-center mb-0.5">Có Zalo record nhưng PIC chưa gửi tin</div>
+++                                         <button onClick={() => onMetricClick?.("FUNNEL_MECE_D1_PIC_NO_MSG")} className="bg-red-100 hover:bg-red-200 rounded px-3 py-1 w-full flex items-center justify-between group mt-1">
+++                                           <span className="text-[9px] text-red-700 font-bold uppercase">Dead:</span>
+++                                           <span className="text-sm font-black text-red-700">{meceData.hasZaloD1.picNoMsg.dead}</span>
+++                                         </button>
+++                                      </div>
+++                                   </div>
+++                                </div>
+++                              </div>
+++
+++                              {/* D2 Internal Side (only Has Bid, since No Zalo is in B) */}
+++                              <div className="relative flex flex-col items-center w-48">
+++                                <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-300 -translate-x-1/2 -mt-6"></div>
+++                                <div className="bg-amber-50 border border-amber-200 px-4 py-1.5 rounded-full shadow-sm text-center mb-6 z-10 relative">
+++                                  <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">D2 ({meceData.hasZaloD2.total})</span>
+++                                </div>
+++
+++                                <div className="w-full flex flex-col gap-3">
+++                                   <div className="bg-white border-2 border-amber-100 rounded-xl p-2 shadow-sm flex flex-col">
+++                                      <div className="text-center font-bold text-amber-800 text-[11px] mb-0.5">Có bid • chưa SQ <span className="text-gray-400">({meceData.hasZaloD2.hasBid.total})</span></div>
+++                                      <div className="text-[7px] text-gray-400 text-center mb-1">Đã có giá đấu nhưng chưa đạt SQ</div>
+++                                      <button onClick={() => onMetricClick?.("FUNNEL_MECE_D2_HAS_BID")} className="bg-red-50 hover:bg-red-100 rounded px-2 py-1 flex items-center justify-between mb-1 group">
+++                                         <span className="text-[9px] text-red-600 font-bold uppercase">Dead:</span>
+++                                         <span className="text-sm font-black text-red-600">{meceData.hasZaloD2.hasBid.dead}</span>
+++                                      </button>
+++                                   </div>
+++                                </div>
+++                              </div>
+++                            </div>
+++                          </div>
+++                        </div>
+++                      </div>
+++
+++                      {/* B. No Zalo (RIGHT — simple count) */}
+++                      <div className="relative flex flex-col items-center w-56">
+++                        <div className="absolute top-0 left-1/2 w-[2px] h-6 bg-gray-200 -translate-x-1/2 -mt-6"></div>
+++                        <div className="bg-gray-50 border-2 border-gray-200 rounded-xl p-4 w-full shadow-sm text-center">
+++                          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">B. Không có Zalo</div>
+++                          <div className="text-[8px] text-gray-400 mb-2">Không tìm thấy record trong hệ thống Zalo</div>
+++                          <div className="text-2xl font-black text-gray-700 mb-2">{meceData.noZalo} <span className="text-xs font-medium opacity-70">({meceData.total > 0 ? Math.round((meceData.noZalo/meceData.total)*100) : 0}%)</span></div>
+++                          <button onClick={() => onMetricClick?.("FUNNEL_MECE_D2_NO_ZALO")} className="bg-red-50 hover:bg-red-100 rounded px-3 py-1.5 w-full flex items-center justify-between group border border-red-200">
+++                             <span className="text-[9px] text-red-600 font-bold uppercase">Dead:</span>
+++                             <span className="text-sm font-black text-red-600">{meceData.noZalo}</span>
+++                          </button>
+++                        </div>
+++                      </div>
+++                    </div>
+++                 </div>
+++               )}
+++              </div>
+++            </TabsContent>
+            </Tabs>
+          )}
+        </div>

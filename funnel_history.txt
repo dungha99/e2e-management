@@ -1,0 +1,47 @@
+commit 34acb84af4d81777c1c86fd5f6c325018a4c7bdd
+Author: Dung Ha <dung.ha@vucar.net>
+Date:   Thu Apr 2 18:05:53 2026 +0700
+
+    feat(ai-funnel): implement Bot At-Risk Monitor (card, drilldown, visualization, filters)
+
+ components/e2e/layout/LeadFunnelBreakdown.tsx | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+commit f2253b14579ae89e49babe6c09ad469628f725c5
+Author: Dung Ha <dung.ha@vucar.net>
+Date:   Fri Mar 27 12:43:22 2026 +0700
+
+    fix: align KPI detail data with funnel stats and add 2A sub-metrics
+
+ components/e2e/layout/LeadFunnelBreakdown.tsx | 1502 +++++++++++++------------
+ 1 file changed, 781 insertions(+), 721 deletions(-)
+
+commit e61945d5694973881303750733ff2454fa658cb4
+Merge: 262e309 7337d28
+Author: Dung Ha <dung.ha@vucar.net>
+Date:   Thu Mar 26 15:35:39 2026 +0700
+
+    chore: remove KPI ribbon and update funnel/leads components
+
+commit 793f7323a643d46a8b6dca4ee1ca0ba2e0451464
+Author: Dung Ha <dung.ha@vucar.net>
+Date:   Thu Mar 26 15:15:31 2026 +0700
+
+    feat: integrate EditLeadDialog and synchronize funnel metrics
+
+ components/e2e/layout/LeadFunnelBreakdown.tsx | 1026 +++++++++++++++++++++++++
+ 1 file changed, 1026 insertions(+)
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	app/api/e2e/funnel-mece-stats/
+	check_connectors.js
+	funnel_history.txt
+	git_info.txt
+	git_status.txt
+
+nothing added to commit but untracked files present (use "git add" to track)
+stash@{0}: WIP on main: f52165b Update feature for pic have their own system prompt
+stash@{1}: WIP on feature/e2e-monitor-screen: 929c4aa demo

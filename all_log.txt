@@ -1,0 +1,30 @@
+e6c52a3 WIP on main: f52165b Update feature for pic have their own system prompt
+963e61f index on main: f52165b Update feature for pic have their own system prompt
+90413d3 feat: add Auto 1st Success stage to AI Funnel Dashboard
+0fd6c0d Update get full AI output for session chat
+386bb8f sliding windows for process instances
+887a769 Update logic for checkbox auto trigger
+8b8e3b5 Merge pull request #58 from dungha99/feat/e2e_monitoring
+e4a2f2c feat: implement follow-up v2 API endpoint and update FollowUpAction component
+2cfb66b feat: update AI thinking chat with structured input modal
+3ca1458 Update logic chooser custom connection to send
+2468b3d Merge commit '2f0caed5d963c956717a75e266fa98e9c2b021d2' into feat/e2e_monitoring
+2f0caed Merge branch 'main' of https://github.com/dungha99/e2e-management
+8bfa6f9 Update content send to user from task dispatcher
+0d2977c feat: add stage logic tooltips and bar click drilldown to AI funnel dashboard
+dd0dc9f revert: remove Zalo Success metric and related logic
+e031fcf feat: add zaloSuccess metric to AI funnel and fix phone number mapping
+b2ceec4 Update Rag query
+f419237 Merge pull request #57 from dungha99/feat/e2e_monitoring
+d78fc5c Refactor rename lead functionality and add new Zalo API integration
+e3dfd41 Merge branch 'main' of https://github.com/dungha99/e2e-management
+14e06d1 feat: resolve merge conflicts and implement User Context (Feedback) dashboard
+9697f4f Update cron logic and send image to custom group
+6f11148 update time of Zalo Get Message API
+cb9148a Add flag to prevent spam worker
+c05e5ef Update logic round-robin
+582a61b add action create_auction
+59a32bb set default true for setAutoActive
+12a5445 Merge pull request #56 from dungha99/feat/e2e_monitoring
+0095f3b Add bidding functionality and Zalo messaging integration
+6d1162c Merge commit 'a8cfc4e7e19ede0f59a0335e729c27e3dd8e8006' into feat/e2e_monitoring

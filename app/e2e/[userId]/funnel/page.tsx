@@ -88,23 +88,28 @@ function QualificationSelector({
   )
 }
 
-// Account selector component (copied from main page for consistency)
+// Account selector component — multi-select with checkboxes
 function MobileAccountSelector({
-  selectedAccount,
+  selectedAccounts,
   onAccountChange,
 }: {
-  selectedAccount: string
-  onAccountChange: (value: string) => void
+  selectedAccounts: string[]
+  onAccountChange: (value: string[]) => void
 }) {
   const { accounts } = useAccounts()
   const [open, setOpen] = useState(false)
-  const selectedName = selectedAccount === 'all' ? "Tất cả PIC (ALL)" : (accounts.find((a) => a.uid === selectedAccount)?.name ?? "Tài khoản")
+  const isAll = selectedAccounts.length === 0 || (selectedAccounts.length === 1 && selectedAccounts[0] === 'all')
+  const label = isAll
+    ? "Tất cả PIC (ALL)"
+    : selectedAccounts.length === 1
+      ? (accounts.find((a) => a.uid === selectedAccounts[0])?.name ?? "1 PIC")
+      : `${selectedAccounts.length} PICs`
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button className="flex items-center justify-between gap-1 w-32 h-9 px-2.5 text-xs bg-background border border-input rounded-md hover:bg-accent transition-colors truncate">
-          <span className="truncate">{selectedName}</span>
+          <span className="truncate">{label}</span>
           <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
         </button>
       </PopoverTrigger>
@@ -118,28 +123,46 @@ function MobileAccountSelector({
                 key="all"
                 value="Tất cả PIC (ALL)"
                 onSelect={() => {
-                  onAccountChange('all')
-                  setOpen(false)
+                  onAccountChange(['all'])
                 }}
                 className="flex items-center gap-2 text-sm"
               >
-                <Check className={cn("w-3.5 h-3.5 shrink-0", selectedAccount === 'all' ? "opacity-100" : "opacity-0")} />
+                <div className={cn(
+                  "flex h-4 w-4 items-center justify-center rounded-sm border border-primary transition-all",
+                  isAll ? "bg-primary text-primary-foreground" : "opacity-50"
+                )}>
+                  {isAll && <Check className="h-3 w-3" />}
+                </div>
                 Tất cả PIC (ALL)
               </CommandItem>
-              {accounts.map((account) => (
-                <CommandItem
-                  key={account.uid}
-                  value={account.name}
-                  onSelect={() => {
-                    onAccountChange(account.uid)
-                    setOpen(false)
-                  }}
-                  className="flex items-center gap-2 text-sm"
-                >
-                  <Check className={cn("w-3.5 h-3.5 shrink-0", selectedAccount === account.uid ? "opacity-100" : "opacity-0")} />
-                  {account.name}
-                </CommandItem>
-              ))}
+              {accounts.map((account) => {
+                const isSelected = selectedAccounts.includes(account.uid)
+                return (
+                  <CommandItem
+                    key={account.uid}
+                    value={account.name}
+                    onSelect={() => {
+                      let next: string[]
+                      if (isSelected) {
+                        next = selectedAccounts.filter(v => v !== account.uid)
+                        if (next.length === 0) next = ['all']
+                      } else {
+                        next = [...selectedAccounts.filter(v => v !== 'all'), account.uid]
+                      }
+                      onAccountChange(next)
+                    }}
+                    className="flex items-center gap-2 text-sm"
+                  >
+                    <div className={cn(
+                      "flex h-4 w-4 items-center justify-center rounded-sm border border-primary transition-all",
+                      isSelected ? "bg-primary text-primary-foreground" : "opacity-50"
+                    )}>
+                      {isSelected && <Check className="h-3 w-3" />}
+                    </div>
+                    {account.name}
+                  </CommandItem>
+                )
+              })}
             </CommandGroup>
           </CommandList>
         </Command>
@@ -181,11 +204,14 @@ function FunnelPageContent({ userId }: { userId: string }) {
   const [kpiDetailOpen, setKpiDetailOpen] = useState(false)
   const [kpiDetailMetric, setKpiDetailMetric] = useState<string | null>(null)
 
+  // Multi-select PIC state
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([userId])
+
   useEffect(() => {
     if (!userId) return
 
     setLoading(true)
-    const params = new URLSearchParams({ pic_id: userId })
+    const params = new URLSearchParams({ pic_id: selectedAccounts.join(',') })
     
     // Use params from state if available, otherwise from URL
     const from = dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : dateFromParam
@@ -207,15 +233,14 @@ function FunnelPageContent({ userId }: { userId: string }) {
       })
       .catch((err) => console.error("[FunnelPage] Error:", err))
       .finally(() => setLoading(false))
-  }, [userId, dateRange, dateFromParam, dateToParam, selectedQualified])
+  }, [userId, selectedAccounts, dateRange, dateFromParam, dateToParam, selectedQualified])
 
   const handleBack = () => {
     router.back()
   }
 
-  const handleAccountChange = (newUserId: string) => {
-    const params = new URLSearchParams(searchParams.toString())
-    router.push(`/e2e/${newUserId}/funnel?${params.toString()}`)
+  const handleAccountChange = (newAccounts: string[]) => {
+    setSelectedAccounts(newAccounts)
   }
 
   const handleDateRangeChange = (newRange: DateRange | undefined) => {
@@ -258,7 +283,7 @@ function FunnelPageContent({ userId }: { userId: string }) {
         selectedAccount={userId}
         accountSelector={
           <MobileAccountSelector
-            selectedAccount={userId}
+            selectedAccounts={selectedAccounts}
             onAccountChange={handleAccountChange}
           />
         }
@@ -294,7 +319,7 @@ function FunnelPageContent({ userId }: { userId: string }) {
             data={funnelData} 
             loading={loading} 
             onMetricClick={handleMetricClick}
-            picId={userId}
+            picId={selectedAccounts.join(',')}
             dateFrom={dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : dateFromParam}
             dateTo={dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : dateToParam}
             qualified={selectedQualified.join(',')}
@@ -305,7 +330,7 @@ function FunnelPageContent({ userId }: { userId: string }) {
           open={kpiDetailOpen}
           onClose={() => setKpiDetailOpen(false)}
           metric={kpiDetailMetric}
-          picId={userId}
+          picId={selectedAccounts.join(',')}
           dateFrom={dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : dateFromParam}
           dateTo={dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : dateToParam}
           qualified={selectedQualified.join(',')}

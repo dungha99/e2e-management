@@ -185,11 +185,17 @@ async function processInstance(instance: any): Promise<ProcessingResult> {
         console.warn(`[Process AI Workflows] Re-claiming stale step "${execution.step_name}" — was stuck in 'running' >5 min`)
       }
 
-      // --- 2b-ii. Customer engagement check (only for scheduled steps) ---
+      // --- 2b-ii. Customer engagement check (only for scheduled steps, not the first step) ---
       // If the step had a scheduled_at, the customer had time to respond.
       // If they haven't replied in 2 days, skip and trigger re-analysis.
       // Runs after the atomic claim so only one cron run can trigger re-analysis per step.
-      if (execution.scheduled_at && customerPhone && picId) {
+      //
+      // IMPORTANT: Skip this check on step_order === 1 (the very first step of the workflow).
+      // A newly re-triggered workflow schedules its first "Gửi Script" with a future scheduled_at,
+      // but we haven't sent any message yet — checking for a response at this point would always
+      // return false and cause an infinite re-analysis loop (terminate → new plan → first step
+      // scheduled → no response → terminate again, forever).
+      if (execution.scheduled_at && execution.step_order > 1 && customerPhone && picId) {
         console.log(`[Process AI Workflows] Checking customer response for "${execution.step_name}" (phone: ${customerPhone})...`)
         let responded = false
         try {

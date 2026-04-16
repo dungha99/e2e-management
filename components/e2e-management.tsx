@@ -215,6 +215,7 @@ export function E2EManagement({
   // Date range from URL params (format: YYYY-MM-DD)
   const dateFromParam = searchParams.get("dateFrom") || null
   const dateToParam = searchParams.get("dateTo") || null
+  const funnelTagsFilter = searchParams.get("funnelTags")?.split(",").filter(Boolean) || []
 
   // Convert URL date params to DateRange for the UI component
   const dateRangeFilter: DateRange | undefined = dateFromParam
@@ -245,6 +246,7 @@ export function E2EManagement({
     uid: selectedAccount,
     search,
     sources,
+    funnelTags: funnelTagsFilter,
     dateFrom: dateFromParam,
     dateTo: dateToParam,
     refreshKey
@@ -263,6 +265,7 @@ export function E2EManagement({
     per_page: ITEMS_PER_PAGE,
     search,
     sources,
+    funnelTags: funnelTagsFilter,
     dateFrom: dateFromParam,
     dateTo: dateToParam,
     refreshKey,
@@ -1764,6 +1767,19 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
     router.push(buildUrl(params), { scroll: false })
   }
 
+  const handleFunnelTagsChange = (newTags: string[]) => {
+    const params = new URLSearchParams(searchParams.toString())
+
+    if (newTags.length > 0) {
+      params.set("funnelTags", newTags.join(","))
+    } else {
+      params.delete("funnelTags")
+    }
+    params.set("page", "1")
+
+    router.push(buildUrl(params), { scroll: false })
+  }
+
   const handleClearSearch = () => {
     const params = new URLSearchParams(searchParams.toString())
     params.delete("search")
@@ -2241,6 +2257,8 @@ Phí hoa hồng trả Vucar: Tổng chi hoặc <điền vào đây>`;
                   sourceFilter={sourceFilter}
                   onSourceFilterChange={handleSourceFilterChange}
                   availableSources={availableSources}
+                  funnelTagsFilter={funnelTagsFilter}
+                  onFunnelTagsChange={handleFunnelTagsChange}
                   dateRangeFilter={dateRangeFilter}
                   onDateRangeFilterChange={handleDateRangeFilterChange}
                 />

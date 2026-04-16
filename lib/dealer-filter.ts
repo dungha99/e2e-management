@@ -43,21 +43,21 @@ export async function filterDealers(params: DealerFilterParams): Promise<FilterD
   if (params.brand !== null) {
     const brandLower = params.brand.toLowerCase()
     conditions.push(
-      `(include_brand_lower @> ARRAY['*'] OR include_brand_lower @> ARRAY[$${idx}]::text[])`
+      `(include_brand_lower @> '["*"]'::jsonb OR include_brand_lower @> $${idx}::jsonb)`
     )
-    values.push(brandLower)
+    values.push(JSON.stringify([brandLower]))
     idx++
 
     conditions.push(
-      `(exclude_brand_lower IS NULL OR NOT (exclude_brand_lower @> ARRAY[$${idx}]::text[]))`
+      `(exclude_brand_lower IS NULL OR NOT (exclude_brand_lower @> $${idx}::jsonb))`
     )
-    values.push(brandLower)
+    values.push(JSON.stringify([brandLower]))
     idx++
   }
 
   if (params.city !== null) {
-    conditions.push(`buyable_cities @> ARRAY[$${idx}]::text[]`)
-    values.push(params.city)
+    conditions.push(`buyable_cities @> $${idx}::jsonb`)
+    values.push(JSON.stringify([params.city]))
     idx++
   }
 

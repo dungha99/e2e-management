@@ -6,6 +6,10 @@ import { VUCAR_SEND_BASE_URL, VUCAR_SEND_CONNECTOR_ID } from "@/lib/vucar-zalo-a
 
 export const dynamic = "force-dynamic"
 
+export async function OPTIONS() {
+  return new Response(null, { status: 204 })
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()

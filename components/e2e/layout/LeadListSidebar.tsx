@@ -46,6 +46,10 @@ interface LeadListSidebarProps {
   onSourceFilterChange: (sources: string[]) => void
   availableSources: string[]
 
+  // Funnel tag filter
+  funnelTagsFilter: string[]
+  onFunnelTagsChange: (tags: string[]) => void
+
   // Date range filter
   dateRangeFilter?: DateRange | undefined
   onDateRangeFilterChange?: (dateRange: DateRange | undefined) => void
@@ -89,6 +93,8 @@ export function LeadListSidebar({
   sourceFilter,
   onSourceFilterChange,
   availableSources,
+  funnelTagsFilter,
+  onFunnelTagsChange,
   dateRangeFilter,
   onDateRangeFilterChange,
   activeTab,
@@ -145,6 +151,15 @@ export function LeadListSidebar({
         variant: "destructive",
       })
     }
+  }
+
+  const FUNNEL_TAG_CONFIG: Record<string, { label: string; color: string }> = {
+    SQ:            { label: 'SQ',           color: 'bg-green-100 text-green-700 border-green-200' },
+    D1_two_way:    { label: 'D1 Two-way',   color: 'bg-blue-100 text-blue-700 border-blue-200' },
+    D1_ghost:      { label: 'D1 Ghost',     color: 'bg-orange-100 text-orange-700 border-orange-200' },
+    D1_pic_no_msg: { label: 'D1 No Msg',    color: 'bg-red-100 text-red-700 border-red-200' },
+    D2_has_bid:    { label: 'D2 Has Bid',   color: 'bg-purple-100 text-purple-700 border-purple-200' },
+    D2_no_zalo:    { label: 'D2 No Zalo',   color: 'bg-gray-100 text-gray-600 border-gray-200' },
   }
 
   // --- Upload & Bot Logic Start ---
@@ -250,28 +265,65 @@ export function LeadListSidebar({
               <Button
                 variant="outline"
                 size="icon"
-                className={`h-9 w-9 shrink-0 ${sourceFilter.length > 0 ? 'bg-blue-50 border-blue-300' : ''}`}
-                disabled={loading || loadingCarIds || !selectedAccount || availableSources.length === 0}
-                title="Lọc theo nguồn"
+                className={`h-9 w-9 shrink-0 ${(sourceFilter.length > 0 || funnelTagsFilter.length > 0) ? 'bg-blue-50 border-blue-300' : ''}`}
+                disabled={loading || loadingCarIds || !selectedAccount}
+                title="Lọc theo nguồn / funnel tag"
               >
-                <SlidersHorizontal className={`h-4 w-4 ${sourceFilter.length > 0 ? 'text-blue-600' : ''}`} />
+                <SlidersHorizontal className={`h-4 w-4 ${(sourceFilter.length > 0 || funnelTagsFilter.length > 0) ? 'text-blue-600' : ''}`} />
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-56 p-2" align="end">
+            <PopoverContent className="w-60 p-2" align="end">
               <div className="space-y-1">
-                <p className="text-sm font-medium text-gray-700 px-2 py-1">Nguồn Lead</p>
-                {availableSources.map((source) => {
-                  const displayName = source === "zalo" ? "Zalo" : source === "facebook" ? "Facebook" : source
-                  const isChecked = sourceFilter.includes(source)
+                {/* Source filter */}
+                {availableSources.length > 0 && (
+                  <>
+                    <p className="text-sm font-medium text-gray-700 px-2 py-1">Nguồn Lead</p>
+                    {availableSources.map((source) => {
+                      const displayName = source === "zalo" ? "Zalo" : source === "facebook" ? "Facebook" : source
+                      const isChecked = sourceFilter.includes(source)
+                      return (
+                        <div
+                          key={source}
+                          className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-100 cursor-pointer"
+                          onClick={() => {
+                            if (isChecked) {
+                              onSourceFilterChange(sourceFilter.filter(s => s !== source))
+                            } else {
+                              onSourceFilterChange([...sourceFilter, source])
+                            }
+                          }}
+                        >
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                onSourceFilterChange([...sourceFilter, source])
+                              } else {
+                                onSourceFilterChange(sourceFilter.filter(s => s !== source))
+                              }
+                            }}
+                          />
+                          <span className="text-sm">{displayName}</span>
+                        </div>
+                      )
+                    })}
+                    <div className="border-t my-1" />
+                  </>
+                )}
+
+                {/* Funnel tag filter */}
+                <p className="text-sm font-medium text-gray-700 px-2 py-1">Funnel Tag</p>
+                {Object.entries(FUNNEL_TAG_CONFIG).map(([tag, { label, color }]) => {
+                  const isChecked = funnelTagsFilter.includes(tag)
                   return (
                     <div
-                      key={source}
+                      key={tag}
                       className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-100 cursor-pointer"
                       onClick={() => {
                         if (isChecked) {
-                          onSourceFilterChange(sourceFilter.filter(s => s !== source))
+                          onFunnelTagsChange(funnelTagsFilter.filter(t => t !== tag))
                         } else {
-                          onSourceFilterChange([...sourceFilter, source])
+                          onFunnelTagsChange([...funnelTagsFilter, tag])
                         }
                       }}
                     >
@@ -279,13 +331,13 @@ export function LeadListSidebar({
                         checked={isChecked}
                         onCheckedChange={(checked) => {
                           if (checked) {
-                            onSourceFilterChange([...sourceFilter, source])
+                            onFunnelTagsChange([...funnelTagsFilter, tag])
                           } else {
-                            onSourceFilterChange(sourceFilter.filter(s => s !== source))
+                            onFunnelTagsChange(funnelTagsFilter.filter(t => t !== tag))
                           }
                         }}
                       />
-                      <span className="text-sm">{displayName}</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded border font-medium ${color}`}>{label}</span>
                     </div>
                   )
                 })}
@@ -307,12 +359,13 @@ export function LeadListSidebar({
         )}
 
         {/* Active Filter Pills */}
-        {(appliedSearch || sourceFilter.length > 0 || dateRangeFilter?.from) && (
+        {(appliedSearch || sourceFilter.length > 0 || funnelTagsFilter.length > 0 || dateRangeFilter?.from) && (
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <button
               onClick={() => {
                 if (onClearSearch) onClearSearch()
                 onSourceFilterChange([])
+                onFunnelTagsChange([])
                 if (onDateRangeFilterChange) onDateRangeFilterChange(undefined)
               }}
               className="flex items-center gap-1 text-xs text-red-600 hover:text-red-700 font-medium"
@@ -346,6 +399,23 @@ export function LeadListSidebar({
                   <button
                     onClick={() => onSourceFilterChange(sourceFilter.filter(s => s !== source))}
                     className="ml-0.5 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )
+            })}
+            {funnelTagsFilter.map((tag) => {
+              const config = FUNNEL_TAG_CONFIG[tag]
+              return (
+                <div
+                  key={tag}
+                  className={`flex items-center gap-1 border rounded-full px-2.5 py-1 text-xs ${config?.color || 'bg-gray-100 text-gray-600 border-gray-200'}`}
+                >
+                  <span className="font-medium">{config?.label || tag}</span>
+                  <button
+                    onClick={() => onFunnelTagsChange(funnelTagsFilter.filter(t => t !== tag))}
+                    className="ml-0.5 opacity-60 hover:opacity-100"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -476,6 +546,14 @@ export function LeadListSidebar({
                       {lead.source && (
                         <Badge variant="outline" className="text-xs shrink-0">
                           {lead.source === "zalo" ? "Zalo" : lead.source === "facebook" ? "Facebook" : lead.source}
+                        </Badge>
+                      )}
+                      {lead.funnel_tag && FUNNEL_TAG_CONFIG[lead.funnel_tag] && (
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] px-1.5 py-0.5 shrink-0 ${FUNNEL_TAG_CONFIG[lead.funnel_tag].color}`}
+                        >
+                          {FUNNEL_TAG_CONFIG[lead.funnel_tag].label}
                         </Badge>
                       )}
                       <Button

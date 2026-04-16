@@ -14,6 +14,7 @@ interface LeadsParams {
   per_page: number
   search?: string
   sources?: string[]
+  funnelTags?: string[]
   refreshKey?: number
   dateFrom?: string | null
   dateTo?: string | null
@@ -27,20 +28,21 @@ interface LeadsCountParams {
   uid: string
   search?: string
   sources?: string[]
+  funnelTags?: string[]
   refreshKey?: number
   dateFrom?: string | null
   dateTo?: string | null
 }
 
 // Hook for fetching lead counts
-export function useLeadsCounts({ uid, search = "", sources = [], refreshKey = 0, dateFrom = null, dateTo = null }: LeadsCountParams) {
+export function useLeadsCounts({ uid, search = "", sources = [], funnelTags = [], refreshKey = 0, dateFrom = null, dateTo = null }: LeadsCountParams) {
   return useQuery<LeadsCounts>({
-    queryKey: ["leads-counts", uid, search, sources, dateFrom, dateTo, refreshKey],
+    queryKey: ["leads-counts", uid, search, sources, funnelTags, dateFrom, dateTo, refreshKey],
     queryFn: async () => {
       const response = await fetch("/api/e2e/leads/count", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uid, search, sources, dateFrom, dateTo, refreshKey }),
+        body: JSON.stringify({ uid, search, sources, funnelTags, dateFrom, dateTo, refreshKey }),
       })
 
       if (!response.ok) {
@@ -54,14 +56,14 @@ export function useLeadsCounts({ uid, search = "", sources = [], refreshKey = 0,
 }
 
 // Hook for fetching paginated leads
-export function useLeads({ uid, tab, page, per_page, search = "", sources = [], refreshKey = 0, dateFrom = null, dateTo = null }: LeadsParams) {
+export function useLeads({ uid, tab, page, per_page, search = "", sources = [], funnelTags = [], refreshKey = 0, dateFrom = null, dateTo = null }: LeadsParams) {
   return useQuery({
-    queryKey: ["leads", uid, tab, page, per_page, search, sources, dateFrom, dateTo, refreshKey],
+    queryKey: ["leads", uid, tab, page, per_page, search, sources, funnelTags, dateFrom, dateTo, refreshKey],
     queryFn: async () => {
       const response = await fetch("/api/e2e/leads/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uid, tab, page, per_page, search, sources, dateFrom, dateTo, refreshKey }),
+        body: JSON.stringify({ uid, tab, page, per_page, search, sources, funnelTags, dateFrom, dateTo, refreshKey }),
       })
 
       if (!response.ok) {

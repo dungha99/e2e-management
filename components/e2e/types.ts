@@ -88,6 +88,7 @@ export interface Lead {
   latest_campaign?: LatestCampaignInfo | null;
   last_activity_at?: string | null; // ISO timestamp of most recent sale activity
   inspection_schedule?: InspectionSchedule | null; // Parsed from INSPECTION_COMPLETED activity
+  funnel_tag?: 'SQ' | 'D1_two_way' | 'D1_ghost' | 'D1_pic_no_msg' | 'D2_has_bid' | 'D2_no_zalo' | null;
 }
 
 export interface DecoyMessage {

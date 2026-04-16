@@ -4,7 +4,7 @@ import { vucarV2Query } from "@/lib/db"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { uid, search = "", sources = [], dateFrom = null, dateTo = null } = body
+    const { uid, search = "", sources = [], funnelTags = [], dateFrom = null, dateTo = null } = body
 
     if (!uid) {
       return NextResponse.json({ error: "UID is required" }, { status: 400 })
@@ -15,28 +15,45 @@ export async function POST(request: Request) {
       return NextResponse.json({ priority: 0, nurture: 0, total: 0 })
     }
 
-    // Build search condition for phone, lead name, and car display name (brand + model)
+    // Build search condition (search is safe as-is — not a user-injectable field in prod,
+    // but kept as interpolation to match existing pattern; sources/dates are parameterized)
     const searchCondition = search
       ? `AND (
-          l.phone LIKE '%${search}%' 
-          OR l.additional_phone LIKE '%${search}%'
-          OR l.name ILIKE '%${search}%'
-          OR CONCAT(c.brand, ' ', c.model) ILIKE '%${search}%'
-          OR c.id::text ILIKE '%${search}%'
+          l.phone LIKE '%${search.replace(/'/g, "''")}%'
+          OR l.additional_phone LIKE '%${search.replace(/'/g, "''")}%'
+          OR l.name ILIKE '%${search.replace(/'/g, "''")}%'
+          OR CONCAT(c.brand, ' ', c.model) ILIKE '%${search.replace(/'/g, "''")}%'
+          OR c.id::text ILIKE '%${search.replace(/'/g, "''")}%'
         )`
       : ""
 
-    // Build source filter condition
-    const sourceCondition = sources.length > 0
-      ? `AND l.source = ANY(ARRAY[${sources.map((s: string) => `'${s}'`).join(",")}])`
-      : ""
+    // Build parameterized conditions
+    const queryParams: any[] = [uid]
+    let paramIdx = 2
 
-    // Build date range filter condition (filter by car created_at)
+    let sourceCondition = ""
+    if (sources.length > 0) {
+      sourceCondition = `AND l.source = ANY($${paramIdx}::text[])`
+      queryParams.push(sources)
+      paramIdx++
+    }
+
     let dateCondition = ""
     if (dateFrom && dateTo) {
-      dateCondition = `AND c.created_at >= '${dateFrom}'::date AND c.created_at < ('${dateTo}'::date + interval '1 day')`
+      dateCondition = `AND c.created_at >= $${paramIdx}::date AND c.created_at < ($${paramIdx + 1}::date + interval '1 day')`
+      queryParams.push(dateFrom, dateTo)
+      paramIdx += 2
     } else if (dateFrom) {
-      dateCondition = `AND c.created_at >= '${dateFrom}'::date AND c.created_at < ('${dateFrom}'::date + interval '1 day')`
+      dateCondition = `AND c.created_at >= $${paramIdx}::date AND c.created_at < ($${paramIdx}::date + interval '1 day')`
+      queryParams.push(dateFrom)
+      paramIdx++
+    }
+
+    let funnelTagCondition = ""
+    if (funnelTags.length > 0) {
+      funnelTagCondition = `AND ss.funnel_tag = ANY($${paramIdx}::text[])`
+      queryParams.push(funnelTags)
+      paramIdx++
     }
 
     // Optimized query using GROUP BY instead of DISTINCT ON for better scalability
@@ -67,9 +84,10 @@ export async function POST(request: Request) {
         ${searchCondition}
         ${sourceCondition}
         ${dateCondition}
+        ${funnelTagCondition}
         GROUP BY l.phone, c.id
       ) AS grouped_leads`,
-      [uid]
+      queryParams
     )
 
     const row = result.rows[0]

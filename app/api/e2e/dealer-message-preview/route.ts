@@ -3,6 +3,10 @@ import { vucarV2Query } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 
+export async function OPTIONS() {
+  return new Response(null, { status: 204 })
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const carId = searchParams.get("car_id")

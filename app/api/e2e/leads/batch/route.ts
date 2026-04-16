@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { vucarV2Query } from "@/lib/db"
+import { vucarV2Query, vucarZaloQuery } from "@/lib/db"
 import { getCached } from "@/lib/cache"
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -11,7 +11,7 @@ function isValidUUID(id: unknown): id is string {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { uid, page = 1, per_page = 10, tab = "priority", search = "", sources = [], refreshKey = 0, dateFrom = null, dateTo = null } = body
+    const { uid, page = 1, per_page = 10, tab = "priority", search = "", sources = [], funnelTags = [], refreshKey = 0, dateFrom = null, dateTo = null } = body
 
     if (!uid) {
       return NextResponse.json({ error: "UID is required" }, { status: 400 })
@@ -30,14 +30,15 @@ export async function POST(request: Request) {
 
     // Cache key includes uid, tab, pagination params, search, sources, dates, AND refreshKey
     const sourcesKey = sources.length > 0 ? sources.sort().join(",") : "all"
+    const funnelTagsKey = funnelTags.length > 0 ? funnelTags.sort().join(",") : "all"
     const searchKey = search ? `s:${search}` : "nosearch"
     const dateKey = dateFrom ? `df:${dateFrom}:dt:${dateTo || dateFrom}` : "nodate"
-    const cacheKey = `leads-batch:${uid}:${tab}:p${page}:pp${per_page}:${searchKey}:src:${sourcesKey}:${dateKey}:rk:${refreshKey}`
+    const cacheKey = `leads-batch:${uid}:${tab}:p${page}:pp${per_page}:${searchKey}:src:${sourcesKey}:ft:${funnelTagsKey}:${dateKey}:rk:${refreshKey}`
 
     const result = await getCached(
       cacheKey,
       async () => {
-        return await fetchBatchData(uid, tab, page, per_page, offset, search, sources, dateFrom, dateTo)
+        return await fetchBatchData(uid, tab, page, per_page, offset, search, sources, funnelTags, dateFrom, dateTo)
       },
       30 // Cache for 30 seconds - lead data changes frequently
     )
@@ -60,6 +61,7 @@ async function fetchBatchData(
   offset: number,
   search: string,
   sources: string[],
+  funnelTags: string[],
   dateFrom: string | null = null,
   dateTo: string | null = null
 ) {
@@ -91,18 +93,42 @@ async function fetchBatchData(
       )`
     : ""
 
-  // Build source filter condition
-  const sourceCondition = sources.length > 0
-    ? `AND l.source = ANY(ARRAY[${sources.map(s => `'${s}'`).join(",")}])`
-    : ""
+  // Build parameterized conditions — avoids SQL injection
+  const queryParams: any[] = [uid]
+  let paramIdx = 2
 
-  // Build date range filter condition (filter by car created_at)
+  // Source filter
+  let sourceCondition = ""
+  if (sources.length > 0) {
+    sourceCondition = `AND l.source = ANY($${paramIdx}::text[])`
+    queryParams.push(sources)
+    paramIdx++
+  }
+
+  // Date range filter (filter by car created_at)
   let dateCondition = ""
   if (dateFrom && dateTo) {
-    dateCondition = `AND c.created_at >= '${dateFrom}'::date AND c.created_at < ('${dateTo}'::date + interval '1 day')`
+    dateCondition = `AND c.created_at >= $${paramIdx}::date AND c.created_at < ($${paramIdx + 1}::date + interval '1 day')`
+    queryParams.push(dateFrom, dateTo)
+    paramIdx += 2
   } else if (dateFrom) {
-    dateCondition = `AND c.created_at >= '${dateFrom}'::date AND c.created_at < ('${dateFrom}'::date + interval '1 day')`
+    dateCondition = `AND c.created_at >= $${paramIdx}::date AND c.created_at < ($${paramIdx}::date + interval '1 day')`
+    queryParams.push(dateFrom)
+    paramIdx++
   }
+
+  // Funnel tag filter
+  let funnelTagCondition = ""
+  if (funnelTags.length > 0) {
+    funnelTagCondition = `AND ss.funnel_tag = ANY($${paramIdx}::text[])`
+    queryParams.push(funnelTags)
+    paramIdx++
+  }
+
+  // Pagination params
+  const perPageParam = paramIdx++
+  const offsetParam = paramIdx++
+  queryParams.push(per_page, offset)
 
   // Highly optimized query:
   // 1. Rank with minimal data
@@ -130,13 +156,14 @@ async function fetchBatchData(
           ${searchCondition}
           ${sourceCondition}
           ${dateCondition}
+          ${funnelTagCondition}
       ),
       paginated_leads AS (
         SELECT lead_id, car_id, created_at, phone
         FROM rank_base
         WHERE rn = 1
         ORDER BY created_at DESC, phone
-        LIMIT $2 OFFSET $3
+        LIMIT $${perPageParam} OFFSET $${offsetParam}
       )
       SELECT
         l.id as lead_id,
@@ -175,14 +202,15 @@ async function fetchBatchData(
         ss.messages_zalo,
         ss.is_hot_lead,
         ss.intention,
-        ss.negotiation_ability
+        ss.negotiation_ability,
+        ss.qualified
       FROM paginated_leads pl
       JOIN leads l ON l.id = pl.lead_id
       LEFT JOIN cars c ON c.id = pl.car_id
       LEFT JOIN sale_status ss ON ss.car_id = pl.car_id
       LEFT JOIN users u ON l.pic_id = u.id
       ORDER BY pl.created_at DESC`,
-    [uid, per_page, offset]
+    queryParams
   )
 
   const leads = leadsResult.rows
@@ -194,7 +222,7 @@ async function fetchBatchData(
 
   // Run CRM enrichment queries in parallel (fast queries only)
   // Dealer biddings moved to separate endpoint for progressive loading
-  const [decoyThreadsResult, sessionsResult, latestCampaignsResult, lastActivityResult, inspectionResult, slowIntentionResult] = await Promise.all([
+  const [decoyThreadsResult, sessionsResult, latestCampaignsResult, lastActivityResult, inspectionResult, slowIntentionResult, zaloStatsResult] = await Promise.all([
     // Query 1: Decoy thread counts + total user messages (CRM - fast)
     // Also count messages where sender='user' to detect new customer replies
     leadIds.length > 0 && phones.length > 0
@@ -324,6 +352,26 @@ async function fetchBatchData(
         return { rows: [] }
       })
       : Promise.resolve({ rows: [] }),
+
+    // Query 7: Zalo stats for funnel tag classification (scoped to current page phones only)
+    phones.length > 0
+      ? vucarZaloQuery(
+        `SELECT
+            lr.phone,
+            MAX(c.last_message_at) AS last_message_at,
+            COUNT(CASE WHEN m.is_self = true THEN 1 END) AS msgs_from_sale,
+            COUNT(CASE WHEN m.is_self = false THEN 1 END) AS msgs_from_customer
+          FROM leads_relation lr
+          LEFT JOIN conversations c ON c.thread_id = lr.friend_id AND c.own_id = lr.account_id
+          LEFT JOIN messages m ON m.thread_id = lr.friend_id AND m.own_id = lr.account_id
+          WHERE lr.phone = ANY($1::text[])
+          GROUP BY lr.phone`,
+        [phones]
+      ).catch((err) => {
+        console.warn('[E2E Batch API] Could not query Zalo stats for funnel tags:', err.message)
+        return { rows: [] }
+      })
+      : Promise.resolve({ rows: [] }),
   ])
 
   // Process results into lookup maps
@@ -385,6 +433,11 @@ async function fetchBatchData(
   )
 
 
+  // Zalo stats map by phone for funnel tag computation
+  const zaloStatsMap = new Map(
+    zaloStatsResult.rows.map((row: any) => [row.phone, row])
+  )
+
   // Transform and enrich leads data
   const enrichedLeads = leads.map((lead) => {
     // Parse additional_images and compute has_enough_images
@@ -409,6 +462,23 @@ async function fetchBatchData(
 
     // Compute session_created from bidding session count
     const session_created = lead.car_id && (biddingSessionCounts[lead.car_id] || 0) > 0
+
+    // Compute funnel tag using V4 MECE classification logic
+    const zalo = lead.phone ? zaloStatsMap.get(lead.phone) : null
+    let funnel_tag: 'SQ' | 'D1_two_way' | 'D1_ghost' | 'D1_pic_no_msg' | 'D2_has_bid' | 'D2_no_zalo' | null = null
+    if (lead.qualified === 'STRONG_QUALIFIED') {
+      funnel_tag = 'SQ'
+    } else if (lead.price_highest_bid !== null && lead.price_highest_bid !== undefined) {
+      funnel_tag = 'D2_has_bid'
+    } else if (!zalo) {
+      funnel_tag = 'D2_no_zalo'
+    } else if (parseInt(zalo.msgs_from_sale || '0', 10) === 0) {
+      funnel_tag = 'D1_pic_no_msg'
+    } else if (parseInt(zalo.msgs_from_customer || '0', 10) === 0) {
+      funnel_tag = 'D1_ghost'
+    } else {
+      funnel_tag = 'D1_two_way'
+    }
 
     return {
       id: lead.lead_id,
@@ -479,6 +549,7 @@ async function fetchBatchData(
       // Inspection schedule from INSPECTION_COMPLETED activity
       inspection_schedule: inspectionSchedules[lead.lead_id] || null,
       slow_intention_date: slowIntentionDates[lead.lead_id] || null,
+      funnel_tag,
     }
   })
 

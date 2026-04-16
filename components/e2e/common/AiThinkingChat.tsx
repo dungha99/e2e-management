@@ -392,12 +392,13 @@ export function AiThinkingChat({
     setIsInputModalOpen(false)
 
     try {
-      const formattedFeedback = [
-        `TÌNH HUỐNG: ${structSituation}`,
-        `TÂM LÝ KHÁCH: ${structPsychology}`,
-        `GIÁ CAO NHẤT ĐANG CÓ: ${structHighestPrice} triệu ·`,
-        `BƯỚC TIẾP THEO: ${structNextStep}`
-      ].join("\n")
+      const parts = []
+      if (structSituation.trim()) parts.push(`TÌNH HUỐNG: ${structSituation}`)
+      if (structPsychology.trim()) parts.push(`TÂM LÝ KHÁCH: ${structPsychology}`)
+      if (structHighestPrice.trim()) parts.push(`GIÁ CAO NHẤT ĐANG CÓ: ${structHighestPrice} triệu ·`)
+      if (structNextStep.trim()) parts.push(`BƯỚC TIẾP THEO: ${structNextStep}`)
+
+      const formattedFeedback = parts.join("\n")
 
       await onSubmitFeedback(formattedFeedback, autoActivate)
 
@@ -572,7 +573,7 @@ export function AiThinkingChat({
           <Button variant="outline" onClick={() => setIsInputModalOpen(false)}>Hủy</Button>
           <Button
             onClick={handleStructuredSubmit}
-            disabled={!structSituation || !structPsychology || !structHighestPrice || !structNextStep || isSubmitting}
+            disabled={!(structSituation.trim() || structPsychology.trim() || structHighestPrice.trim() || structNextStep.trim()) || isSubmitting}
             className="bg-indigo-600 hover:bg-indigo-700 text-white min-w-[120px]"
           >
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}

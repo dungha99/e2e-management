@@ -39,6 +39,8 @@ import { BookInspectionAction } from "../actions/BookInspectionAction"
 import { FollowUpAction } from "../actions/FollowUpAction"
 import { SendNotificationAction } from "../actions/SendNotificationAction"
 import { CreateBiddingAction } from "../actions/CreateBiddingAction"
+import { ViewCarReportAction } from "../actions/ViewCarReportAction"
+import { ViewZaloChatV2Action } from "../actions/ViewZaloChatV2Action"
 
 interface LeadDetailPanelProps {
   selectedAccount: string | null
@@ -590,11 +592,17 @@ export function LeadDetailPanel({
               {/* Primary Action - Main CTA with prominent styling */}
               <BookInspectionAction onClick={onOpenInspection} />
 
+              {/* Car Inspection Report */}
+              <ViewCarReportAction carId={selectedLead.car_id} customerName={selectedLead.name} />
+
               {/* Follow Up Button */}
               <FollowUpAction lead={selectedLead} onSuccess={onWorkflowActivated} />
 
               {/* Secondary Action - ZNS Notification Button */}
               <SendNotificationAction lead={selectedLead} />
+
+              {/* Zalo V2 Chat */}
+              <ViewZaloChatV2Action phone={selectedLead.phone || selectedLead.additional_phone} customerName={selectedLead.name} />
             </div>
           </div>
 

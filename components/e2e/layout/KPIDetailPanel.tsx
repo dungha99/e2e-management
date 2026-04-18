@@ -7,6 +7,8 @@ import { useToast } from "@/hooks/use-toast"
 import { RenameLeadAction } from "@/components/e2e/actions/RenameLeadAction"
 import { SendFirstMessageAction } from "@/components/e2e/actions/SendFirstMessageAction"
 import { ViewZaloChatAction } from "@/components/e2e/actions/ViewZaloChatAction"
+import { ViewZaloChatV2Action } from "@/components/e2e/actions/ViewZaloChatV2Action"
+import { ViewCarReportAction } from "@/components/e2e/actions/ViewCarReportAction"
 import { FollowUpAction } from "@/components/e2e/actions/FollowUpAction"
 import { EditLeadDialog } from "@/components/e2e/dialogs/EditLeadDialog"
 import { formatPriceForEdit, parseShorthandPrice } from "@/components/e2e/utils"
@@ -688,6 +690,8 @@ export function KPIDetailPanel({ open, onClose, metric, picId, search, sources, 
                     <td className="px-4 py-2.5 text-right align-top pt-2">
                       <div className="flex items-center justify-end gap-1 flex-wrap">
                         <ViewZaloChatAction carId={lead.car_id} customerName={lead.name} iconOnly />
+                        <ViewZaloChatV2Action phone={lead.phone} customerName={lead.name} iconOnly />
+                        <ViewCarReportAction carId={lead.car_id} customerName={lead.name} iconOnly />
                         {(metric?.startsWith('FUNNEL_NEVER_FIRST_MESSAGE') || metric?.startsWith('FUNNEL_RENAME_')) && (
                           <>
                             <RenameLeadAction

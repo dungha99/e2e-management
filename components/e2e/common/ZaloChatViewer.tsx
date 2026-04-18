@@ -33,17 +33,33 @@ export function ZaloChatViewer({
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // 1. Process & Sort Messages
+  const getNormalizedTime = (m: ZaloMessage) => {
+    let ts = 0
+    if (m.timestamp !== undefined && m.timestamp !== null) {
+      ts = typeof m.timestamp === 'string' ? Number(m.timestamp) : m.timestamp
+      if (!isNaN(ts) && ts > 0) {
+        // Normalize seconds to milliseconds
+        if (ts < 1000000000000) ts = ts * 1000
+      } else {
+        ts = 0
+      }
+    }
+    
+    if (!ts && m.dateAction) {
+      const parsed = parseISO(m.dateAction)
+      if (!isNaN(parsed.getTime())) ts = parsed.getTime()
+    }
+    
+    return ts || Date.now()
+  }
+
   const processedMessages = useMemo(() => {
     if (!messages || !Array.isArray(messages)) return []
 
-    return [...messages].sort((a, b) => {
-      const getTime = (m: ZaloMessage) => {
-        if (typeof m.timestamp === 'number' && m.timestamp > 0) return m.timestamp
-        if (m.dateAction) return new Date(m.dateAction).getTime()
-        return 0
-      }
-      return getTime(a) - getTime(b)
-    })
+    return [...messages].map(m => ({
+      ...m,
+      _normalizedTime: getNormalizedTime(m)
+    })).sort((a, b) => a._normalizedTime - b._normalizedTime)
   }, [messages])
 
   // 2. Auto-scroll to bottom
@@ -57,8 +73,8 @@ export function ZaloChatViewer({
   const groupedData = useMemo(() => {
     const groups: { date: string, messages: ZaloMessage[] }[] = []
     
-    processedMessages.forEach((msg) => {
-      const msgDate = msg.dateAction ? parseISO(msg.dateAction) : (msg.timestamp ? new Date(msg.timestamp) : new Date())
+    processedMessages.forEach((msg: any) => {
+      const msgDate = new Date(msg._normalizedTime)
       const dateStr = format(msgDate, "yyyy-MM-dd")
       
       const lastGroup = groups[groups.length - 1]
@@ -156,7 +172,7 @@ export function ZaloChatViewer({
               if (isEvent) return <div key={msgIdx}>{renderMessageContent(msg)}</div>
 
               const isSale = msg.uidFrom === "0" || msg.fromMe === true
-              const msgDate = msg.dateAction ? parseISO(msg.dateAction) : (msg.timestamp ? new Date(msg.timestamp) : new Date())
+              const msgDate = new Date((msg as any)._normalizedTime)
               const timeStr = format(msgDate, "HH:mm")
 
               return (
